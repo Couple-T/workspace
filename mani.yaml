@@ -1,0 +1,44 @@
+import:
+
+sync_gitignore: false 
+
+specs:
+  custom:
+    output: table
+    parallel: true
+    forks: 8
+
+targets:
+  all:
+    all: true
+
+themes:
+  custom:
+    table:
+      border:
+        around: true
+        header: true
+        columns: true
+        rows: true
+  
+tasks:
+  git-status:
+    desc: show working tree status
+    spec: custom
+    target: all
+    cmd: git status
+
+  update-repos:
+    desc: pull latest for all repos
+    target: all
+    cmd: |
+      current=$(git rev-parse --abbrev-ref HEAD)
+      if [[ -n $(git status -s) ]]; then
+        git fetch origin $branch
+        echo "FETCHED (dirty working tree on $current)"
+      elif [[ "$$current" != "$branch" ]]; then
+        git fetch origin $branch
+        echo "FETCHED (on branch $current, not $branch)"
+      else
+        git pull --rebase origin $branch
+      fi

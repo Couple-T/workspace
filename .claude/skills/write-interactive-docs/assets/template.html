@@ -1,0 +1,322 @@
+<!doctype html>
+<!--
+  Interactive Doc — base scaffold.
+
+  This is a SKELETON to copy and fill, and a live reference for the DOM contract
+  the export engine expects. Replace the THEME tokens (see references/theming.md),
+  swap in real sections/components (see references/components.md +
+  references/diagrams.md), and INLINE the current contents of
+  assets/export-engine.js where marked near the bottom.
+
+  Keep it a single self-contained .html file. CDN <script>/<link> tags are fine.
+-->
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{DOC_TITLE}}</title>
+
+  <!-- Fonts: pick faces that match the project. Swap these. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital@0;1&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ============================================================
+       THEME TOKENS — the ONE place to express the project's brand.
+       Derive these from the repo (references/theming.md). Never ship
+       plain black-on-white; pick a palette that fits the content.
+       ============================================================ */
+    :root {
+      --font-sans: "Inter", system-ui, sans-serif;
+      --font-serif: "Lora", Georgia, serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+      --color-bg:        #f7f8fb;
+      --color-surface:   #ffffff;
+      --color-surface-2: #eef1f7;
+      --color-text:      #1c2230;
+      --color-muted:     #5a6478;
+      --color-border:    #e2e6ef;
+
+      --color-primary:   #2f6df0;  /* brand — links, accents, key marks      */
+      --color-primary-ink:#ffffff;
+      --color-accent:    #14b8a6;  /* secondary — highlights, recommended    */
+
+      --c-info:    #3b82f6;
+      --c-tip:     #14b8a6;
+      --c-warning: #f59e0b;
+      --c-danger:  #ef4444;
+      --c-success: #22c55e;
+
+      --radius: 14px;
+      --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+      --maxw: 880px;
+    }
+    [data-theme="dark"] {
+      --color-bg:#0e121b; --color-surface:#161c28; --color-surface-2:#1f2735;
+      --color-text:#e8ecf5; --color-muted:#9aa6bd; --color-border:#2a3344;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+
+    /* --------------------------- base ---------------------------- */
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0; background: var(--color-bg); color: var(--color-text);
+      font-family: var(--font-sans); line-height: 1.65; font-size: 17px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .doc-wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 20px 120px; }
+
+    /* hero */
+    .doc-hero {
+      padding: 56px 0 28px; border-bottom: 1px solid var(--color-border);
+      margin-bottom: 12px;
+    }
+    .doc-hero .eyebrow {
+      text-transform: uppercase; letter-spacing: .12em; font-size: 12px;
+      font-weight: 600; color: var(--color-primary);
+    }
+    .doc-hero h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.1; margin: 10px 0 8px; }
+    .doc-hero p { color: var(--color-muted); font-size: 19px; margin: 0; max-width: 60ch; }
+
+    /* sections */
+    .doc-section { padding: 30px 0; border-bottom: 1px solid var(--color-border); position: relative; }
+    .doc-section h2 { font-size: 26px; margin: 8px 0 14px; scroll-margin-top: 80px; }
+    .doc-section h3 { font-size: 19px; margin: 22px 0 8px; }
+    p { margin: 12px 0; }
+    a { color: var(--color-primary); }
+
+    code { font-family: var(--font-mono); font-size: .9em; background: var(--color-surface-2);
+      padding: 2px 6px; border-radius: 6px; }
+    pre { background: var(--color-surface-2); border: 1px solid var(--color-border);
+      border-radius: var(--radius); padding: 16px; overflow: auto; }
+    pre code { background: none; padding: 0; }
+
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 15px;
+      background: var(--color-surface); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+    th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--color-border); }
+    thead th { background: var(--color-surface-2); font-weight: 600; }
+    tbody tr:last-child td { border-bottom: none; }
+
+    /* callouts */
+    .callout { border-radius: var(--radius); padding: 14px 16px; margin: 18px 0;
+      border-left: 4px solid var(--c-info); background: color-mix(in srgb, var(--c-info) 8%, var(--color-surface)); }
+    .callout[data-variant="tip"]     { border-color: var(--c-tip);     background: color-mix(in srgb, var(--c-tip) 8%, var(--color-surface)); }
+    .callout[data-variant="warning"] { border-color: var(--c-warning); background: color-mix(in srgb, var(--c-warning) 10%, var(--color-surface)); }
+    .callout[data-variant="danger"]  { border-color: var(--c-danger);  background: color-mix(in srgb, var(--c-danger) 9%, var(--color-surface)); }
+    .callout[data-variant="success"] { border-color: var(--c-success); background: color-mix(in srgb, var(--c-success) 9%, var(--color-surface)); }
+    .callout .callout-title { font-weight: 600; margin-bottom: 2px; }
+
+    /* KPI / stat row */
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; margin: 18px 0; }
+    .kpi { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius);
+      padding: 16px; box-shadow: var(--shadow); }
+    .kpi .v { font-size: 30px; font-weight: 700; color: var(--color-primary); }
+    .kpi .l { color: var(--color-muted); font-size: 14px; }
+
+    /* figure / diagram */
+    figure.diagram, figure.chart { margin: 20px 0; background: var(--color-surface);
+      border: 1px solid var(--color-border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+    figure figcaption { color: var(--color-muted); font-size: 14px; margin-top: 8px; text-align: center; }
+    .mermaid { display: flex; justify-content: center; }
+
+    /* tabs */
+    .tabs { margin: 18px 0; }
+    .tabs-nav { display: flex; gap: 6px; border-bottom: 1px solid var(--color-border); }
+    .tabs-nav button { border: none; background: none; font: inherit; cursor: pointer;
+      padding: 9px 14px; color: var(--color-muted); border-bottom: 2px solid transparent; }
+    .tabs-nav button[aria-selected="true"] { color: var(--color-primary); border-color: var(--color-primary); font-weight: 600; }
+    .tab-panel { padding: 14px 2px; }
+    .tab-panel[hidden] { display: none; }
+
+    /* comparison */
+    .compare { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); margin: 18px 0; }
+    .compare-card { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px;
+      background: var(--color-surface); box-shadow: var(--shadow); position: relative; }
+    .compare-card.is-recommended { border-color: var(--color-accent); box-shadow: 0 0 0 2px color-mix(in srgb,var(--color-accent) 40%, transparent), var(--shadow); }
+    .compare-card .badge { position: absolute; top: -11px; right: 12px; background: var(--color-accent);
+      color: #fff; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+    .compare-card h4 { margin: 0 0 8px; }
+    .pros li::marker { content: "✓ "; color: var(--c-success); }
+    .cons li::marker { content: "✕ "; color: var(--c-danger); }
+
+    /* implementation plan (AI-preview) */
+    .plan { border: 1px dashed var(--color-primary); border-radius: var(--radius);
+      background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); padding: 18px; margin: 18px 0; }
+    .plan ol { margin: 0; padding-left: 20px; }
+    .plan li { margin: 8px 0; }
+    .plan .target { font-family: var(--font-mono); font-size: 13px; color: var(--color-primary); }
+
+    /* ---- export engine UI (required by export-engine.js) ---- */
+    .wid-toolbar { position: fixed; top: 14px; right: 14px; z-index: 50; display: flex; gap: 6px; align-items: center;
+      background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 999px;
+      padding: 6px 10px; box-shadow: var(--shadow); }
+    .wid-toolbar-label { font-size: 12px; color: var(--color-muted); margin-right: 2px; }
+    .wid-btn { font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--color-border);
+      background: var(--color-surface-2); color: var(--color-text); border-radius: 999px; padding: 4px 10px; }
+    .wid-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+    .wid-section-tools { position: absolute; top: 30px; right: 0; display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+    .doc-section:hover .wid-section-tools, .doc-section:focus-within .wid-section-tools { opacity: 1; }
+    .wid-toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--color-text); color: var(--color-bg); padding: 9px 16px; border-radius: 999px; font-size: 14px;
+      opacity: 0; pointer-events: none; transition: all .2s; z-index: 60; }
+    .wid-toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 560px) { .wid-toolbar-label { display: none; } body { font-size: 16px; } }
+  </style>
+</head>
+
+<!-- data-doc + titles drive the export engine. data-doc-project shows in exports. -->
+<body>
+<main class="doc-wrap" data-doc data-doc-title="{{DOC_TITLE}}" data-doc-project="{{PROJECT_NAME}}">
+
+  <header class="doc-hero">
+    <div class="eyebrow">{{EYEBROW — e.g. ARCHITECTURE · v2}}</div>
+    <h1>{{DOC_TITLE}}</h1>
+    <p>{{One-sentence plain-language summary of what this doc explains.}}</p>
+  </header>
+
+  <!-- ============ Each major idea = one <section data-section> ============ -->
+  <section class="doc-section" data-section data-section-title="Overview" data-section-id="overview">
+    <h2>Overview</h2>
+    <p>Plain-language intro. Short sentences, common words.</p>
+
+    <div class="kpis">
+      <div class="kpi"><div class="v">3</div><div class="l">services</div></div>
+      <div class="kpi"><div class="v">~80ms</div><div class="l">p50 latency</div></div>
+    </div>
+  </section>
+
+  <!-- A DIAGRAM block: visual + island. The island is ALSO the single source of
+       truth for interactivity — `nodes` makes nodes clickable (section/detail/url),
+       `walkthrough` adds a guided ◀ ▶ tour. Zoom/pan + hover-spotlight are automatic
+       once diagram-interactions.js is inlined (see bottom of file). -->
+  <section class="doc-section" data-section data-section-title="How it flows" data-section-id="flow">
+    <h2>How it flows</h2>
+    <figure class="diagram" data-block="diagram">
+      <pre class="mermaid">
+flowchart LR
+  U[User] --> A[App]
+  A --> Q[(Queue)]
+  Q --> W[Worker] --> DB[(Database)]
+      </pre>
+      <figcaption>Request path — hover to spotlight, click a box for detail, scroll to zoom.</figcaption>
+      <script type="application/json" class="export-data">
+        {"type":"diagram","diagramType":"flowchart","title":"Request path",
+         "source":"flowchart LR\n  U[User] --> A[App]\n  A --> Q[(Queue)]\n  Q --> W[Worker] --> DB[(Database)]",
+         "nodes":{
+           "App":{"section":"overview","detail":"The client. Tap **Save** here and the write is queued, not blocking the UI."},
+           "Queue":{"detail":"Absorbs spikes so the worker can catch up. At-least-once delivery — handlers must be idempotent."},
+           "Database":{"url":"https://example.com/db","label":"Database","detail":"The system of record."}
+         },
+         "walkthrough":["User","App","Queue","Worker","Database"]}
+      </script>
+    </figure>
+  </section>
+
+  <!-- A CALLOUT -->
+  <section class="doc-section" data-section data-section-title="Watch out" data-section-id="gotcha">
+    <h2>Watch out</h2>
+    <div class="callout" data-variant="warning" data-block="callout">
+      <div class="callout-title">⚠️ Idempotency</div>
+      <div>Workers may receive the same message twice. Make handlers idempotent.</div>
+      <script type="application/json" class="export-data">
+        {"type":"callout","variant":"warning","md":"**Idempotency** — Workers may receive the same message twice. Make handlers idempotent."}
+      </script>
+    </div>
+  </section>
+
+  <!-- A COMPARISON section (include when the doc weighs options → decision) -->
+  <section class="doc-section" data-section data-section-title="Options compared" data-section-id="compare" data-block="comparison">
+    <h2>Options compared</h2>
+    <div class="compare">
+      <div class="compare-card is-recommended">
+        <span class="badge">Recommended</span>
+        <h4>Queue-based</h4>
+        <ul class="pros"><li>Absorbs spikes</li><li>Decoupled</li></ul>
+        <ul class="cons"><li>Eventual consistency</li></ul>
+      </div>
+      <div class="compare-card">
+        <h4>Synchronous</h4>
+        <ul class="pros"><li>Simple</li><li>Immediate result</li></ul>
+        <ul class="cons"><li>Fragile under load</li></ul>
+      </div>
+    </div>
+    <script type="application/json" class="export-data">
+      {"type":"comparison","title":"Options compared","options":["Queue-based","Synchronous"],
+       "criteria":[{"name":"Handles spikes","values":["Yes","No"]},{"name":"Complexity","values":["Medium","Low"]},
+       {"name":"Consistency","values":["Eventual","Immediate"]}],
+       "recommended":"Queue-based","rationale":"Resilience under load outweighs the eventual-consistency cost here."}
+    </script>
+  </section>
+
+  <!-- LAST SECTION (conditional): Implementation Plan, written for an AI agent. -->
+  <section class="doc-section" data-section data-section-title="Implementation Plan" data-section-id="implementation-plan" data-block="steps">
+    <h2>Implementation Plan <small style="color:var(--color-muted);font-weight:400;font-size:14px;">— for AI preview</small></h2>
+    <div class="plan">
+      <ol>
+        <li><strong>Add the queue client.</strong> <span class="target">lib/infra/queue.dart</span> — wrap publish/subscribe; expose a typed <code>enqueue()</code>.</li>
+        <li><strong>Make the worker idempotent.</strong> <span class="target">lib/worker/handler.dart</span> — dedupe on message id.</li>
+        <li><strong>Acceptance:</strong> duplicate delivery produces one DB write; load test sustains 500 rps.</li>
+      </ol>
+    </div>
+    <script type="application/json" class="export-data">
+      {"type":"steps","title":"Implementation Plan",
+       "steps":[
+         {"title":"Add the queue client","md":"`lib/infra/queue.dart` — wrap publish/subscribe; expose a typed `enqueue()`."},
+         {"title":"Make the worker idempotent","md":"`lib/worker/handler.dart` — dedupe on message id."},
+         {"title":"Acceptance","md":"Duplicate delivery produces one DB write; load test sustains 500 rps."}
+       ]}
+    </script>
+  </section>
+
+</main>
+
+<!-- Diagrams + charts via CDN (single-file, internet at render time). -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true, theme: "base",
+    securityLevel: "loose",   // lets diagram nodes use `click X call widGo(...)` if you want
+    themeVariables: {
+      primaryColor: getComputedStyle(document.documentElement).getPropertyValue("--color-surface-2").trim(),
+      primaryTextColor: getComputedStyle(document.documentElement).getPropertyValue("--color-text").trim(),
+      lineColor: getComputedStyle(document.documentElement).getPropertyValue("--color-muted").trim(),
+      primaryBorderColor: getComputedStyle(document.documentElement).getPropertyValue("--color-primary").trim()
+    }
+  });
+</script>
+<!-- Add <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script> only if you use charts. -->
+
+<!-- Minimal tab behaviour (only if you use .tabs). -->
+<script>
+  document.querySelectorAll(".tabs").forEach((t) => {
+    const btns = t.querySelectorAll(".tabs-nav button");
+    const panels = t.querySelectorAll(".tab-panel");
+    btns.forEach((b, i) => b.addEventListener("click", () => {
+      btns.forEach((x, j) => { x.setAttribute("aria-selected", j === i); panels[j].hidden = j !== i; });
+    }));
+  });
+</script>
+
+<!-- ============================================================
+     INLINE the current contents of assets/export-engine.js HERE,
+     inside this <script> tag, so the doc stays a single file.
+     ============================================================ -->
+<script>
+/* PASTE assets/export-engine.js HERE */
+</script>
+
+<!-- ============================================================
+     INLINE assets/diagram-interactions.js HERE (after Mermaid).
+     It self-injects its CSS and waits for Mermaid to render, so
+     pasting it is all that's needed for zoom/pan + clickable nodes.
+     ============================================================ -->
+<script>
+/* PASTE assets/diagram-interactions.js HERE */
+</script>
+
+</body>
+</html>

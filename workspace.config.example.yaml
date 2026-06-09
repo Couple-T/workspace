@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# workspace.config.yaml — the ONE file each organization fills in.
+#
+# Copy this to `workspace.config.yaml` and edit. It is the human-readable source of
+# truth for the whole orchestration:
+#   • skills + agents read it (and docs/agents/issue-tracker.md) at runtime;
+#   • `scripts/aiworks sync` reads `products:` (the repo URLs) and sets EVERYTHING up —
+#     generates mani.d/<product>.yaml, clones each repo, builds the codegraph index,
+#     installs the skill packs, seeds hooks, scaffolds CLAUDE.md + scripts/dev.sh;
+#   • the adapters read their slice from scripts/{vcs,tracker}/.env;
+#   • the dev-cycle workflow keeps a mirrored CONFIG block at the top of
+#     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem) —
+#     keep that block in sync with `products`, `tracker`, `branch_model`, and
+#     `vcs.auto_merge` here.
+#
+# The fast path to onboard repos:  add their URLs under `products:` below, then run
+#   scripts/aiworks sync          # clone + onboard every declared repo (idempotent)
+# ─────────────────────────────────────────────────────────────────────────────
+
+org:
+  name: Acme                       # shown in agent copy / summaries
+  product: "<one-line product description>"   # the domain agents ground research/copy in
+
+# ── Version control ──────────────────────────────────────────────────────────
+vcs:
+  provider: github                 # github | gitlab  (auto-detected from the repo URL/origin if omitted)
+  auto_merge: true                 # after review, the dev-cycle squash-merges the PR/MR automatically.
+                                   #   false → it still opens the PR/MR and runs every reviewer, then
+                                   #   STOPS and leaves it OPEN for a human to merge (the cross-repo
+                                   #   integration, distribute, and ticket-close steps are skipped).
+                                   #   Override for a single repo with repos[].auto_merge below.
+
+# ── Issue tracker ──────────────────────────────────────────────────────────────
+tracker:
+  provider: notion                 # notion | jira
+  ticket_prefix: FM                # FM | OFB | …  → drives the ticket-id regex (e.g. FM-\d+)
+  # Canonical workflow phase → the org's REAL status name (what the tracker shows / Jira
+  # transitions to). Skills/agents/dev-cycle use these names when moving a ticket.
+  statuses:
+    not_started:   "Not started"
+    in_progress:   "In progress"
+    ready_to_test: "Ready to test"
+    testing:       "Testing"
+    done:          "Done"
+
+# ── Branch model (defaults; a repo may override under products[].repos[].base) ─
+branch_model:
+  feature_base: develop            # base branch for feature/* work
+  fix_base:     main               # base branch for fix/* work
+
+# ── Quality gate (the guardian's static-analysis gate) ─────────────────────────
+quality_gate:
+  provider: sonarqube              # sonarqube | none
+
+# ── Products & repos — THE PART EACH ORG CONFIGURES ────────────────────────────
+# A product groups the repos that ship together. Each product is ONE
+# mani.d/<id>.yaml file (GENERATED from this block by `aiworks` — don't hand-edit
+# mani.d). For each repo you only need a `url` (+ `kind`); aiworks derives the rest:
+#
+#   id / path  ← the repo NAME from the URL (last path segment, minus .git).  Override
+#                the clone dir with `path:`.
+#   kind       → the role/gate defaults the orchestration uses:
+#                  flutter-app  → developer (TDD) builds, code-reviewer reviews, guard+perf gates
+#                  appium-e2e   → qa-runner builds the E2E suite, no code review, provides the
+#                                 cross-repo integration suite (test_suite)
+#                  generic      → developer builds, code-reviewer reviews (tune the gates per repo)
+#
+# After editing this block run `scripts/aiworks sync` to clone + onboard, then MIRROR
+# the repos into the dev-cycle.js CONFIG `REPOS` block (the workflow can't read the FS).
+products:
+  - id: <product-id>                          # → mani.d/<product-id>.yaml
+    repos:
+      - url: git@github.com:your-org/your-app.git   # ← all you must provide
+        kind: flutter-app                           # flutter-app | appium-e2e | generic
+        lang: dart                                  # optional; else auto-detected from the clone
+        distribute: firebase                        # firebase | none | custom  (default: none)
+        # auto_merge: false                         # optional — override vcs.auto_merge for this repo
+        # path: your-app                            # optional — clone dir (default: the repo name)
+        # green: "<keep-it-green check, e.g. lint + unit tests>"   # optional override (else from kind)
+        # guardian_focus: "<secrets, data-protection, perms…>"     # optional override (else from kind)
+      - url: git@github.com:your-org/your-e2e.git
+        kind: appium-e2e
+
+# Repo dependency edges (build/merge order) are decided per-ticket by the scoping
+# stage; a typical chain is backend → app → e2e.

@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# GitHub implementation of the VCS interface (the `gh` CLI). Sourced by ../lib.sh.
+
+vcs_require_config() {
+  command -v gh >/dev/null || die "gh (GitHub CLI) is required — https://cli.github.com (run 'gh auth login')"
+}
+
+# vcs_open_pr BASE HEAD TITLE BODY [DRY] -> prints "<url>" then "number=<n>".
+vcs_open_pr() {
+  local base="$1" head="$2" title="$3" body="$4" dry="${5:-0}"
+  # Reuse an open PR for this head branch (avoid duplicates).
+  local existing num
+  existing="$(gh pr list --head "$head" --state open --json url -q '.[0].url' 2>/dev/null || true)"
+  if [[ -n "$existing" ]]; then
+    num="$(gh pr list --head "$head" --state open --json number -q '.[0].number' 2>/dev/null)"
+    printf '%s\nnumber=%s\n' "$existing" "$num"
+    return 0
+  fi
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — git push -u origin %q && gh pr create --base %q --head %q --title %q --body <…>\n' "$head" "$base" "$head" "$title"
+    return 0
+  fi
+  git push -u origin "$head" >/dev/null 2>&1 || true
+  local url
+  url="$(gh pr create --base "$base" --head "$head" --title "$title" --body "$body")"
+  num="${url##*/}" # gh prints the PR URL; the number is the trailing path segment
+  printf '%s\nnumber=%s\n' "$url" "$num"
+}
+
+# vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
+vcs_pr_view() {
+  local num="$1" json state sha
+  if ! json="$(gh pr view "$num" --json state,mergeCommit 2>/dev/null)"; then
+    printf 'state=UNKNOWN\nmerge_sha=\n'; return 0
+  fi
+  state="$(printf '%s' "$json" | jq -r '.state // "UNKNOWN"')"
+  sha="$(printf '%s' "$json" | jq -r '.mergeCommit.oid // ""')"
+  printf 'state=%s\nmerge_sha=%s\n' "$state" "$sha"
+}
+
+# vcs_pr_comment NUMBER PATH LINE BODY [DRY]
+# Posts an inline review comment at PATH:LINE when both are given (falls back to a
+# normal PR comment that references PATH:LINE if the inline API call fails).
+vcs_pr_comment() {
+  local num="$1" path="$2" line="$3" body="$4" dry="${5:-0}"
+  local full="$body"
+  [[ -n "$path" ]] && full="${path}${line:+:$line} — ${body}"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — comment on PR #%s: %s\n' "$num" "$full"; return 0
+  fi
+  if [[ -n "$path" && -n "$line" ]]; then
+    local sha
+    sha="$(gh pr view "$num" --json headRefOid -q .headRefOid 2>/dev/null || true)"
+    if [[ -n "$sha" ]] && gh api "repos/{owner}/{repo}/pulls/$num/comments" \
+        -f body="$body" -f commit_id="$sha" -f path="$path" -F line="$line" -f side=RIGHT >/dev/null 2>&1; then
+      printf 'Inline comment posted on PR #%s at %s:%s\n' "$num" "$path" "$line"; return 0
+    fi
+  fi
+  gh pr comment "$num" --body "$full" >/dev/null
+  printf 'Comment posted on PR #%s\n' "$num"
+}
+
+# vcs_pr_comments NUMBER -> prints the PR's comments/review notes as plain text.
+vcs_pr_comments() {
+  gh pr view "$1" --comments 2>/dev/null || die "could not read comments for PR #$1"
+}
+
+# vcs_merge_pr NUMBER SUBJECT [DRY] -> server-side squash-merge (PR shows Merged), then pr-view.
+vcs_merge_pr() {
+  local num="$1" subject="$2" dry="${3:-0}"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — gh pr merge %s --squash --subject %q\n' "$num" "$subject"; return 0
+  fi
+  # --admin can be added if branch protection blocks a self-merge.
+  gh pr merge "$num" --squash --subject "$subject"
+  vcs_pr_view "$num"
+}

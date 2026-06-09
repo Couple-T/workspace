@@ -1,0 +1,1311 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Agents Workspace (aiworks)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ===== THEME: "mission control" — deep navy, electric indigo + cyan ===== */
+    :root{
+      --font-display:"Space Grotesk", system-ui, sans-serif;
+      --font-sans:"Inter", system-ui, sans-serif;
+      --font-mono:"JetBrains Mono", ui-monospace, Menlo, monospace;
+
+      --color-bg:#0b0e17;
+      --color-surface:#141926;
+      --color-surface-2:#1c2334;
+      --color-text:#e8ecf8;
+      --color-muted:#95a0bd;
+      --color-border:#28314c;
+
+      --color-primary:#7c6cff;       /* agents / AI */
+      --color-primary-ink:#ffffff;
+      --color-accent:#22d3ee;        /* signal / flow / "recommended" */
+
+      --c-info:#38bdf8; --c-tip:#2dd4bf; --c-warning:#f5a623; --c-danger:#f4496b; --c-success:#34d399;
+
+      --radius:16px;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(3,6,16,.5);
+      --glow:0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent), 0 8px 40px color-mix(in srgb, var(--color-primary) 22%, transparent);
+      --maxw:920px;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth; color-scheme:dark}
+    body{
+      margin:0; background:
+        radial-gradient(1200px 600px at 80% -10%, color-mix(in srgb,var(--color-primary) 16%, transparent), transparent 60%),
+        radial-gradient(900px 500px at -10% 10%, color-mix(in srgb,var(--color-accent) 10%, transparent), transparent 55%),
+        var(--color-bg);
+      background-attachment:fixed;
+      color:var(--color-text); font-family:var(--font-sans); line-height:1.65; font-size:17px;
+      -webkit-font-smoothing:antialiased;
+    }
+    .doc-wrap{max-width:var(--maxw); margin:0 auto; padding:0 22px 140px}
+    h1,h2,h3,h4{font-family:var(--font-display); letter-spacing:-.01em}
+
+    /* hero */
+    .doc-hero{padding:74px 0 30px; border-bottom:1px solid var(--color-border); margin-bottom:8px}
+    .doc-hero .eyebrow{display:inline-flex; gap:8px; align-items:center; text-transform:uppercase;
+      letter-spacing:.16em; font-size:12px; font-weight:600; color:var(--color-accent);
+      border:1px solid var(--color-border); padding:5px 12px; border-radius:999px; background:var(--color-surface)}
+    .doc-hero h1{font-size:clamp(34px,6vw,56px); line-height:1.04; margin:18px 0 10px;
+      background:linear-gradient(120deg,#fff 10%, var(--color-primary) 60%, var(--color-accent));
+      -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
+    .doc-hero p{color:var(--color-muted); font-size:20px; margin:0; max-width:62ch}
+
+    /* sections */
+    .doc-section{padding:34px 0; border-bottom:1px solid var(--color-border); position:relative}
+    .doc-section h2{font-size:28px; margin:6px 0 14px; scroll-margin-top:80px}
+    .doc-section h2 .num{color:var(--color-primary); font-family:var(--font-mono); font-size:18px; margin-right:10px}
+    .doc-section h3{font-size:19px; margin:24px 0 8px; color:#fff}
+    p{margin:12px 0} a{color:var(--color-accent)}
+    .lead{font-size:18.5px; color:#cdd5ec}
+
+    code{font-family:var(--font-mono); font-size:.88em; background:var(--color-surface-2); padding:2px 6px; border-radius:6px; color:#c7d0ee}
+    pre{background:#0d1119; border:1px solid var(--color-border); border-radius:var(--radius); padding:16px; overflow:auto}
+    pre code{background:none; padding:0}
+
+    table{width:100%; border-collapse:collapse; margin:16px 0; font-size:15px;
+      background:var(--color-surface); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow)}
+    th,td{text-align:left; padding:11px 14px; border-bottom:1px solid var(--color-border); vertical-align:top}
+    thead th{background:var(--color-surface-2); font-weight:600; font-family:var(--font-display); color:#fff}
+    tbody tr:last-child td{border-bottom:none}
+    tbody tr:hover{background:color-mix(in srgb,var(--color-primary) 7%, transparent)}
+    td b, td strong{color:#fff}
+
+    /* callouts */
+    .callout{border-radius:var(--radius); padding:14px 16px; margin:18px 0; border-left:4px solid var(--c-info);
+      background:color-mix(in srgb,var(--c-info) 12%, var(--color-surface))}
+    .callout[data-variant="tip"]{border-color:var(--c-tip); background:color-mix(in srgb,var(--c-tip) 12%,var(--color-surface))}
+    .callout[data-variant="warning"]{border-color:var(--c-warning); background:color-mix(in srgb,var(--c-warning) 13%,var(--color-surface))}
+    .callout[data-variant="danger"]{border-color:var(--c-danger); background:color-mix(in srgb,var(--c-danger) 12%,var(--color-surface))}
+    .callout[data-variant="success"]{border-color:var(--c-success); background:color-mix(in srgb,var(--c-success) 12%,var(--color-surface))}
+    .callout .callout-title{font-weight:600; margin-bottom:2px; color:#fff}
+
+    /* KPI row */
+    .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin:22px 0}
+    .kpi{background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius); padding:18px; box-shadow:var(--shadow)}
+    .kpi .v{font-family:var(--font-display); font-size:32px; font-weight:700; color:var(--color-accent)}
+    .kpi .l{color:var(--color-muted); font-size:14px; margin-top:2px}
+
+    /* figure / diagram */
+    figure.diagram{margin:22px 0; background:var(--color-surface); border:1px solid var(--color-border);
+      border-radius:var(--radius); padding:20px 18px; box-shadow:var(--shadow)}
+    figure figcaption{color:var(--color-muted); font-size:14px; margin-top:10px; text-align:center}
+    .mermaid{display:flex; justify-content:center; min-height:40px}
+
+    /* tabs */
+    .tabs{margin:20px 0; border:1px solid var(--color-border); border-radius:var(--radius); overflow:hidden; background:var(--color-surface)}
+    .tabs-nav{display:flex; gap:2px; background:var(--color-surface-2); flex-wrap:wrap}
+    .tabs-nav button{border:none; background:none; font:inherit; font-weight:600; cursor:pointer; padding:12px 18px;
+      color:var(--color-muted); border-bottom:2px solid transparent}
+    .tabs-nav button[aria-selected="true"]{color:var(--color-accent); border-color:var(--color-accent); background:var(--color-surface)}
+    .tab-panel{padding:18px}
+    .tab-panel[hidden]{display:none}
+    .tab-panel ol{margin:0; padding-left:20px} .tab-panel li{margin:7px 0}
+    .tab-panel li b{color:#fff; font-family:var(--font-display)}
+
+    /* comparison */
+    .compare{display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); margin:20px 0}
+    .compare-card{border:1px solid var(--color-border); border-radius:var(--radius); padding:18px; background:var(--color-surface); box-shadow:var(--shadow); position:relative}
+    .compare-card.is-recommended{border-color:var(--color-accent); box-shadow:var(--glow)}
+    .compare-card .badge{position:absolute; top:-12px; right:14px; background:var(--color-accent); color:#04222a; font-size:12px; font-weight:700; padding:3px 11px; border-radius:999px; font-family:var(--font-display)}
+    .compare-card h4{margin:0 0 10px; color:#fff}
+    .compare-card ul{margin:6px 0; padding-left:20px}
+    .pros li::marker{content:"✓ "; color:var(--c-success)}
+    .cons li::marker{content:"✕ "; color:var(--c-danger)}
+
+    /* implementation plan */
+    .plan{border:1px dashed color-mix(in srgb,var(--color-primary) 65%, transparent); border-radius:var(--radius);
+      background:color-mix(in srgb,var(--color-primary) 9%, var(--color-surface)); padding:20px; margin:18px 0}
+    .plan ol{margin:0; padding-left:22px} .plan li{margin:11px 0}
+    .plan li b{color:#fff; font-family:var(--font-display)}
+    .plan .target{font-family:var(--font-mono); font-size:13px; color:var(--color-accent)}
+
+    /* export-engine UI */
+    .wid-toolbar{position:fixed; top:16px; right:16px; z-index:50; display:flex; gap:6px; align-items:center;
+      background:color-mix(in srgb,var(--color-surface) 86%, transparent); backdrop-filter:blur(8px);
+      border:1px solid var(--color-border); border-radius:999px; padding:7px 11px; box-shadow:var(--shadow)}
+    .wid-toolbar-label{font-size:12px; color:var(--color-muted); margin-right:2px}
+    .wid-btn{font:inherit; font-size:12px; font-weight:600; cursor:pointer; border:1px solid var(--color-border);
+      background:var(--color-surface-2); color:var(--color-text); border-radius:999px; padding:5px 11px}
+    .wid-btn:hover{border-color:var(--color-accent); color:var(--color-accent)}
+    .wid-section-tools{position:absolute; top:34px; right:0; display:flex; gap:4px; opacity:0; transition:opacity .15s}
+    .doc-section:hover .wid-section-tools, .doc-section:focus-within .wid-section-tools{opacity:1}
+    .wid-toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+      background:var(--color-accent); color:#04222a; font-weight:600; padding:10px 18px; border-radius:999px; font-size:14px;
+      opacity:0; pointer-events:none; transition:all .2s; z-index:60}
+    .wid-toast.is-on{opacity:1; transform:translateX(-50%) translateY(0)}
+
+    .foot{color:var(--color-muted); font-size:14px; padding-top:26px}
+    @media (max-width:560px){ .wid-toolbar-label{display:none} body{font-size:16px} }
+  </style>
+</head>
+
+<body>
+<main class="doc-wrap" data-doc data-doc-title="AI Agents Workspace (aiworks)" data-doc-project="aiworks — workspace-template">
+
+  <header class="doc-hero">
+    <span class="eyebrow">◆ AI AGENTS WORKSPACE · aiworks</span>
+    <h1>A configurable AI product team, in a repo</h1>
+    <p>A reusable template that turns a folder into a working software team: a flat crew of
+      Claude agents that takes a ticket from idea to shipped code — across every repo it
+      touches — while staying portable across your code host, tracker, and tooling.</p>
+  </header>
+
+  <!-- 1. WHAT -->
+  <section class="doc-section" data-section data-section-title="What is aiworks?" data-section-id="overview">
+    <h2><span class="num">01</span>What is aiworks?</h2>
+    <p class="lead">aiworks is the <strong>workspace-template</strong>: a ready-made setup where a team of
+      AI agents — from a <em>CEO</em> down to developers, QA, and reviewers — picks up a ticket and carries
+      it all the way to merged, shipped code.</p>
+    <p>It runs across <strong>many repos at once</strong> (app, backend, end-to-end tests, …) and coordinates
+      them in the right order. Everything that ties the team to one company — your <strong>code host</strong>,
+      your <strong>issue tracker</strong>, your <strong>quality gate</strong> — is swappable. You describe your
+      world once in a single config file, and the agents, skills, and workflows all read from it.</p>
+
+    <div class="kpis" data-block="kpis">
+      <div class="kpi"><div class="v">15</div><div class="l">specialist agent roles</div></div>
+      <div class="kpi"><div class="v">3</div><div class="l">workflows: brd → prd → dev-cycle</div></div>
+      <div class="kpi"><div class="v">2 × 2</div><div class="l">VCS (GitHub/GitLab) × tracker (Notion/Jira)</div></div>
+      <div class="kpi"><div class="v">1</div><div class="l">config file to fill in</div></div>
+      <script type="application/json" class="export-data">
+        {"type":"kpis","items":[
+          {"value":"15","label":"specialist agent roles"},
+          {"value":"3","label":"workflows: brd → prd → dev-cycle"},
+          {"value":"2 × 2","label":"VCS (GitHub/GitLab) × tracker (Notion/Jira)"},
+          {"value":"1","label":"config file to fill in"}]}
+      </script>
+    </div>
+
+    <div class="callout" data-variant="tip" data-block="callout">
+      <div class="callout-title">💡 One source of truth</div>
+      <div>You fill in <code>workspace.config.yaml</code> once (org, providers, auto-merge, ticket prefix,
+        statuses, branch model, and the <code>products[].repos[]</code> URLs). <code>scripts/aiworks sync</code>
+        sets every declared repo up from it; skills and agents read it directly; the workflows keep a
+        mirrored copy they can use without filesystem access.</div>
+      <script type="application/json" class="export-data">
+        {"type":"callout","variant":"tip","md":"**One source of truth** — fill in `workspace.config.yaml` once (org, providers, auto-merge, ticket prefix, statuses, branch model, and the `products[].repos[]` URLs). `scripts/aiworks sync` sets every declared repo up from it; skills and agents read it directly; the workflows keep a mirrored copy they can use without filesystem access."}
+      </script>
+    </div>
+  </section>
+
+  <!-- 2. TEAM -->
+  <section class="doc-section" data-section data-section-title="The agent team" data-section-id="team">
+    <h2><span class="num">02</span>The agent team</h2>
+    <p>Like a real product org, the team works in layers. Direction flows down from the CEO; work flows
+      up through build and quality before it ships. Each agent has one job and does it well.</p>
+
+    <figure class="diagram" data-block="diagram">
+      <pre class="mermaid">flowchart TD
+  CEO["CEO — direction and final call"]
+  subgraph PD["Product and Design"]
+    direction LR
+    CPO[CPO] --> POW[Product Owner]
+    CTO[CTO]
+    MIA[UX Planner] --> UID[UX/UI Designer]
+    FINN[Graphic Designer] --> UID
+  end
+  subgraph BD["Build"]
+    direction LR
+    DP[Dev Planner] --> DEV[Developer]
+    QP[QA Planner] --> QR[QA Runner]
+  end
+  subgraph QA["Quality gates"]
+    direction LR
+    CR[Code Reviewer]
+    GUARD[Guardian]
+    PERF[Performance]
+  end
+  DOC[Documentor]
+  CEO --> PD --> BD --> QA --> DOC</pre>
+      <figcaption>Five layers — Lead, Product &amp; Design, Build, Quality, Docs.</figcaption>
+      <script type="application/json" class="export-data">{"type":"diagram","diagramType":"flowchart","title":"Agent team — org chart","source":"flowchart TD\n  CEO[\"CEO — direction and final call\"]\n  subgraph PD[\"Product and Design\"]\n    direction LR\n    CPO[CPO] --> POW[Product Owner]\n    CTO[CTO]\n    MIA[UX Planner] --> UID[UX/UI Designer]\n    FINN[Graphic Designer] --> UID\n  end\n  subgraph BD[\"Build\"]\n    direction LR\n    DP[Dev Planner] --> DEV[Developer]\n    QP[QA Planner] --> QR[QA Runner]\n  end\n  subgraph QA[\"Quality gates\"]\n    direction LR\n    CR[Code Reviewer]\n    GUARD[Guardian]\n    PERF[Performance]\n  end\n  DOC[Documentor]\n  CEO --> PD --> BD --> QA --> DOC","nodes":{"CEO":{"detail":"Interprets direction, sets strategy, resolves disagreements, makes the final call."},"CPO":{"detail":"Turns direction into a prioritized feature set with clear user value."},"CTO":{"detail":"Owns the tech stack and strategy; flags feasibility, risk, cross-repo impact, ADRs."},"POW":{"label":"Product Owner","detail":"Writes self-contained tickets — the handoff into the dev pipeline."},"MIA":{"label":"UX Planner","detail":"Design plan: flow map, per-screen states, motion, tokens, asset list."},"UID":{"label":"UX/UI Designer","detail":"Builds the plan into Figma screens with the design system."},"FINN":{"label":"Graphic Designer","detail":"Characters, mascots, logos, icons and decorators."},"DP":{"label":"Dev Planner","detail":"Fetches the ticket, prepares the branch, writes the ADR-compliant plan."},"DEV":{"label":"Developer","detail":"Implements test-first, commits often, opens the PR, distributes the build."},"QP":{"label":"QA Planner","detail":"Designs the BDD test plan + Appium automation plan; renders the verdict."},"QR":{"label":"QA Runner","detail":"Implements and runs the Appium suite; merges the e2e PR."},"CR":{"label":"Code Reviewer","detail":"Strict clean-code review; loops the dev until clear, then squash-merges."},"GUARD":{"label":"Guardian","detail":"Security and data-protection static-analysis gate."},"PERF":{"label":"Performance","detail":"Profiles the PR; regressions become comments, optimizations become tickets."},"DOC":{"label":"Documentor","detail":"Captures decisions and terms; writes the run-summary + token tables."}},"walkthrough":["CEO","CPO","CTO","DP","DEV","CR","DOC"]}</script>
+    </figure>
+
+    <h3>Who's who</h3>
+    <table>
+      <thead><tr><th>Layer</th><th>Role</th><th>What they own</th></tr></thead>
+      <tbody>
+        <tr><td>Lead</td><td><b>CEO</b></td><td>Interprets high-level direction, sets strategy, resolves disagreements, makes the final call.</td></tr>
+        <tr><td rowspan="6">Product &amp; Design</td><td><b>CPO</b> (Emily)</td><td>Turns direction into a prioritized feature set with clear user value and acceptance intent.</td></tr>
+        <tr><td><b>CTO</b></td><td>Owns the tech stack &amp; strategy; flags feasibility, risk, cross-repo impact, and ADRs.</td></tr>
+        <tr><td><b>Product Owner</b></td><td>Writes self-contained tickets onto the board — the boundary handoff into the dev pipeline.</td></tr>
+        <tr><td><b>UX Planner</b> (Mia)</td><td>Design plan: flow map, per-screen states, motion intent, tokens, asset list.</td></tr>
+        <tr><td><b>UX/UI Designer</b></td><td>Builds the plan into Figma screens with the design system.</td></tr>
+        <tr><td><b>Graphic Designer</b> (Finn)</td><td>Characters, mascots, logos, icons and decorators.</td></tr>
+        <tr><td rowspan="4">Build</td><td><b>Dev Planner</b></td><td>Fetches the ticket, prepares the branch, writes the ADR-compliant implementation plan.</td></tr>
+        <tr><td><b>Developer</b></td><td>Implements test-first (TDD), commits often, opens the PR, distributes the build.</td></tr>
+        <tr><td><b>QA Planner</b> (Peter)</td><td>Designs the BDD test plan + Appium automation plan; renders the final verdict.</td></tr>
+        <tr><td><b>QA Runner</b> (Peter)</td><td>Implements &amp; runs the Appium suite, reports results, merges the e2e PR.</td></tr>
+        <tr><td rowspan="3">Quality</td><td><b>Code Reviewer</b> (Daniel)</td><td>Strict clean-code review; loops the developer until clear, then squash-merges.</td></tr>
+        <tr><td><b>Guardian</b> (Ethan)</td><td>Security &amp; data-protection static-analysis gate (SonarQube).</td></tr>
+        <tr><td><b>Performance</b> (Liam)</td><td>Profiles the PR; regressions → PR comment, optimizations → a follow-up ticket.</td></tr>
+        <tr><td>Docs</td><td><b>Documentor</b></td><td>Captures decisions &amp; terminology; writes the run-summary + per-role token tables.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 3. PIPELINE -->
+  <section class="doc-section" data-section data-section-title="From idea to shipped: three workflows" data-section-id="pipeline">
+    <h2><span class="num">03</span>From idea to shipped: three workflows</h2>
+    <p>Work moves through three workflows you can run on their own or back-to-back. Each one hands a clean
+      artifact to the next, so a fuzzy idea becomes designs, then a backlog, then shipped code.</p>
+
+    <figure class="diagram" data-block="diagram">
+      <pre class="mermaid">flowchart LR
+  IDEA(["Idea / roadmap phase"]) --> BRD["/brd"]
+  BRD -->|"BRD doc"| PRD["/prd"]
+  PRD -->|"backlog of tickets"| DC["/dev-cycle"]
+  DC --> SHIP(["Shipped, distributed"])</pre>
+      <figcaption>The pipeline: business case → designs+tickets → working software.</figcaption>
+      <script type="application/json" class="export-data">{"type":"diagram","diagramType":"flowchart","title":"The three-workflow pipeline","source":"flowchart LR\n  IDEA([\"Idea / roadmap phase\"]) --> BRD[\"/brd\"]\n  BRD -->|\"BRD doc\"| PRD[\"/prd\"]\n  PRD -->|\"backlog of tickets\"| DC[\"/dev-cycle\"]\n  DC --> SHIP([\"Shipped, distributed\"])","nodes":{"IDEA":{"label":"Idea","detail":"A roadmap phase or a free-text directive — where it all starts."},"BRD":{"label":"/brd","detail":"Research → CEO strategy → CPO product → CTO feasibility → a written BRD."},"PRD":{"label":"/prd","detail":"BRD → feature briefs → (conditional) Figma designs → a backlog of tickets."},"DC":{"section":"dev-cycle","detail":"Build & ship one ticket across every repo it touches. (Click to jump to the deep dive.)"},"SHIP":{"label":"Shipped","detail":"Merged upstream→downstream, integration-tested, and distributed."}},"walkthrough":["IDEA","BRD","PRD","DC","SHIP"]}</script>
+    </figure>
+
+    <div class="tabs" data-block="tabs">
+      <div class="tabs-nav">
+        <button aria-selected="true">/brd</button>
+        <button aria-selected="false">/prd</button>
+        <button aria-selected="false">/dev-cycle</button>
+      </div>
+      <div class="tab-panel">
+        <p><b>Business Requirements.</b> Turns a roadmap phase or a free-text directive into a BRD, written
+          to the repo (and optionally your doc space).</p>
+        <ol>
+          <li><b>Research</b> — market, competitors, pricing, opportunity.</li>
+          <li><b>Strategy</b> — CEO sets vision, goals, success metrics, scope.</li>
+          <li><b>Product</b> — CPO defines the feature set + unit economics.</li>
+          <li><b>Feasibility</b> — CTO weighs risk, approach, cross-repo + ADR flags.</li>
+          <li><b>Write</b> — Documentor assembles &amp; publishes the BRD.</li>
+        </ol>
+      </div>
+      <div class="tab-panel" hidden>
+        <p><b>Product + design + ticketing.</b> Turns an approved BRD into production-ready designs and a
+          ready-for-dev backlog.</p>
+        <ol>
+          <li><b>Intake</b> — CPO turns the BRD into prioritized feature briefs (flagged UI-bearing or not).</li>
+          <li><b>Design</b> — <em>conditional</em>: for UI features, UX planner → graphic assets → Figma frames (in parallel). Skipped entirely for non-UI work.</li>
+          <li><b>Ticketing</b> — Product Owner writes one self-contained ticket per feature, linking its Figma frame.</li>
+        </ol>
+      </div>
+      <div class="tab-panel" hidden>
+        <p><b>Build &amp; ship one ticket.</b> Takes a single ticket end-to-end across every repo it touches.
+          Detailed in the next section.</p>
+        <ol>
+          <li><b>Scope → Kickoff → Build → Open PR → Review</b> — per repo, in dependency waves.</li>
+          <li><b>Merge → Integration → Distribute → Summary</b> — cross-repo join and ship.</li>
+        </ol>
+      </div>
+      <script type="application/json" class="export-data">
+        {"type":"tabs","tabs":[
+          {"label":"/brd","md":"**Business Requirements** — a roadmap phase or directive → a BRD in the repo (and optionally your doc space).\n\n1. **Research** — market, competitors, pricing, opportunity.\n2. **Strategy** — CEO: vision, goals, success metrics, scope.\n3. **Product** — CPO: feature set + unit economics.\n4. **Feasibility** — CTO: risk, approach, cross-repo + ADR flags.\n5. **Write** — Documentor assembles & publishes the BRD."},
+          {"label":"/prd","md":"**Product + design + ticketing** — an approved BRD → designs + a ready-for-dev backlog.\n\n1. **Intake** — CPO turns the BRD into prioritized feature briefs (UI-bearing or not).\n2. **Design** — *conditional*: for UI features, UX planner → graphic assets → Figma frames (parallel). Skipped for non-UI work.\n3. **Ticketing** — Product Owner writes one self-contained ticket per feature, linking its Figma frame."},
+          {"label":"/dev-cycle","md":"**Build & ship one ticket** end-to-end across every repo it touches.\n\n1. Scope → Kickoff → Build → Open PR → Review — per repo, in dependency waves.\n2. Merge → Integration → Distribute → Summary — cross-repo join and ship."}]}
+      </script>
+    </div>
+  </section>
+
+  <!-- 4. DEV-CYCLE -->
+  <section class="doc-section" data-section data-section-title="Inside the dev-cycle" data-section-id="dev-cycle">
+    <h2><span class="num">04</span>Inside the dev-cycle</h2>
+    <p>The dev-cycle is the engine. It takes one ticket and runs every repo that ticket touches through the
+      same nine phases — building repos in <strong>dependency waves</strong> (a backend before the app, the
+      app before its end-to-end tests) and merging them <strong>upstream → downstream</strong>. When a ticket
+      touches just one repo, it quietly collapses to a simple single-repo flow.</p>
+
+    <figure class="diagram" data-block="diagram">
+      <pre class="mermaid">flowchart LR
+  S[Scope] --> K[Kickoff] --> B[Build]
+  B --> O["Open PR/MR"] --> R{Review}
+  R -->|comments| F[Fix] --> R
+  R -->|passed| M[Merge]
+  M --> I["Integration e2e"] --> D[Distribute] --> SU[Summary]</pre>
+      <figcaption>Nine phases. Code review + security + performance all comment on the open PR; the dev fixes the batch until it passes.</figcaption>
+      <script type="application/json" class="export-data">{"type":"diagram","diagramType":"flowchart","title":"dev-cycle — nine phases","source":"flowchart LR\n  S[Scope] --> K[Kickoff] --> B[Build]\n  B --> O[\"Open PR/MR\"] --> R{Review}\n  R -->|comments| F[Fix] --> R\n  R -->|passed| M[Merge]\n  M --> I[\"Integration e2e\"] --> D[Distribute] --> SU[Summary]","nodes":{"S":{"label":"Scope","detail":"CTO classifies which repos the ticket touches, their order, and whether an integration test applies."},"K":{"label":"Kickoff","detail":"Per repo: branch + move to In progress + plan; QA designs the e2e test plan."},"B":{"label":"Build","detail":"The build role implements in dependency waves — developer TDD / QA runner POM."},"O":{"label":"Open PR/MR","detail":"Opened right after build, before review, so every reviewer comments on the open PR."},"R":{"label":"Review","detail":"Code reviewer + guardian + performance review the open PR; the dev fixes the batch; capped rounds."},"F":{"label":"Fix","detail":"The developer addresses the combined review batch, then a scoped re-review runs."},"M":{"label":"Merge","detail":"Squash-merged upstream→downstream so the web PR shows Merged; each SHA recorded."},"I":{"label":"Integration","detail":"QA runs this ticket's scope against the merged build — the cross-repo join gate (skipped if not needed)."},"D":{"label":"Distribute","detail":"Each shippable repo goes to its configured target (e.g. Firebase App Distribution)."},"SU":{"label":"Summary","detail":"Documentor writes the run summary + a per-repo / per-role token & time table."}},"walkthrough":["S","K","B","O","R","M","I","D","SU"]}</script>
+    </figure>
+
+    <table>
+      <thead><tr><th>#</th><th>Phase</th><th>What happens</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><b>Scope</b></td><td>CTO classifies which repos the ticket touches, their build order, and whether a cross-repo integration test applies.</td></tr>
+        <tr><td>2</td><td><b>Kickoff</b></td><td>Per repo: planner kicks off (branch + move to <em>In&nbsp;progress</em> + plan); QA planner designs the test plan for the e2e repo.</td></tr>
+        <tr><td>3</td><td><b>Build</b></td><td>The build role implements in dependency waves — developer (TDD) for code, QA runner (Page-Object) for e2e.</td></tr>
+        <tr><td>4</td><td><b>Open PR/MR</b></td><td>The build role opens the PR right after build, <em>before</em> review, so every reviewer comments on the open PR.</td></tr>
+        <tr><td>5</td><td><b>Review</b></td><td>On the open PR: code reviewer (standards + spec) + guardian (security) + performance all review; the dev fixes the combined batch; capped rounds. (Skipped for the e2e repo.)</td></tr>
+        <tr><td>6</td><td><b>Merge</b></td><td>Each repo squash-merged upstream → downstream so the web PR shows <em>Merged</em>; each commit recorded.</td></tr>
+        <tr><td>7</td><td><b>Integration</b></td><td>QA runner runs this ticket's scope against the merged build — the cross-repo join gate (skipped if not needed).</td></tr>
+        <tr><td>8</td><td><b>Distribute</b></td><td>Each shippable repo goes to its configured target (e.g. Firebase App Distribution).</td></tr>
+        <tr><td>9</td><td><b>Summary</b></td><td>Documentor writes the run summary + a per-repo / per-role token &amp; time table.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout" data-variant="info" data-block="callout">
+      <div class="callout-title">ℹ️ Safe dry runs</div>
+      <div>Add <code>--dry-run</code> (e.g. <code>/dev-cycle FM-12 --dry-run</code>) to stop after build &amp; gates —
+        no merge, no integration, no distribution. Great for confirming behaviour without touching the base branch.</div>
+      <script type="application/json" class="export-data">
+        {"type":"callout","variant":"info","md":"**Safe dry runs** — add `--dry-run` (e.g. `/dev-cycle FM-12 --dry-run`) to stop after build & gates: no merge, integration, or distribution. Confirms behaviour without touching the base branch."}
+      </script>
+    </div>
+  </section>
+
+  <!-- 5. ARCHITECTURE -->
+  <section class="doc-section" data-section data-section-title="Provider-agnostic by design" data-section-id="architecture">
+    <h2><span class="num">05</span>Provider-agnostic by design</h2>
+    <p>The agents never talk to GitHub or Notion directly. They call a thin <strong>adapter</strong> — a set of
+      shell scripts with a <strong>stable command surface</strong> — and the adapter dispatches to whichever
+      provider you configured. Swapping GitHub for GitLab, or Notion for Jira, changes a setting, not the
+      agents. Adding a brand-new provider means dropping <em>one</em> file in.</p>
+
+    <figure class="diagram" data-block="diagram">
+      <pre class="mermaid">flowchart TD
+  A["Skills · Agents · Workflows"]
+  A --> VCS["scripts/vcs/ — PR/MR adapter"]
+  A --> TRK["scripts/tracker/ — ticket adapter"]
+  VCS --> GH["GitHub · gh"]
+  VCS --> GL["GitLab · glab"]
+  TRK --> NO[Notion]
+  TRK --> JI[Jira]
+  NEW["+ Bitbucket / Linear — one new file"]
+  VCS -.-> NEW
+  TRK -.-> NEW</pre>
+      <figcaption>One stable CLI; the adapter picks the provider. New host = one new <code>&lt;provider&gt;.sh</code>.</figcaption>
+      <script type="application/json" class="export-data">{"type":"diagram","diagramType":"flowchart","title":"Adapter architecture","source":"flowchart TD\n  A[\"Skills · Agents · Workflows\"]\n  A --> VCS[\"scripts/vcs/ — PR/MR adapter\"]\n  A --> TRK[\"scripts/tracker/ — ticket adapter\"]\n  VCS --> GH[\"GitHub · gh\"]\n  VCS --> GL[\"GitLab · glab\"]\n  TRK --> NO[Notion]\n  TRK --> JI[Jira]\n  NEW[\"+ Bitbucket / Linear — one new file\"]\n  VCS -.-> NEW\n  TRK -.-> NEW","nodes":{"A":{"label":"Skills · Agents · Workflows","detail":"They call a stable CLI surface — never a provider tool directly."},"VCS":{"label":"VCS adapter","detail":"scripts/vcs/ — open/comment/merge PRs. Dispatches by VCS_PROVIDER, auto-detected from the origin remote."},"TRK":{"label":"Tracker adapter","detail":"scripts/tracker/ — read/write tickets. Dispatches by TRACKER_PROVIDER from scripts/tracker/.env."},"GH":{"label":"GitHub","url":"https://cli.github.com","detail":"Implemented via the gh CLI."},"GL":{"label":"GitLab","url":"https://gitlab.com/gitlab-org/cli","detail":"Implemented via the glab CLI."},"NO":{"label":"Notion","url":"https://www.notion.so","detail":"Tickets as Notion database pages."},"JI":{"label":"Jira","url":"https://www.atlassian.com/software/jira","detail":"Tickets via Jira fields + status transitions."},"NEW":{"label":"Add a provider","detail":"Drop one new file under scripts/<axis>/ implementing the interface; nothing else changes."}},"walkthrough":["A","VCS","GH","TRK","NO","NEW"]}</script>
+    </figure>
+
+    <h3>What you can swap</h3>
+    <table>
+      <thead><tr><th>Axis</th><th>Choices</th><th>Where it's set</th></tr></thead>
+      <tbody>
+        <tr><td><b>Version control</b></td><td>GitHub (<code>gh</code>) · GitLab (<code>glab</code>)</td><td><code>scripts/vcs/</code> + <code>vcs.provider</code> (auto-detects from <code>origin</code>)</td></tr>
+        <tr><td><b>Auto-merge</b></td><td>on · off (+ per-repo override)</td><td><code>vcs.auto_merge</code> + <code>products[].repos[].auto_merge</code></td></tr>
+        <tr><td><b>Issue tracker</b></td><td>Notion · Jira</td><td><code>scripts/tracker/</code> + <code>tracker.*</code> + <code>.env</code></td></tr>
+        <tr><td><b>Quality gate</b></td><td>SonarQube · none</td><td><code>quality_gate.provider</code> + per-repo <code>guard</code></td></tr>
+        <tr><td><b>Distribution</b></td><td>Firebase · custom · none</td><td>per-repo <code>distribute</code></td></tr>
+        <tr><td><b>Repos / identity</b></td><td>yours (just the URLs)</td><td><code>workspace.config.yaml</code> <code>products[].repos[]</code> (<code>mani.d/</code> is generated)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout" data-variant="warning" data-block="callout">
+      <div class="callout-title">⚠️ Keep the workflow CONFIG block in sync</div>
+      <div>Workflow scripts can't read the filesystem, so <code>.claude/workflows/dev-cycle.js</code> carries its
+        <em>own</em> copy of the repo list, ticket prefix, and status names in a <code>── CONFIG ──</code> block.
+        When you change <code>workspace.config.yaml</code>, mirror it there too.</div>
+      <script type="application/json" class="export-data">
+        {"type":"callout","variant":"warning","md":"**Keep the workflow CONFIG block in sync** — workflow scripts can't read the filesystem, so `.claude/workflows/dev-cycle.js` carries its own copy of the repo list, ticket prefix, and status names in a `── CONFIG ──` block. When you change `workspace.config.yaml`, mirror it there too."}
+      </script>
+    </div>
+  </section>
+
+  <!-- 6. WHY (comparison) -->
+  <section class="doc-section" data-section data-section-title="Why a whole team, not one agent?" data-section-id="why" data-block="comparison">
+    <h2><span class="num">06</span>Why a whole team, not one agent?</h2>
+    <p>A single capable agent can write code. But shipping a multi-repo product needs coordination,
+      specialized review, and a paper trail. Here's how the orchestrated team compares with the alternatives.</p>
+    <div class="compare">
+      <div class="compare-card is-recommended">
+        <span class="badge">Recommended</span>
+        <h4>aiworks — orchestrated team</h4>
+        <ul class="pros">
+          <li>Coordinates many repos in dependency order, automatically</li>
+          <li>Built-in review + security + performance gates</li>
+          <li>Portable across hosts/trackers via adapters</li>
+          <li>End-to-end traceability: ticket → PR → ship</li>
+        </ul>
+        <ul class="cons"><li>One-time config to stand up</li></ul>
+      </div>
+      <div class="compare-card">
+        <h4>Single coding agent</h4>
+        <ul class="pros"><li>Zero setup</li><li>Fine for a quick, one-repo change</li></ul>
+        <ul class="cons"><li>No cross-repo coordination</li><li>Ad-hoc quality &amp; traceability</li></ul>
+      </div>
+      <div class="compare-card">
+        <h4>Manual process</h4>
+        <ul class="pros"><li>Full human judgement</li><li>No new tooling</li></ul>
+        <ul class="cons"><li>Slow &amp; people-bound</li><li>Consistency varies by person/day</li></ul>
+      </div>
+    </div>
+    <script type="application/json" class="export-data">
+      {"type":"comparison","title":"Orchestrated team vs single agent vs manual",
+       "options":["aiworks (orchestrated team)","Single coding agent","Manual process"],
+       "criteria":[
+         {"name":"Multi-repo coordination","values":["Automatic (waves + cross-repo merge)","One repo at a time","Human-coordinated"]},
+         {"name":"Specialized quality gates","values":["Built-in: review + security + perf","Ad-hoc","Depends on team"]},
+         {"name":"Provider portability","values":["Swap via adapters","Hardcoded per use","N/A"]},
+         {"name":"Traceability (ticket→PR→ship)","values":["End-to-end, logged","Partial","Manual"]},
+         {"name":"Setup cost","values":["One-time config","None","High (people)"]},
+         {"name":"Consistency at scale","values":["High","Variable","Variable"]}],
+       "recommended":"aiworks (orchestrated team)",
+       "rationale":"For a multi-repo product with a real status board and code host, the orchestrated team gives you specialization, gates, and traceability a single agent can't — at the price of a one-time config you do once. For a throwaway one-repo edit, a single agent is fine."}
+    </script>
+  </section>
+
+  <!-- 7. IMPLEMENTATION PLAN (AI-preview) -->
+  <section class="doc-section" data-section data-section-title="Implementation Plan — stand up aiworks for your org" data-section-id="implementation-plan">
+    <h2><span class="num">07</span>Implementation Plan <small style="color:var(--color-muted); font-weight:400; font-size:14px; font-family:var(--font-sans)">— stand up aiworks for your org (AI-previewable)</small></h2>
+    <p>Concrete steps to instantiate this template for a new organization. Each names the real file to touch;
+      the final step is the acceptance check that proves the wiring works without any destructive operation.</p>
+    <div class="plan" data-block="steps">
+      <ol>
+        <li><b>Set identity &amp; providers.</b> <span class="target">workspace.config.yaml</span> (copy from <span class="target">workspace.config.example.yaml</span>) — fill <code>org</code>, <code>vcs.provider</code> + <code>vcs.auto_merge</code>, <code>tracker.provider</code> + <code>ticket_prefix</code> + <code>statuses</code>, <code>branch_model</code>, <code>quality_gate</code>. Then de-brand <span class="target">CLAUDE.md</span> placeholders.</li>
+        <li><b>Declare your repos.</b> Add each repo's <b>URL</b> (+ <code>kind</code>) under <code>products[].repos[]</code> in <span class="target">workspace.config.yaml</span> — that's the whole declaration (<code>mani.d/</code> is generated from it). Or run <code>scripts/aiworks add --url &lt;git-url&gt; --product &lt;name&gt; --kind &lt;flutter-app|appium-e2e|generic&gt;</code> to add one repo imperatively.</li>
+        <li><b>Wire the tracker.</b> <span class="target">scripts/tracker/.env</span> (from <code>.env.example</code>) — set <code>TRACKER_PROVIDER</code> and its block; fill the ids/status names in <span class="target">docs/agents/issue-tracker.md</span>.</li>
+        <li><b>Wire version control.</b> <code>gh auth login</code> or <code>glab auth login</code> — the provider auto-detects from the <code>origin</code> remote (override via <span class="target">scripts/vcs/.env</span>).</li>
+        <li><b>Onboard the repos.</b> <code>scripts/aiworks sync</code> reads <code>products[].repos[]</code> and sets each repo up end-to-end (generates <code>mani.d/</code>, clones, codegraph index, skill packs, hooks, <code>CLAUDE.md</code> + <code>scripts/dev.sh</code>). Idempotent — re-run any time.</li>
+        <li><b>Mirror the workflow CONFIG.</b> <span class="target">.claude/workflows/dev-cycle.js</span> — edit the <code>── CONFIG ──</code> block (<code>REPOS</code>, <code>TICKET_PREFIX</code>, <code>AUTO_MERGE</code>, <code>STATUS</code>) to match the yaml, since workflows can't read the filesystem (<code>aiworks add</code> prints a paste-ready <code>REPOS</code> entry). Then adapt the stack-specific skills (<span class="target">.claude/skills/coding-feature</span>, <span class="target">coding-automate</span>, <span class="target">plan-appium-automate</span>) to your stack.</li>
+        <li><b>Acceptance — verify the wiring (no destructive ops):</b> <code>scripts/tracker/get-ticket-details.sh &lt;KEY&gt;</code> prints a ticket · <code>scripts/vcs/default-branch.sh</code> prints the base branch · <code>node --check .claude/workflows/dev-cycle.js</code> passes · then <code>/dev-cycle &lt;KEY&gt; --dry-run</code> runs through build &amp; gates without merging.</li>
+      </ol>
+      <script type="application/json" class="export-data">
+      {"type":"steps","title":"Implementation Plan — stand up aiworks for your org",
+       "steps":[
+         {"title":"Set identity & providers","md":"`workspace.config.yaml` (copy from `workspace.config.example.yaml`) — fill `org`, `vcs.provider` + `vcs.auto_merge`, `tracker.provider` + `ticket_prefix` + `statuses`, `branch_model`, `quality_gate`. De-brand `CLAUDE.md` placeholders."},
+         {"title":"Declare your repos","md":"Add each repo's URL (+ `kind`) under `products[].repos[]` in `workspace.config.yaml` — that's the whole declaration (`mani.d/` is generated). Or run `scripts/aiworks add --url <git-url> --product <name> --kind <flutter-app|appium-e2e|generic>` for one repo."},
+         {"title":"Wire the tracker","md":"`scripts/tracker/.env` (from `.env.example`) — set `TRACKER_PROVIDER` + its block; fill ids/status names in `docs/agents/issue-tracker.md`."},
+         {"title":"Wire version control","md":"`gh auth login` or `glab auth login` — provider auto-detects from the `origin` remote (override via `scripts/vcs/.env`)."},
+         {"title":"Onboard the repos","md":"`scripts/aiworks sync` reads `products[].repos[]` and sets each repo up end-to-end (generates `mani.d/`, clones, codegraph index, skill packs, hooks, `CLAUDE.md` + `scripts/dev.sh`). Idempotent — re-run any time."},
+         {"title":"Mirror the workflow CONFIG & adapt skills","md":"`.claude/workflows/dev-cycle.js` — edit the `── CONFIG ──` block (`REPOS`, `TICKET_PREFIX`, `AUTO_MERGE`, `STATUS`) to match the yaml (`aiworks add` prints a paste-ready entry). Then adapt `.claude/skills/{coding-feature,coding-automate,plan-appium-automate}` to your stack."},
+         {"title":"Acceptance — verify wiring (no destructive ops)","md":"`scripts/tracker/get-ticket-details.sh <KEY>` prints a ticket; `scripts/vcs/default-branch.sh` prints the base branch; `node --check .claude/workflows/dev-cycle.js` passes; then `/dev-cycle <KEY> --dry-run` runs build & gates without merging."}]}
+      </script>
+    </div>
+  </section>
+
+  <p class="foot">Generated for the <code>workspace-template</code> · open in any browser · use the export buttons
+    (top-right for the whole page; hover a section for its own) to pull this into Markdown/JSON for an AI.</p>
+
+</main>
+
+<!-- Mermaid (CDN), themed for the dark palette -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad:true, theme:"base", securityLevel:"loose",
+    themeVariables:{
+      fontFamily:"Inter, sans-serif",
+      background:"#141926",
+      primaryColor:"#1c2334", primaryTextColor:"#e8ecf8", primaryBorderColor:"#7c6cff",
+      lineColor:"#95a0bd", secondaryColor:"#22304a", tertiaryColor:"#0d1119",
+      clusterBkg:"#11151f", clusterBorder:"#28314c",
+      titleColor:"#22d3ee", edgeLabelBackground:"#141926", nodeBorder:"#7c6cff"
+    }
+  });
+</script>
+
+<!-- Tab switching -->
+<script>
+  document.querySelectorAll(".tabs").forEach((t)=>{
+    const btns=t.querySelectorAll(".tabs-nav button");
+    const panels=t.querySelectorAll(".tab-panel");
+    btns.forEach((b,i)=>b.addEventListener("click",()=>{
+      btns.forEach((x,j)=>{x.setAttribute("aria-selected",j===i); panels[j].hidden=j!==i;});
+    }));
+  });
+</script>
+
+<!-- ===== Export engine (inlined from assets/export-engine.js) ===== -->
+<script>
+/*
+ * Interactive Docs — Export Engine (self-contained, no dependencies)
+ * --------------------------------------------------------------------
+ * Gives any generated doc two superpowers, both AI-friendly:
+ *   • Export to Markdown   (clean prose an LLM can read as a prompt)
+ *   • Export to JSON        (a structured tree an LLM can parse)
+ * …at two scopes:
+ *   • the WHOLE page
+ *   • a SINGLE section
+ * …via two actions:
+ *   • download a file
+ *   • copy to clipboard (great for pasting straight into another prompt)
+ *
+ * INLINE this whole file inside a <script> tag in the generated .html so the
+ * doc stays a single shareable file. Do NOT link it as an external src.
+ *
+ * ── How it reads the document ──────────────────────────────────────────────
+ * The page root:      <main data-doc data-doc-title="My Doc">
+ * Each section:       <section class="doc-section" data-section
+ *                              data-section-title="Overview" data-section-id="overview">
+ *
+ * Standard HTML inside a section converts automatically:
+ *   h1–h6, p, ul/ol/li (nested ok), table, pre>code, blockquote, hr,
+ *   a, img, strong/b, em/i, code.
+ *
+ * Rich components (diagrams, charts, comparisons, tabs, callouts) can't be
+ * reverse-engineered from their pixels, so each one carries a canonical export
+ * representation in a hidden JSON island — the single source of truth for export:
+ *
+ *   <figure data-block="diagram">
+ *     ...visual...
+ *     <script type="application/json" class="export-data">
+ *       {"type":"diagram","diagramType":"flowchart","title":"Auth flow",
+ *        "source":"graph TD; A-->B"}
+ *     <\/script>
+ *   </figure>
+ *
+ * If a block has an export-data island, the engine trusts it and ignores the
+ * visual DOM for that block. See renderBlockMd()/normalizeBlock() for the
+ * per-type schemas. Authoring tip: write the island FIRST, then build the
+ * visual from the same data, so the two never drift apart.
+ */
+(function () {
+  "use strict";
+
+  /* ----------------------------- helpers ---------------------------------- */
+
+  const slug = (s) =>
+    (s || "section")
+      .toLowerCase()
+      .replace(/[^\w]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "section";
+
+  const txt = (el) => (el.textContent || "").replace(/\s+/g, " ").trim();
+
+  function toast(msg) {
+    let t = document.querySelector(".wid-toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.className = "wid-toast";
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add("is-on");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove("is-on"), 1600);
+  }
+
+  function download(name, mime, content) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Copied to clipboard");
+    } catch (e) {
+      // Fallback for non-secure contexts / older browsers
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); toast("Copied to clipboard"); }
+      catch (_) { toast("Copy failed — select & copy manually"); }
+      ta.remove();
+    }
+  }
+
+  /* ----------------- inline (bold / italic / code / link) ----------------- */
+
+  function inlineMd(node) {
+    let out = "";
+    node.childNodes.forEach((n) => {
+      if (n.nodeType === 3) {
+        out += n.nodeValue.replace(/\s+/g, " ");
+      } else if (n.nodeType === 1) {
+        const tag = n.tagName.toLowerCase();
+        const inner = inlineMd(n);
+        if (tag === "strong" || tag === "b") out += `**${inner.trim()}**`;
+        else if (tag === "em" || tag === "i") out += `*${inner.trim()}*`;
+        else if (tag === "code") out += "`" + txt(n) + "`";
+        else if (tag === "a") out += `[${inner.trim()}](${n.getAttribute("href") || ""})`;
+        else if (tag === "br") out += "  \n";
+        else if (tag === "img")
+          out += `![${n.getAttribute("alt") || ""}](${n.getAttribute("src") || ""})`;
+        else out += inner;
+      }
+    });
+    return out;
+  }
+
+  function listMd(listEl, depth) {
+    const ordered = listEl.tagName.toLowerCase() === "ol";
+    let i = 1, lines = [];
+    [...listEl.children].forEach((li) => {
+      if (li.tagName.toLowerCase() !== "li") return;
+      const sub = li.querySelector(":scope > ul, :scope > ol");
+      const own = [...li.childNodes]
+        .filter((c) => !(c.nodeType === 1 && /^(ul|ol)$/i.test(c.tagName)))
+        .map((c) => (c.nodeType === 1 ? inlineMd(c) : (c.nodeValue || "")))
+        .join("")
+        .replace(/\s+/g, " ")
+        .trim();
+      const bullet = ordered ? `${i++}.` : "-";
+      lines.push(`${"  ".repeat(depth)}${bullet} ${own}`);
+      if (sub) lines.push(listMd(sub, depth + 1));
+    });
+    return lines.join("\n");
+  }
+
+  function tableMd(tableEl) {
+    const rows = [...tableEl.querySelectorAll("tr")].map((tr) =>
+      [...tr.children].map((c) => inlineMd(c).trim().replace(/\|/g, "\\|"))
+    );
+    if (!rows.length) return "";
+    const head = rows[0];
+    const body = rows.slice(1);
+    const sep = head.map(() => "---");
+    const fmt = (r) => `| ${r.join(" | ")} |`;
+    return [fmt(head), fmt(sep), ...body.map(fmt)].join("\n");
+  }
+
+  /* ----------------------- rich-block markdown ---------------------------- */
+
+  function renderBlockMd(b) {
+    switch (b.type) {
+      case "diagram": {
+        const parts = [];
+        if (b.title) parts.push(`**${b.title}**`);
+        parts.push("```mermaid\n" + (b.source || "").trim() + "\n```");
+        // Interactive node info (detail / navigation / link) so the export keeps
+        // what a reader would discover by clicking the diagram.
+        if (b.nodes && typeof b.nodes === "object") {
+          const rows = Object.keys(b.nodes).map((k) => {
+            const v = b.nodes[k] || {};
+            if (!(v.detail || v.section || v.url)) return null;
+            const dest = v.section ? ` _(→ ${v.section})_` : v.url ? ` _(→ ${v.url})_` : "";
+            return `- **${v.label || k}**${dest}${v.detail ? " — " + v.detail : ""}`;
+          }).filter(Boolean);
+          if (rows.length) parts.push("_Nodes:_\n" + rows.join("\n"));
+        }
+        return parts.join("\n\n");
+      }
+
+      case "chart": {
+        const lines = [];
+        if (b.title) lines.push(`**${b.title}**  _(chart: ${b.chartType || "bar"})_\n`);
+        const ds = b.datasets || [];
+        const head = ["", ...ds.map((d) => d.label || "value")];
+        lines.push(`| ${head.join(" | ")} |`);
+        lines.push(`| ${head.map(() => "---").join(" | ")} |`);
+        (b.labels || []).forEach((lab, i) => {
+          lines.push(`| ${lab} | ${ds.map((d) => (d.data || [])[i] ?? "").join(" | ")} |`);
+        });
+        return lines.join("\n");
+      }
+
+      case "comparison": {
+        const lines = [];
+        if (b.title) lines.push(`**${b.title}**\n`);
+        const opts = b.options || [];
+        lines.push(`| Criterion | ${opts.join(" | ")} |`);
+        lines.push(`| ${["---", ...opts.map(() => "---")].join(" | ")} |`);
+        (b.criteria || []).forEach((c) => {
+          lines.push(`| ${c.name} | ${(c.values || []).join(" | ")} |`);
+        });
+        if (b.recommended) lines.push(`\n✅ **Recommended: ${b.recommended}**`);
+        if (b.rationale) lines.push(`\n${b.rationale}`);
+        return lines.join("\n");
+      }
+
+      case "tabs":
+        return (b.tabs || [])
+          .map((t) => `##### ${t.label}\n\n${(t.md || "").trim()}`)
+          .join("\n\n");
+
+      case "callout": {
+        const icon = { info: "ℹ️", tip: "💡", warning: "⚠️", danger: "🛑", success: "✅" }[b.variant] || "ℹ️";
+        const label = (b.variant || "note").toUpperCase();
+        const body = (b.md || "").trim().split("\n").map((l) => `> ${l}`).join("\n");
+        return `> ${icon} **${label}**\n${body}`;
+      }
+
+      case "steps":
+        return (b.steps || []).map((s, i) => `${i + 1}. **${s.title || ""}** ${s.md || ""}`.trim()).join("\n");
+
+      case "kpis":
+        return (b.items || []).map((k) => `- **${k.value}** — ${k.label}`).join("\n");
+
+      default:
+        // Unknown rich type: dump its markdown field, else JSON.
+        return b.md || "```json\n" + JSON.stringify(b, null, 2) + "\n```";
+    }
+  }
+
+  /* ------------- walk a section's DOM into ordered blocks ----------------- */
+
+  function blockFromIsland(host) {
+    const island = host.querySelector(":scope > script.export-data");
+    if (!island) return null;
+    try { return JSON.parse(island.textContent); }
+    catch (e) { return null; }
+  }
+
+  // Returns array of {type, ...} block objects in document order.
+  function readBlocks(scope) {
+    const blocks = [];
+    const walk = (node) => {
+      [...node.children].forEach((el) => {
+        const tag = el.tagName.toLowerCase();
+        // A rich block declares itself with data-block + an export-data island.
+        if (el.hasAttribute("data-block")) {
+          const island = blockFromIsland(el);
+          if (island) { blocks.push(island); return; }
+        }
+        if (/^h[1-6]$/.test(tag)) {
+          blocks.push({ type: "heading", level: +tag[1], text: inlineMd(el).trim() });
+        } else if (tag === "p") {
+          const t = inlineMd(el).trim();
+          if (t) blocks.push({ type: "prose", md: t });
+        } else if (tag === "ul" || tag === "ol") {
+          blocks.push({ type: "list", ordered: tag === "ol", md: listMd(el, 0) });
+        } else if (tag === "table") {
+          blocks.push({ type: "table", md: tableMd(el) });
+        } else if (tag === "pre") {
+          const code = el.querySelector("code");
+          const lang = (code && (code.getAttribute("data-lang") ||
+            (code.className.match(/language-([\w-]+)/) || [])[1])) || "";
+          blocks.push({ type: "code", lang, text: (code || el).textContent.replace(/\s+$/, "") });
+        } else if (tag === "blockquote") {
+          blocks.push({ type: "quote", md: inlineMd(el).trim() });
+        } else if (tag === "hr") {
+          blocks.push({ type: "rule" });
+        } else if (tag === "figure" || tag === "figcaption" || tag === "div" || tag === "section") {
+          // containers without an island: descend
+          walk(el);
+        }
+      });
+    };
+    walk(scope);
+    return blocks;
+  }
+
+  function blockToMd(b) {
+    switch (b.type) {
+      case "heading": return `${"#".repeat(b.level)} ${b.text}`;
+      case "prose": return b.md;
+      case "list": return b.md;
+      case "table": return b.md;
+      case "code": return "```" + (b.lang || "") + "\n" + b.text + "\n```";
+      case "quote": return b.md.split("\n").map((l) => `> ${l}`).join("\n");
+      case "rule": return "---";
+      default: return renderBlockMd(b);
+    }
+  }
+
+  /* ----------------------------- assemble --------------------------------- */
+
+  function sectionModel(sectionEl) {
+    const title =
+      sectionEl.getAttribute("data-section-title") ||
+      txt(sectionEl.querySelector("h1,h2,h3")) ||
+      "Section";
+    const id = sectionEl.getAttribute("data-section-id") || slug(title);
+    // Defensive: a section may itself be tagged as a single rich block
+    // (e.g. <section data-block="comparison">). Trust its island if so.
+    const ownIsland = sectionEl.hasAttribute("data-block") ? blockFromIsland(sectionEl) : null;
+    return { id, title, blocks: ownIsland ? [ownIsland] : readBlocks(sectionEl) };
+  }
+
+  function pageModel() {
+    const root = document.querySelector("[data-doc]") || document.body;
+    return {
+      title: root.getAttribute("data-doc-title") || document.title || "Document",
+      generatedFor: root.getAttribute("data-doc-project") || null,
+      sections: [...root.querySelectorAll("[data-section]")].map(sectionModel),
+    };
+  }
+
+  function sectionMd(model) {
+    const lines = [];
+    // If the section has no leading heading block, synthesize one from its title
+    // so the title is never lost — and never doubled when an <h2> already exists.
+    if (!(model.blocks[0] && model.blocks[0].type === "heading")) {
+      lines.push(`## ${model.title}`);
+    }
+    model.blocks.forEach((b) => { lines.push(blockToMd(b)); });
+    return lines.join("\n\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  }
+
+  function pageMd(model) {
+    const out = [`# ${model.title}`];
+    if (model.generatedFor) out.push(`_Generated for: ${model.generatedFor}_`);
+    model.sections.forEach((s) => out.push(sectionMd(s)));
+    return out.join("\n\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  }
+
+  /* ------------------------------ exports --------------------------------- */
+
+  function exportPage(fmt, action) {
+    const model = pageModel();
+    const base = slug(model.title);
+    if (fmt === "json") {
+      const s = JSON.stringify(model, null, 2);
+      action === "copy" ? copy(s) : download(`${base}.json`, "application/json", s);
+    } else {
+      const s = pageMd(model);
+      action === "copy" ? copy(s) : download(`${base}.md`, "text/markdown", s);
+    }
+  }
+
+  function exportSection(sectionEl, fmt, action) {
+    const model = sectionModel(sectionEl);
+    const base = slug(model.title);
+    if (fmt === "json") {
+      const s = JSON.stringify(model, null, 2);
+      action === "copy" ? copy(s) : download(`${base}.json`, "application/json", s);
+    } else {
+      const s = sectionMd(model); // sectionMd already emits the title
+      action === "copy" ? copy(s) : download(`${base}.md`, "text/markdown", s);
+    }
+  }
+
+  /* --------------------------- wire the UI -------------------------------- */
+
+  function btn(label, title, onClick) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "wid-btn";
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  function buildSectionControls(sectionEl) {
+    if (sectionEl.querySelector(":scope > .wid-section-tools")) return;
+    const bar = document.createElement("div");
+    bar.className = "wid-section-tools";
+    bar.setAttribute("aria-label", "Export this section");
+    bar.append(
+      btn("⧉ MD", "Copy this section as Markdown", () => exportSection(sectionEl, "md", "copy")),
+      btn("↓ MD", "Download this section as Markdown", () => exportSection(sectionEl, "md", "download")),
+      btn("↓ JSON", "Download this section as JSON", () => exportSection(sectionEl, "json", "download"))
+    );
+    sectionEl.prepend(bar);
+  }
+
+  function buildGlobalToolbar() {
+    // Honour an author-provided toolbar if present (buttons with data-wid-action),
+    // otherwise inject a floating one.
+    const declared = document.querySelectorAll("[data-wid-action]");
+    if (declared.length) {
+      declared.forEach((el) => {
+        const [scope, fmt, action] = (el.getAttribute("data-wid-action") || "").split(":");
+        el.addEventListener("click", () =>
+          scope === "page"
+            ? exportPage(fmt, action || "download")
+            : exportSection(el.closest("[data-section]"), fmt, action || "download")
+        );
+      });
+      return;
+    }
+    const bar = document.createElement("div");
+    bar.className = "wid-toolbar";
+    bar.setAttribute("role", "toolbar");
+    bar.setAttribute("aria-label", "Export document");
+    const lab = document.createElement("span");
+    lab.className = "wid-toolbar-label";
+    lab.textContent = "Export page:";
+    bar.append(
+      lab,
+      btn("⧉ MD", "Copy whole page as Markdown", () => exportPage("md", "copy")),
+      btn("↓ MD", "Download whole page as Markdown", () => exportPage("md", "download")),
+      btn("↓ JSON", "Download whole page as JSON", () => exportPage("json", "download"))
+    );
+    document.body.appendChild(bar);
+  }
+
+  function init() {
+    buildGlobalToolbar();
+    document.querySelectorAll("[data-section]").forEach(buildSectionControls);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+
+  // Expose for programmatic use / debugging.
+  window.WID = { exportPage, exportSection, pageModel, pageMd };
+})();
+
+</script>
+
+<!-- ===== Diagram interaction engine (inlined from assets/diagram-interactions.js) ===== -->
+<script>
+/*
+ * Interactive Docs — Diagram Interaction Engine (self-contained, no deps)
+ * ----------------------------------------------------------------------
+ * Turns every static Mermaid diagram into something the reader can EXPLORE,
+ * not just look at. Auto-applied to each `figure.diagram` once Mermaid renders:
+ *
+ *   • Zoom & pan + reset + fullscreen   — big diagrams become legible
+ *   • Hover spotlight                    — hovering a node dims the rest
+ *   • Clickable nodes                    — a node can jump to a section,
+ *                                          open a detail drawer, or open a URL
+ *   • Guided walkthrough (optional)      — ◀ ▶ step through a flow node-by-node
+ *
+ * INLINE this whole file in a <script> tag (it injects its own CSS), AFTER the
+ * Mermaid <script>. It waits for Mermaid to finish via a MutationObserver, so it
+ * doesn't matter whether Mermaid runs on load or you call mermaid.run() yourself.
+ *
+ * ── Where the interactivity comes from ─────────────────────────────────────
+ * Zoom/pan/hover/fullscreen need NO authoring — they apply to every diagram.
+ * Click actions + walkthrough are declared in the diagram's export-data island,
+ * keyed by each node's id OR its visible label (whichever is handier):
+ *
+ *   <figure class="diagram" data-block="diagram">
+ *     <pre class="mermaid">flowchart TD
+  A["Skills · Agents · Workflows"]
+  A --> VCS["scripts/vcs/ — PR/MR adapter"]
+  A --> TRK["scripts/tracker/ — ticket adapter"]
+  VCS --> GH["GitHub · gh"]
+  VCS --> GL["GitLab · glab"]
+  TRK --> NO[Notion]
+  TRK --> JI[Jira]
+  NEW["+ Bitbucket / Linear — one new file"]
+  VCS -.-> NEW
+  TRK -.-> NEW</pre>
+ *     <script type="application/json" class="export-data">
+ *       {"type":"diagram","diagramType":"flowchart","title":"Save flow",
+ *        "source":"flowchart LR\n U[Pet owner] --> A[App] --> DB[(Local DB)]",
+ *        "nodes":{
+ *          "Pet owner":{"detail":"The person using the app to log a meal."},
+ *          "App":{"section":"architecture","detail":"The offline-first Flutter client."},
+ *          "Local DB":{"url":"https://isar.dev","detail":"Isar — the on-device store."}
+ *        },
+ *        "walkthrough":["Pet owner","App","Local DB"]}
+ *     <\/script>
+ *   </figure>
+ *
+ * Per-node config (all optional): { section, url, detail, label }
+ *   • section  → click scrolls to [data-section-id="…"] and pulses it
+ *   • url      → click opens the link in a new tab
+ *   • detail   → click opens a side drawer rendering this markdown
+ *   • label    → friendly title for the drawer + the Markdown export
+ * `walkthrough` is an ordered list of node keys for the ◀ ▶ guided tour.
+ *
+ * The island stays the single source of truth: the export engine reads the same
+ * `nodes`/detail into the Markdown/JSON export, so the interactive content isn't
+ * lost when the doc is handed to an AI.
+ *
+ * For Mermaid-native click directives (advanced), set securityLevel:"loose" and
+ * use `click X call widGo("section-id")` / `click X "https://…"`. The handlers
+ * widGo() and widInfo() are exposed globally for that path.
+ */
+(function () {
+  "use strict";
+
+  var REDUCED = typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ----------------------------- styles ---------------------------------- */
+  function injectCSS() {
+    if (document.getElementById("wid-dgm-css")) return;
+    var css = `
+    .wid-dgm-viewport{position:relative; overflow:hidden; max-height:72vh; border-radius:12px;
+      background:var(--color-surface-2,rgba(127,127,127,.06)); cursor:grab; touch-action:none}
+    .wid-dgm-viewport.is-panning{cursor:grabbing}
+    .wid-dgm-viewport > .mermaid{margin:0}
+    .wid-dgm-viewport > .mermaid > svg{transform-origin:0 0; will-change:transform; max-width:none!important; height:auto}
+    .wid-dgm-tools{position:absolute; top:8px; right:8px; z-index:3; display:flex; gap:4px; align-items:center}
+    .wid-dgm-tools button{font:inherit; font-size:13px; line-height:1; cursor:pointer; width:30px; height:30px;
+      display:grid; place-items:center; border:1px solid var(--color-border,rgba(127,127,127,.3));
+      background:var(--color-surface,#fff); color:var(--color-text,#222); border-radius:8px; box-shadow:0 1px 2px rgba(0,0,0,.12)}
+    .wid-dgm-tools button:hover{border-color:var(--color-primary,#3a6df0); color:var(--color-primary,#3a6df0)}
+    .wid-dgm-walk{display:flex; gap:4px; align-items:center; margin-right:6px;
+      background:var(--color-surface,#fff); border:1px solid var(--color-border,rgba(127,127,127,.3));
+      border-radius:999px; padding:2px 4px; box-shadow:0 1px 2px rgba(0,0,0,.12)}
+    .wid-dgm-walk .lbl{font-size:12px; color:var(--color-muted,#667); padding:0 4px; min-width:54px; text-align:center}
+    .wid-dgm-hint{position:absolute; left:10px; bottom:8px; z-index:3; font-size:11px; color:var(--color-muted,#778);
+      background:var(--color-surface,#fff); border:1px solid var(--color-border,rgba(127,127,127,.25));
+      border-radius:999px; padding:2px 9px; opacity:.85; pointer-events:none}
+    /* hover spotlight + click affordance (Mermaid node groups carry class "node") */
+    .wid-dim .node{opacity:.3; transition:${REDUCED ? "none" : "opacity .15s"}}
+    .wid-dim .node.wid-hot{opacity:1}
+    .wid-dim .edgePaths,.wid-dim .edgeLabels,.wid-dim .relation,.wid-dim .messageLine0,.wid-dim .messageLine1{opacity:.18}
+    .node.wid-act{cursor:pointer}
+    .node.wid-act:focus{outline:none}
+    .node.wid-act:hover :is(rect,circle,polygon,path,ellipse){stroke-width:2.4px}
+    .node.wid-act:focus-visible :is(rect,circle,polygon,path,ellipse){stroke-width:2.6px; stroke-dasharray:4 2}
+    .node.wid-hot :is(rect,circle,polygon,path,ellipse){filter:drop-shadow(0 0 6px var(--color-accent,#22c3d6))}
+    /* section pulse when a node navigates to it */
+    @keyframes wid-flash{0%{box-shadow:0 0 0 0 var(--color-accent,#22c3d6)}100%{box-shadow:0 0 0 8px transparent}}
+    .wid-flash{animation:${REDUCED ? "none" : "wid-flash 1.1s ease-out"}; border-radius:12px}
+    /* fullscreen */
+    .wid-dgm-viewport.is-fs{position:fixed; inset:14px; max-height:none; z-index:80; box-shadow:0 20px 80px rgba(0,0,0,.5)}
+    /* detail drawer */
+    .wid-dgm-panel{position:fixed; top:0; right:0; height:100%; width:min(420px,92vw); z-index:90;
+      background:var(--color-surface,#fff); color:var(--color-text,#222);
+      border-left:1px solid var(--color-border,rgba(127,127,127,.3)); box-shadow:-12px 0 40px rgba(0,0,0,.25);
+      transform:translateX(102%); transition:${REDUCED ? "none" : "transform .22s ease"}; display:flex; flex-direction:column}
+    .wid-dgm-panel.is-open{transform:none}
+    .wid-dgm-panel header{display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:16px 18px; border-bottom:1px solid var(--color-border,rgba(127,127,127,.25))}
+    .wid-dgm-panel header h3{margin:0; font-size:18px}
+    .wid-dgm-panel header button{border:none; background:none; font-size:22px; cursor:pointer; color:var(--color-muted,#667); line-height:1}
+    .wid-dgm-panel .body{padding:16px 18px; overflow:auto; line-height:1.6}
+    .wid-dgm-panel .body code{font-family:ui-monospace,monospace; font-size:.9em;
+      background:var(--color-surface-2,rgba(127,127,127,.12)); padding:1px 5px; border-radius:5px}
+    .wid-dgm-panel .body a{color:var(--color-primary,#3a6df0)}
+    .wid-dgm-scrim{position:fixed; inset:0; z-index:89; background:rgba(0,0,0,.18); opacity:0; pointer-events:none;
+      transition:${REDUCED ? "none" : "opacity .2s"}}
+    .wid-dgm-scrim.is-open{opacity:1; pointer-events:auto}
+    `;
+    var s = document.createElement("style");
+    s.id = "wid-dgm-css"; s.textContent = css;
+    document.head.appendChild(s);
+  }
+
+  /* --------------------- tiny markdown for the drawer --------------------- */
+  function mdInline(s) {
+    return s
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+  function mdToHtml(md) {
+    var lines = String(md || "").split("\n"), html = [], list = false;
+    lines.forEach(function (ln) {
+      if (/^\s*[-*]\s+/.test(ln)) {
+        if (!list) { html.push("<ul>"); list = true; }
+        html.push("<li>" + mdInline(ln.replace(/^\s*[-*]\s+/, "")) + "</li>");
+      } else {
+        if (list) { html.push("</ul>"); list = false; }
+        if (ln.trim() === "") html.push("");
+        else html.push("<p>" + mdInline(ln) + "</p>");
+      }
+    });
+    if (list) html.push("</ul>");
+    return html.join("\n");
+  }
+
+  /* ----------------------------- drawer ----------------------------------- */
+  var panel, scrim;
+  function ensurePanel() {
+    if (panel) return;
+    scrim = document.createElement("div"); scrim.className = "wid-dgm-scrim";
+    panel = document.createElement("div"); panel.className = "wid-dgm-panel";
+    panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", "Diagram detail");
+    panel.innerHTML = '<header><h3></h3><button aria-label="Close" title="Close">×</button></header><div class="body"></div>';
+    document.body.append(scrim, panel);
+    var close = closePanel;
+    panel.querySelector("button").addEventListener("click", close);
+    scrim.addEventListener("click", close);
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+  }
+  function openPanel(title, md) {
+    ensurePanel();
+    panel.querySelector("h3").textContent = title || "Detail";
+    panel.querySelector(".body").innerHTML = mdToHtml(md);
+    panel.classList.add("is-open"); scrim.classList.add("is-open");
+  }
+  function closePanel() {
+    if (panel) { panel.classList.remove("is-open"); scrim.classList.remove("is-open"); }
+  }
+
+  /* ------------------------- navigation handler --------------------------- */
+  function widGo(sectionId) {
+    var el = document.querySelector('[data-section-id="' + sectionId + '"]') ||
+             document.getElementById(sectionId);
+    if (!el) return;
+    try { el.scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "start" }); } catch (_) {}
+    el.classList.remove("wid-flash"); void el.offsetWidth; el.classList.add("wid-flash");
+  }
+  // Registry so Mermaid-native `click X call widInfo("key")` can find detail text.
+  var registry = {};
+  function widInfo(key) {
+    var cfg = registry[key];
+    if (cfg) openPanel(cfg.label || key, cfg.detail || "");
+  }
+
+  /* --------------------------- node helpers ------------------------------- */
+  function nodeText(g) { return (g.textContent || "").replace(/\s+/g, " ").trim(); }
+  function nodeKeys(g) {
+    var keys = [];
+    var di = g.getAttribute("data-id"); if (di) keys.push(di);
+    var m = (g.id || "").match(/^[a-zA-Z]+-(.+)-\d+$/); if (m) keys.push(m[1]);
+    var t = nodeText(g); if (t) keys.push(t);
+    return keys;
+  }
+
+  function wireNode(g, key, cfg) {
+    g.classList.add("wid-act");
+    g.setAttribute("tabindex", "0");
+    g.setAttribute("role", "button");
+    var verb = cfg.section ? "Go to section" : cfg.url ? "Open link" : "Show detail";
+    g.setAttribute("aria-label", (cfg.label || key) + " — " + verb);
+    registry[key] = cfg;
+    var act = function (e) {
+      var vp = g.closest(".wid-dgm-viewport");
+      if (vp && vp._panned) return;           // a drag, not a click
+      if (e) e.preventDefault();
+      if (cfg.section) widGo(cfg.section);
+      else if (cfg.url) window.open(cfg.url, "_blank", "noopener");
+      else if (cfg.detail) openPanel(cfg.label || key, cfg.detail);
+    };
+    g.addEventListener("click", act);
+    g.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") act(e);
+    });
+  }
+
+  /* ------------------------------ enhance --------------------------------- */
+  function readIsland(fig) {
+    var s = fig.querySelector(":scope > script.export-data");
+    if (!s) return null;
+    try { return JSON.parse(s.textContent); } catch (e) { return null; }
+  }
+
+  function enhance(fig) {
+    if (fig.__widDgm) return true;
+    var mer = fig.querySelector(".mermaid");
+    var svg = mer && mer.querySelector("svg");
+    if (!svg) return false;            // Mermaid hasn't rendered yet
+    fig.__widDgm = true;
+
+    /* wrap for zoom/pan */
+    var vp = document.createElement("div");
+    vp.className = "wid-dgm-viewport";
+    mer.parentNode.insertBefore(vp, mer);
+    vp.appendChild(mer);
+
+    var st = { s: 1, x: 0, y: 0 };
+    var apply = function () { svg.style.transform = "translate(" + st.x + "px," + st.y + "px) scale(" + st.s + ")"; };
+    var clamp = function (v) { return Math.max(0.4, Math.min(5, v)); };
+    var reset = function () { st.s = 1; st.x = 0; st.y = 0; apply(); };
+
+    /* pan */
+    var drag = null;
+    vp.addEventListener("pointerdown", function (e) {
+      drag = { x: e.clientX, y: e.clientY, ox: st.x, oy: st.y };
+      vp._panned = false; vp.classList.add("is-panning");
+      try { vp.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    vp.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) vp._panned = true;
+      st.x = drag.ox + dx; st.y = drag.oy + dy; apply();
+    });
+    var endDrag = function () { drag = null; vp.classList.remove("is-panning"); };
+    vp.addEventListener("pointerup", endDrag);
+    vp.addEventListener("pointercancel", endDrag);
+    vp.addEventListener("pointerleave", endDrag);
+
+    /* wheel zoom toward cursor */
+    vp.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      var ns = clamp(st.s * (e.deltaY < 0 ? 1.12 : 0.89));
+      var r = vp.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top;
+      st.x = cx - (cx - st.x) * (ns / st.s);
+      st.y = cy - (cy - st.y) * (ns / st.s);
+      st.s = ns; apply();
+    }, { passive: false });
+
+    /* toolbar */
+    var tools = document.createElement("div");
+    tools.className = "wid-dgm-tools";
+    function tbtn(txt, title, fn) {
+      var b = document.createElement("button"); b.type = "button"; b.textContent = txt;
+      b.title = title; b.setAttribute("aria-label", title);
+      b.addEventListener("click", fn); return b;
+    }
+
+    /* walkthrough (optional) */
+    var island = readIsland(fig);
+    var gNodes = [].map.call(svg.querySelectorAll("g.node"), function (g) { return { g: g, keys: nodeKeys(g) }; });
+    var find = function (key) {
+      return gNodes.filter(function (o) { return o.keys.indexOf(key) >= 0; })[0];
+    };
+
+    /* node click actions from the island */
+    if (island && island.nodes) {
+      Object.keys(island.nodes).forEach(function (key) {
+        var hit = find(key);
+        if (hit) wireNode(hit.g, key, island.nodes[key]);
+      });
+    }
+
+    var walk = island && Array.isArray(island.walkthrough) ? island.walkthrough : null;
+    if (walk && walk.length) {
+      var idx = -1;
+      var box = document.createElement("div"); box.className = "wid-dgm-walk";
+      var lbl = document.createElement("span"); lbl.className = "lbl";
+      var step = function (i) {
+        idx = (i + walk.length) % walk.length;
+        svg.classList.add("wid-dim");
+        gNodes.forEach(function (o) { o.g.classList.remove("wid-hot"); });
+        var hit = find(walk[idx]); var cfg = island.nodes && island.nodes[walk[idx]];
+        if (hit) hit.g.classList.add("wid-hot");
+        lbl.textContent = (idx + 1) + " / " + walk.length;
+        if (cfg && cfg.detail) openPanel((cfg && cfg.label) || walk[idx], cfg.detail);
+      };
+      var stop = function () { svg.classList.remove("wid-dim"); gNodes.forEach(function (o) { o.g.classList.remove("wid-hot"); }); idx = -1; lbl.textContent = "Tour"; closePanel(); };
+      box.append(
+        tbtn("◀", "Previous step", function () { step(idx <= 0 ? walk.length - 1 : idx - 1); }),
+        lbl,
+        tbtn("▶", "Next step / start tour", function () { step(idx + 1); })
+      );
+      lbl.textContent = "Tour";
+      tools.appendChild(box);
+      box.appendChild(tbtn("✕", "End tour", stop));
+    }
+
+    /* hover spotlight */
+    gNodes.forEach(function (o) {
+      o.g.addEventListener("mouseenter", function () { svg.classList.add("wid-dim"); o.g.classList.add("wid-hot"); });
+      o.g.addEventListener("mouseleave", function () { svg.classList.remove("wid-dim"); o.g.classList.remove("wid-hot"); });
+    });
+
+    tools.append(
+      tbtn("＋", "Zoom in", function () { st.s = clamp(st.s * 1.2); apply(); }),
+      tbtn("－", "Zoom out", function () { st.s = clamp(st.s * 0.8); apply(); }),
+      tbtn("⟲", "Reset view", reset),
+      tbtn("⤢", "Fullscreen", function () { vp.classList.toggle("is-fs"); reset(); })
+    );
+    vp.appendChild(tools);
+
+    var hint = document.createElement("div");
+    hint.className = "wid-dgm-hint";
+    hint.textContent = (island && island.nodes ? "click nodes · " : "") + "scroll to zoom · drag to pan";
+    vp.appendChild(hint);
+
+    return true;
+  }
+
+  /* ----------------------- wait for Mermaid render ------------------------ */
+  function scan() {
+    var figs = document.querySelectorAll("figure.diagram, .wid-diagram, [data-block='diagram']");
+    var pending = false;
+    figs.forEach(function (f) { if (!enhance(f)) pending = true; });
+    return pending;
+  }
+
+  function start() {
+    injectCSS();
+    var pending = scan();
+    if (!pending) return;
+    // Mermaid renders async; observe the DOM until every diagram has an <svg>.
+    var obs = new MutationObserver(function () { if (!scan()) obs.disconnect(); });
+    obs.observe(document.body, { childList: true, subtree: true });
+    // Safety net: stop observing after 8s regardless.
+    setTimeout(function () { obs.disconnect(); }, 8000);
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
+
+  window.widGo = window.widGo || widGo;
+  window.widInfo = window.widInfo || widInfo;
+  window.WIDDiagram = { enhance: enhance, openPanel: openPanel, go: widGo };
+})();
+
+</script>
+
+</body>
+</html>
