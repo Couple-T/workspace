@@ -92,21 +92,18 @@ jsbool() { case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
 # vars via a case. Defaults below match the workflow's historical fallbacks.
 PREFIX='FM'; AM_RAW='true'; AA_RAW='true'; TH_RAW='false'
 FEATURE_BASE='develop'; FIX_BASE='main'
-ST_NOT_STARTED='Not started'; ST_IN_PROGRESS='In progress'
-ST_READY='Ready to test'; ST_TESTING='Testing'; ST_DONE='Done'
+STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
+                  # in declared order. The workflow drives a monotonic subset (STATUS_ORDER); the
+                  # rest are carried for humans/other tools — so a rich board isn't silently dropped.
 while IFS=$'\t' read -r k v; do
   case "$k" in
-    PREFIX)           PREFIX="$v" ;;
-    AUTO_MERGE)       AM_RAW="$v" ;;
-    AUTO_APPROVE)     AA_RAW="$v" ;;
-    TO_HTML)          TH_RAW="$v" ;;
-    FEATURE_BASE)     FEATURE_BASE="$v" ;;
-    FIX_BASE)         FIX_BASE="$v" ;;
-    ST_not_started)   ST_NOT_STARTED="$v" ;;
-    ST_in_progress)   ST_IN_PROGRESS="$v" ;;
-    ST_ready_to_test) ST_READY="$v" ;;
-    ST_testing)       ST_TESTING="$v" ;;
-    ST_done)          ST_DONE="$v" ;;
+    PREFIX)        PREFIX="$v" ;;
+    AUTO_MERGE)    AM_RAW="$v" ;;
+    AUTO_APPROVE)  AA_RAW="$v" ;;
+    TO_HTML)       TH_RAW="$v" ;;
+    FEATURE_BASE)  FEATURE_BASE="$v" ;;
+    FIX_BASE)      FIX_BASE="$v" ;;
+    ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
 done < <(
   awk '
@@ -128,6 +125,10 @@ done < <(
 AUTO_MERGE="$(jsbool "$AM_RAW" true)"
 AUTO_APPROVE="$(jsbool "$AA_RAW" true)"
 TO_HTML="$(jsbool "$TH_RAW" false)"
+# Fall back to the historical 5-phase lifecycle when the org declared no statuses.
+if [[ -z "$STATUS_PAIRS" ]]; then
+  STATUS_PAIRS=$'not_started\tNot started\nin_progress\tIn progress\nready_to_test\tReady to test\ntesting\tTesting\ndone\tDone\n'
+fi
 
 # ── 2. kind → role/gate DEFAULTS (the one authoritative table) ────────────────────
 # Echoes TAB-separated: plan build review guard perf testSuite base_feature base_fix
@@ -135,10 +136,10 @@ TO_HTML="$(jsbool "$TH_RAW" false)"
 kind_defaults() {
   local kind="$1"
   case "$kind" in
-    appium-e2e)
+    test-suite)
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
         qa-planner qa-runner null false false true "$FIX_BASE" "$FIX_BASE" \
-        'the ticket BDD + regression specs (scoped `npm test -- <specs>`, POM) green on iOS + Android — the full-suite run is on-demand' \
+        'the ticket + regression specs (scoped `npm test -- <specs>`, POM) green on every target platform the suite covers — the full-suite run is on-demand' \
         '' ;;
     flutter-app)
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
@@ -215,15 +216,20 @@ done < <(
 
 [[ "$repo_count" -gt 0 ]] || warn "no products[].repos[] found in $(basename "$WC") — generating an EMPTY REPOS map (declare repos, then re-run)"
 
+# build the STATUS object from EVERY declared status (declared order), one key per line.
+status_body=''
+while IFS=$'\t' read -r sk sv; do
+  [[ -n "$sk" ]] || continue
+  status_body+="  $sk: $(jsq "$sv"),"$'\n'
+done <<< "$STATUS_PAIRS"
+
 # ── 4. assemble the managed block ─────────────────────────────────────────────────
 BODY="const TICKET_PREFIX = $(jsq "$PREFIX")
 const AUTO_MERGE = ${AUTO_MERGE}        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
 const AUTO_APPROVE_PLAN = ${AUTO_APPROVE} // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
 const PLAN_TO_HTML = ${TO_HTML}     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
 const STATUS = {
-  not_started: $(jsq "$ST_NOT_STARTED"), in_progress: $(jsq "$ST_IN_PROGRESS"),
-  ready_to_test: $(jsq "$ST_READY"), testing: $(jsq "$ST_TESTING"), done: $(jsq "$ST_DONE"),
-}
+${status_body}}
 const REPOS = {
 ${repos_body}}
 "

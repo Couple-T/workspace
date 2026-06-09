@@ -28,8 +28,8 @@
 #   --tags <a,b,…>         EXTRA tags, appended after [product, language] in the mani entry
 #                          (e.g. "ui,offline"). Default: none.
 #   --desc <text>          mani entry description (default: "The <repo-name> repo.").
-#   --kind <kind>          workspace.config.yaml repo kind: generic | flutter-app | appium-e2e
-#                          (default: generic) — drives the plan/build/review/guard/perf/e2e defaults.
+#   --kind <kind>          workspace.config.yaml repo kind: generic | flutter-app | test-suite
+#                          (default: generic) — drives the plan/build/review/guard/perf/test-suite defaults.
 #   --distribute <how>     workspace.config.yaml distribute: none | firebase | custom (default: none).
 #   --path <dir>           Clone dir under the workspace root (default: the repo name from --url).
 #   --skill-cmd <slash>    Skill-generator command to run in the repo (default: /run-skill-generator).
@@ -266,7 +266,7 @@ tags_yaml=""; for t in "${tags_list[@]}"; do tags_yaml+="${tags_yaml:+, }$t"; do
 # scripts/aiworks-config.sh, which regenerates the workflow CONFIG from workspace.config.yaml
 # at the end of this run (step 2.6). Here we only sanity-check the kind value.
 case "$KIND" in
-  appium-e2e|flutter-app|generic) ;;
+  test-suite|flutter-app|generic) ;;
   *) printf '%s! unknown --kind "%s"; the dev-cycle.js mirror will treat it as generic%s\n' "$c_warn" "$KIND" "$c_off" ;;
 esac
 

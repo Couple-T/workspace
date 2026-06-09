@@ -3,8 +3,8 @@
 A reusable, provider-agnostic copy of the multi-repo "product team" orchestration: a
 flat team of Claude agents (CEO → CPO/CTO → planners → developer/QA → reviewers →
 guardian/perf → documentor) that takes a ticket end-to-end across every repo it touches
-— plan → build → pre-merge gates → PR/MR → review → merge → cross-repo integration →
-distribute — driven by the `dev-cycle` workflow.
+— plan → build → PR/MR → review → cross-repo test-suite gate → merge → distribute
+— driven by the `dev-cycle` workflow.
 
 Everything organization-specific is swappable:
 
@@ -63,7 +63,7 @@ scripts/tracker/  # notion | jira ticket adapter
 7. **De-brand pass** — replace the `{{ORG_NAME}}` / `{{PRODUCT_DESCRIPTION}}` placeholders
    in `CLAUDE.md`. The agents and workflows are already provider-agnostic; the
    **stack-specific** skills still carry example product/domain copy and tooling for the
-   reference stack (Flutter app + Appium e2e) — adapt these to your stack/product:
+   reference stack (Flutter app + an Appium test-suite repo) — adapt these to your stack/product:
    `.claude/skills/{coding-feature,coding-automate,plan-appium-automate}` and the
    `coding-feature/*.md` references. (Provider wiring — VCS/tracker — needs no further edits.)
 
@@ -135,7 +135,7 @@ unless `--force`). It then **regenerates the `dev-cycle.js` CONFIG block from
 
 ```
 /dev-cycle FM-12              # one ticket, end to end across every repo it touches
-/dev-cycle FM-12 --dry-run    # stop before any merge/integration/distribute
+/dev-cycle FM-12 --dry-run    # run review + the test-suite gate, then stop before merge + distribute
 /dev-cycle FM-12 --approve-plan  # proceed past the plan-approval gate (when planning.auto_approve is off)
 ```
 
@@ -160,14 +160,19 @@ bash -n scripts/vcs/*.sh scripts/tracker/*.sh
 ## Notes
 
 - The `dev-cycle` collapses to the single-repo flow when a ticket touches one repo.
-- **Auto-merge** (`vcs.auto_merge`, default `true`) controls whether the reviewed PR/MR is
-  squash-merged automatically. Set it `false` (or override one repo with
-  `products[].repos[].auto_merge: false`) to have the run open the PR/MR and run every reviewer,
-  then STOP and leave it open for a human to merge — integration/distribute/close are skipped.
-  `aiworks config` (run by add/remove/sync) mirrors the value into the `dev-cycle.js` CONFIG
-  `AUTO_MERGE` constant for you. (`--dry-run` stops one
-  step earlier — before the PR/MR is even merged-or-left; auto-merge off still merges nothing but
-  *does* open + review the PR/MR.)
+- **The candidate is validated before merge.** Review → the cross-repo test-suite gate run on the
+  ticket's work branches *pre-merge*, so a failing candidate never reaches the base branch. Merge is
+  the commit gate; distribution ships the *merged* build right after.
+- **Auto-merge** (`vcs.auto_merge`, default `true`) controls whether that merge runs automatically.
+  Set it `false` (or override one repo with `products[].repos[].auto_merge: false`) and the run still
+  reviews + runs the test-suite gate, then STOPS and leaves the PR/MR open for a human to merge —
+  nothing is merged or distributed. `aiworks config` (run by add/remove/sync) mirrors the value into
+  the `dev-cycle.js` CONFIG `AUTO_MERGE` constant for you. (`--dry-run` stops at the same point — after
+  the test-suite gate, before merge + distribute.)
+- **Ticket status is workflow-owned.** The dev-cycle moves the ticket forward (monotonically) at
+  aggregate milestones — the per-repo agents don't touch it — so a multi-repo ticket can't thrash
+  its status. It uses whatever statuses you declare under `tracker.statuses`, picking the best
+  match per milestone (e.g. `ready_to_merge` if you have it, else `ready_to_test`).
 - **Plan approval** (`planning.auto_approve`, default `true`) gates the *planning* step the
   way auto-merge gates the *merge* step. Set it `false` to have the run produce the plan(s),
   then STOP for a human to review + approve before any build — re-run with `--approve-plan` to
