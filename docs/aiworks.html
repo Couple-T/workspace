@@ -295,8 +295,9 @@
         <p><b>Build &amp; ship one ticket.</b> Takes a single ticket end-to-end across every repo it touches.
           Detailed in the next section.</p>
         <ol>
-          <li><b>Scope → Kickoff → Build → Open PR → Review</b> — per repo, in dependency waves.</li>
-          <li><b>Merge → Integration → Distribute → Summary</b> — cross-repo join and ship.</li>
+          <li><b>Plan</b> — per repo. If <code>planning.auto_approve</code> is <code>false</code>, the run stops here for human review; re-run with <code>--approve-plan</code> to proceed.</li>
+          <li><b>Build → Open PR → Review → Test-suite gate</b> — per repo, in dependency waves. The cross-repo test-suite gate validates the candidate pre-merge.</li>
+          <li><b>Merge → Distribute → Summary</b> — cross-repo join and ship. Add <code>--dry-run</code> to stop before this step.</li>
         </ol>
       </div>
       <script type="application/json" class="export-data">
@@ -321,22 +322,22 @@
   S[Scope] --> K[Kickoff] --> B[Build]
   B --> O["Open PR/MR"] --> R{Review}
   R -->|comments| F[Fix] --> R
-  R -->|passed| M[Merge]
-  M --> I["Integration e2e"] --> D[Distribute] --> SU[Summary]</pre>
-      <figcaption>Nine phases. Code review + security + performance all comment on the open PR; the dev fixes the batch until it passes.</figcaption>
-      <script type="application/json" class="export-data">{"type":"diagram","diagramType":"flowchart","title":"dev-cycle — nine phases","source":"flowchart LR\n  S[Scope] --> K[Kickoff] --> B[Build]\n  B --> O[\"Open PR/MR\"] --> R{Review}\n  R -->|comments| F[Fix] --> R\n  R -->|passed| M[Merge]\n  M --> I[\"Integration e2e\"] --> D[Distribute] --> SU[Summary]","nodes":{"S":{"label":"Scope","detail":"CTO classifies which repos the ticket touches, their order, and whether an integration test applies."},"K":{"label":"Kickoff","detail":"Per repo: branch + move to In progress + plan; QA designs the e2e test plan."},"B":{"label":"Build","detail":"The build role implements in dependency waves — developer TDD / QA runner POM."},"O":{"label":"Open PR/MR","detail":"Opened right after build, before review, so every reviewer comments on the open PR."},"R":{"label":"Review","detail":"Code reviewer + guardian + performance review the open PR; the dev fixes the batch; capped rounds."},"F":{"label":"Fix","detail":"The developer addresses the combined review batch, then a scoped re-review runs."},"M":{"label":"Merge","detail":"Squash-merged upstream→downstream so the web PR shows Merged; each SHA recorded."},"I":{"label":"Integration","detail":"QA runs this ticket's scope against the merged build — the cross-repo join gate (skipped if not needed)."},"D":{"label":"Distribute","detail":"Each shippable repo goes to its configured target (e.g. Firebase App Distribution)."},"SU":{"label":"Summary","detail":"Documentor writes the run summary + a per-repo / per-role token & time table."}},"walkthrough":["S","K","B","O","R","M","I","D","SU"]}</script>
+  R -->|passed| T["Test-suite gate"]
+  T --> M[Merge] --> D[Distribute] --> SU[Summary]</pre>
+      <figcaption>Nine phases. Test-suite gate runs <em>pre-merge</em> on the work branches — a failing candidate never reaches the base branch. <code>--dry-run</code> stops after the gate.</figcaption>
+      <script type="application/json" class="export-data">{"type":"diagram","diagramType":"flowchart","title":"dev-cycle — nine phases","source":"flowchart LR\n  S[Scope] --> K[Kickoff] --> B[Build]\n  B --> O[\"Open PR/MR\"] --> R{Review}\n  R -->|comments| F[Fix] --> R\n  R -->|passed| T[\"Test-suite gate\"]\n  T --> M[Merge] --> D[Distribute] --> SU[Summary]","nodes":{"S":{"label":"Scope","detail":"CTO classifies which repos the ticket touches, their build order, and whether a cross-repo test-suite gate applies."},"K":{"label":"Kickoff","detail":"Per repo: branch + move to In progress + plan; QA designs the e2e test plan. If planning.auto_approve is false, the run stops here — re-run with --approve-plan to proceed."},"B":{"label":"Build","detail":"The build role implements in dependency waves — developer TDD / QA runner POM."},"O":{"label":"Open PR/MR","detail":"Opened right after build, before review, so every reviewer comments on the open PR."},"R":{"label":"Review","detail":"Code reviewer + guardian + performance review the open PR; the dev fixes the combined batch; capped rounds."},"F":{"label":"Fix","detail":"The developer addresses the combined review batch, then a scoped re-review runs."},"T":{"label":"Test-suite gate","detail":"Cross-repo e2e suite run on the work branches pre-merge. --dry-run stops here. If auto_merge is false, the PR is left open for a human to merge after this gate passes."},"M":{"label":"Merge","detail":"Each repo squash-merged upstream→downstream so the web PR shows Merged; each SHA recorded."},"D":{"label":"Distribute","detail":"Each shippable repo goes to its configured target (e.g. Firebase App Distribution)."},"SU":{"label":"Summary","detail":"Documentor writes the run summary + a per-repo / per-role token & time table."}},"walkthrough":["S","K","B","O","R","T","M","D","SU"]}</script>
     </figure>
 
     <table>
       <thead><tr><th>#</th><th>Phase</th><th>What happens</th></tr></thead>
       <tbody>
-        <tr><td>1</td><td><b>Scope</b></td><td>CTO classifies which repos the ticket touches, their build order, and whether a cross-repo integration test applies.</td></tr>
-        <tr><td>2</td><td><b>Kickoff</b></td><td>Per repo: planner kicks off (branch + move to <em>In&nbsp;progress</em> + plan); QA planner designs the test plan for the e2e repo.</td></tr>
+        <tr><td>1</td><td><b>Scope</b></td><td>CTO classifies which repos the ticket touches, their build order, and whether a cross-repo test-suite gate applies.</td></tr>
+        <tr><td>2</td><td><b>Kickoff</b></td><td>Per repo: planner kicks off (branch + move to <em>In&nbsp;progress</em> + plan); QA planner designs the test plan. If <code>planning.auto_approve</code> is <code>false</code>, the run stops here — re-run with <code>--approve-plan</code> to proceed.</td></tr>
         <tr><td>3</td><td><b>Build</b></td><td>The build role implements in dependency waves — developer (TDD) for code, QA runner (Page-Object) for e2e.</td></tr>
         <tr><td>4</td><td><b>Open PR/MR</b></td><td>The build role opens the PR right after build, <em>before</em> review, so every reviewer comments on the open PR.</td></tr>
         <tr><td>5</td><td><b>Review</b></td><td>On the open PR: code reviewer (standards + spec) + guardian (security) + performance all review; the dev fixes the combined batch; capped rounds. (Skipped for the e2e repo.)</td></tr>
-        <tr><td>6</td><td><b>Merge</b></td><td>Each repo squash-merged upstream → downstream so the web PR shows <em>Merged</em>; each commit recorded.</td></tr>
-        <tr><td>7</td><td><b>Integration</b></td><td>QA runner runs this ticket's scope against the merged build — the cross-repo join gate (skipped if not needed).</td></tr>
+        <tr><td>6</td><td><b>Test-suite gate</b></td><td>Cross-repo e2e suite run on the work branches <strong>pre-merge</strong> — the candidate must pass before it's merged. <code>--dry-run</code> stops here; <code>auto_merge: false</code> also stops here and leaves the PR open for a human to merge.</td></tr>
+        <tr><td>7</td><td><b>Merge</b></td><td>Each repo squash-merged upstream → downstream so the web PR shows <em>Merged</em>; each SHA recorded.</td></tr>
         <tr><td>8</td><td><b>Distribute</b></td><td>Each shippable repo goes to its configured target (e.g. Firebase App Distribution).</td></tr>
         <tr><td>9</td><td><b>Summary</b></td><td>Documentor writes the run summary + a per-repo / per-role token &amp; time table.</td></tr>
       </tbody>
@@ -344,10 +345,32 @@
 
     <div class="callout" data-variant="info" data-block="callout">
       <div class="callout-title">ℹ️ Safe dry runs</div>
-      <div>Add <code>--dry-run</code> (e.g. <code>/dev-cycle FM-12 --dry-run</code>) to stop after build &amp; gates —
-        no merge, no integration, no distribution. Great for confirming behaviour without touching the base branch.</div>
+      <div>Add <code>--dry-run</code> (e.g. <code>/dev-cycle FM-12 --dry-run</code>) to run review + the
+        cross-repo test-suite gate, then stop before merge + distribute — the base branch is never touched.</div>
       <script type="application/json" class="export-data">
-        {"type":"callout","variant":"info","md":"**Safe dry runs** — add `--dry-run` (e.g. `/dev-cycle FM-12 --dry-run`) to stop after build & gates: no merge, integration, or distribution. Confirms behaviour without touching the base branch."}
+        {"type":"callout","variant":"info","md":"**Safe dry runs** — add `--dry-run` (e.g. `/dev-cycle FM-12 --dry-run`) to run review + the cross-repo test-suite gate, then stop before merge + distribute. The base branch is never touched."}
+      </script>
+    </div>
+
+    <div class="callout" data-variant="tip" data-block="callout">
+      <div class="callout-title">💡 Key behaviour notes</div>
+      <div>
+        <p style="margin:4px 0"><strong>Candidate validated before merge.</strong> Review → cross-repo test-suite gate
+          run on the work branches <em>pre-merge</em> — a failing candidate never reaches the base branch. Merge is the
+          commit gate; distribution ships the merged build right after.</p>
+        <p style="margin:4px 0"><strong>Auto-merge off</strong> (<code>vcs.auto_merge: false</code>) — the run still
+          reviews + runs the test-suite gate, then <strong>stops</strong> and leaves the PR/MR open for a human to merge.
+          Override per-repo with <code>repos[].auto_merge</code>.</p>
+        <p style="margin:4px 0"><strong>Plan approval</strong> (<code>planning.auto_approve: false</code>) — the run
+          produces the plan(s) then <strong>stops</strong> for human review. Re-run with <code>--approve-plan</code> to
+          proceed to build. When <code>planning.to_html</code> is on, each plan is also rendered to an interactive HTML
+          doc for easy sharing.</p>
+        <p style="margin:4px 0"><strong>Ticket status is workflow-owned.</strong> The dev-cycle moves the ticket forward
+          (monotonically) at aggregate milestones — per-repo agents don't touch it — so a multi-repo ticket can't thrash
+          its status.</p>
+      </div>
+      <script type="application/json" class="export-data">
+        {"type":"callout","variant":"tip","md":"**Key behaviour notes**\n\n- **Candidate validated before merge** — review → cross-repo test-suite gate run on work branches pre-merge; a failing candidate never reaches the base branch.\n- **Auto-merge off** (`vcs.auto_merge: false`) — the run reviews + runs the test-suite gate, then stops and leaves the PR/MR open for a human to merge.\n- **Plan approval** (`planning.auto_approve: false`) — the run produces plans then stops; re-run with `--approve-plan` to proceed. Add `planning.to_html: true` to render each plan to interactive HTML for sharing.\n- **Ticket status is workflow-owned** — the dev-cycle moves the ticket forward monotonically at aggregate milestones; per-repo agents don't touch it."}
       </script>
     </div>
   </section>
@@ -423,6 +446,7 @@
         <button aria-selected="true">add</button>
         <button aria-selected="false">sync</button>
         <button aria-selected="false">remove</button>
+        <button aria-selected="false">config</button>
       </div>
 
       <!-- add -->
@@ -484,6 +508,21 @@ scripts/aiworks remove feeedme-api --purge --force</code></pre>
           <div>After deregistering, <code>remove</code> <strong>regenerates the <code>REPOS</code> map</strong> in <code>.claude/workflows/dev-cycle.js</code> from the updated <code>workspace.config.yaml</code> (the <code>aiworks config</code> step), so the repo disappears from the workflow mirror too — no hand-editing.</div>
           <script type="application/json" class="export-data">{"type":"callout","variant":"info","md":"**The dev-cycle CONFIG drops the repo automatically** — after deregistering, `remove` regenerates the `REPOS` map in `.claude/workflows/dev-cycle.js` from the updated `workspace.config.yaml` (the `aiworks config` step), so the repo disappears from the workflow mirror too — no hand-editing."}</script>
         </div>
+      </div>
+
+      <!-- config -->
+      <div class="tab-panel" hidden>
+        <p>Regenerates the <code>── CONFIG ──</code> mirror in <code>.claude/workflows/dev-cycle.js</code> straight
+          from <code>workspace.config.yaml</code> — the <code>REPOS</code> registry, <code>TICKET_PREFIX</code>,
+          <code>AUTO_MERGE</code>, <code>AUTO_APPROVE_PLAN</code>, <code>PLAN_TO_HTML</code>, and status names.
+          Workflow scripts can't read the filesystem at runtime, so they carry this in-source copy.
+          <code>add</code> / <code>sync</code> / <code>remove</code> all run it for you — call it directly only after
+          hand-editing a non-repo field (ticket prefix, statuses, flags).</p>
+        <pre><code># Rewrite the block from workspace.config.yaml
+scripts/aiworks config
+
+# Print without writing
+scripts/aiworks config --dry-run</code></pre>
       </div>
 
       <script type="application/json" class="export-data">
