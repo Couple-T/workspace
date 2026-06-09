@@ -4,7 +4,7 @@ export const meta = {
   whenToUse: 'Run one <KEY> ticket end to end across every repo it touches — through per-repo merge, cross-repo integration, and distribution — with a single command.',
   phases: [
     { title: 'Scope', detail: 'cto: classify which repos the ticket touches + dependency order + whether an integration gate applies', model: 'opus' },
-    { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (app code) · qa-planner designs the BDD + Appium plan (e2e) → branch + in-progress + plan', model: 'opus' },
+    { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (app code) · qa-planner designs the BDD + Appium plan (e2e) → branch + in-progress + plan. If planning.to_html, each plan is also rendered to interactive HTML; if planning.auto_approve is off, the run STOPS here for human plan approval (re-run with --approve-plan).', model: 'opus' },
     { title: 'Build', detail: 'per repo, in dependency waves (∥ within a wave): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The e2e repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its BDD + regression specs — before the PR/MR.', model: 'sonnet/opus' },
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
     { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch; scoped re-review; round cap. SKIPPED for the e2e repo (no reviewers).', model: 'sonnet[1m]' },
@@ -16,64 +16,45 @@ export const meta = {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// CONFIG  —  EDIT THIS BLOCK PER ORG.  Workflow scripts have NO filesystem access,
-// so this is the workflow's own copy of workspace.config.yaml — keep the two in sync
-// (tracker.ticket_prefix, tracker.statuses, branch_model, and the repo registry).
+// CONFIG  —  GENERATED FROM workspace.config.yaml BY scripts/aiworks. DO NOT EDIT THE
+// MARKED BLOCK BELOW BY HAND. Workflow scripts have NO filesystem access, so they can't
+// read workspace.config.yaml at runtime — this is the workflow's own MIRROR of it. To
+// change it: edit workspace.config.yaml, then run `scripts/aiworks config` (or any
+// `aiworks add` / `remove` / `sync`, which regenerate it for you). Anything you type
+// between the AIWORKS:CONFIG markers is OVERWRITTEN on the next regenerate.
 //
-// TICKET_PREFIX — the ticket id prefix (drives the <PREFIX>-\d+ regex).
-// STATUS        — canonical phase → the org's REAL status name (see issue-tracker.md);
-//                 used wherever the workflow moves a ticket.
-// REPOS         — one entry per repo the orchestration spans:
-//   path        — dir relative to the workspace launch root
-//   kind        — flutter-app | appium-e2e | generic (selects role behaviour)
-//   base        — branch a ticket targets: { feature, fix }
-//   plan/build/review — agentTypes. review:null ⇒ no code review (e2e repo); its PR/MR
-//                 is merged by the build role (qa-runner) instead of a code-reviewer.
-//   guard/perf  — whether the guardian (quality-gate) / performance gate applies.
-//   green       — the "keep it green" check phrase used in build/fix prompts.
-//   guardianFocus — repo-specific guardian checklist.
-//   testSuite   — true for the repo that PROVIDES the cross-repo integration suite.
-//   distribute  — 'firebase' | 'custom' | null  (how a merged build ships).
-//   autoMerge   — OPTIONAL per-repo override of AUTO_MERGE (below). Omit to inherit.
-// AUTO_MERGE — mirror of workspace.config.yaml `vcs.auto_merge`. true ⇒ the Merge phase
-//   squash-merges automatically after review. false ⇒ the run opens + reviews the PR/MR
-//   then STOPS, leaving it OPEN for a human (Integration / Distribute / close are skipped).
-// (The examples below are GENERIC — replace ids/paths/kinds with your repos.)
+// TICKET_PREFIX — the ticket id prefix (drives the <PREFIX>-\d+ regex).      ← tracker.ticket_prefix
+// STATUS        — canonical phase → the org's REAL status name.              ← tracker.statuses.*
+// REPOS         — one entry per repo (derived from products[].repos[] + its kind):
+//   path        — dir relative to the workspace launch root                 ← repos[].path (or repo name)
+//   kind        — flutter-app | appium-e2e | generic (selects role behaviour)← repos[].kind
+//   base        — branch a ticket targets: { feature, fix }                 ← branch_model (e2e ⇒ fix base)
+//   plan/build/review — agentTypes set by kind. review:null ⇒ no code review (e2e repo); its
+//                 PR/MR is merged by the build role (qa-runner) instead of a code-reviewer.
+//   guard/perf  — whether the guardian / performance gate applies (by kind).
+//   green       — the "keep it green" check phrase.                          ← kind default, or repos[].green
+//   guardianFocus — repo-specific guardian checklist.                        ← kind default, or repos[].guardian_focus
+//   testSuite   — true for the repo that PROVIDES the cross-repo integration suite (e2e).
+//   distribute  — 'firebase' | 'custom' | null (how a merged build ships).   ← repos[].distribute
+//   autoMerge   — OPTIONAL per-repo override of AUTO_MERGE.                   ← repos[].auto_merge
+// AUTO_MERGE — vcs.auto_merge. true ⇒ the Merge phase squash-merges automatically after review.
+//   false ⇒ the run opens + reviews the PR/MR then STOPS, leaving it OPEN for a human.
+// AUTO_APPROVE_PLAN — planning.auto_approve. false ⇒ after Kickoff the run STOPS for human plan
+//   approval before build; re-run with --approve-plan to proceed.
+// PLAN_TO_HTML — planning.to_html. true ⇒ planners ALSO render each plan to interactive HTML.
 // ──────────────────────────────────────────────────────────────────────────
+// >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
 const TICKET_PREFIX = 'FM'
-const AUTO_MERGE = true // mirror of workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
+const AUTO_MERGE = true        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
+const AUTO_APPROVE_PLAN = true // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
+const PLAN_TO_HTML = false     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
 const STATUS = {
   not_started: 'Not started', in_progress: 'In progress',
   ready_to_test: 'Ready to test', testing: 'Testing', done: 'Done',
 }
 const REPOS = {
-  'app': {
-    path: 'app', kind: 'flutter-app',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner',
-    build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'lint + unit tests (via scripts/dev.sh)',
-    guardianFocus: 'no hardcoded secrets/keys in source, dependency health, data-protection for personal data stored locally, least-privilege platform permissions, keeping sensitive data out of logs, safe deep-link handling',
-    distribute: 'firebase',
-  },
-  'e2e': {
-    path: 'e2e', kind: 'appium-e2e',
-    base: { feature: 'main', fix: 'main' },
-    plan: 'qa-planner',
-    build: 'qa-runner', review: null, // QA repo: no code review — qa-runner merges its own PR/MR
-    guard: false, perf: false,        // QA repo: no guardian/perf gate either
-    green: 'the ticket BDD + regression specs (scoped `npm test -- <specs>`, POM) green on iOS + Android — the full-suite run is on-demand',
-    testSuite: true,
-    distribute: null,
-  },
-  // 'backend': {  // example — a service repo
-  //   path: 'backend', kind: 'generic', base: { feature: 'develop', fix: 'main' },
-  //   build: 'developer', review: 'code-reviewer', guard: true, perf: true,
-  //   green: '<unit + integration tests>', guardianFocus: 'authz, secrets, input validation, event-schema compat, PII at rest/in transit', distribute: 'custom',
-  //   autoMerge: false, // optional — leave THIS repo's PR/MR open for a human even when AUTO_MERGE is on
-  // },
 }
+// <<< AIWORKS:CONFIG END >>>
 
 // ──────────────────────────────────────────────────────────────────────────
 // Inputs
@@ -92,6 +73,9 @@ const MAX_REVIEW_ROUNDS = opt.maxReviewRounds || 3 // review↔fix loops, per re
 // Lets a run confirm build/gate behaviour safely. Set via "--dry-run" in the arg
 // string or opt.dryRun.
 const dryRun = /--dry-run\b/i.test(rawArg) || opt.dryRun === true
+// PLAN APPROVAL — when AUTO_APPROVE_PLAN is false the run STOPS after Kickoff so a human can
+// review the plan(s) before build. Re-run with "--approve-plan" (or opt.approvePlan) to proceed.
+const approvePlan = /--approve-plan\b/i.test(rawArg) || opt.approvePlan === true
 
 // Machine-readable marker prefixed on EVERY agent prompt so
 // summarize-workflow-performance can attribute each transcript to a repo+role.
@@ -136,6 +120,7 @@ const REPO_PLAN_SCHEMA = {
     type: { type: 'string', enum: ['feature', 'bug', 'polish'] },
     base_branch: { type: 'string' }, work_branch: { type: 'string' },
     figma_url: { type: ['string', 'null'] }, plan_path: { type: 'string' },
+    plan_html: { type: ['string', 'null'] }, // set when PLAN_TO_HTML rendered the plan to interactive HTML
     summary: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } },
   },
 }
@@ -456,17 +441,32 @@ const plans = (await parallel(scoped.map((r) => () => {
   const baseBranch = desc.base[branchKind]
   const workBranch = `${branchKind}/${ticket}`
   const slice = r.summary || 'see ticket'
+  const planPath = desc.kind === 'appium-e2e' ? `agent_logs/${ticket}-appium-plan.md` : `agent_logs/development-planner/${ticket}-${r.repo}-plan.md`
+  // PLAN_TO_HTML: after the plan markdown exists, render it to a shareable interactive HTML.
+  const htmlClause = PLAN_TO_HTML
+    ? ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at agent_logs/${ticket}-${r.repo}-plan.html (it must read as a human-facing plan write-up), and set plan_html to that path in your structured result.`
+    : ''
   const prompt = desc.kind === 'appium-e2e'
-    ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the E2E TEST repo. Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan + Status → ${STATUS.testing}), then /plan-appium-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=agent_logs/${ticket}-appium-plan.md, and the acceptance/summary for this slice (${slice}).`
-    : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/). Run /ticket-kickoff ${ticket} to fetch + classify the ticket, move it to ${STATUS.in_progress}, and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes). Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to agent_logs/development-planner/${ticket}-${r.repo}-plan.md (git-ignored). Return the structured repo plan.`
+    ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the E2E TEST repo. Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan + Status → ${STATUS.testing}), then /plan-appium-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
+    : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/). Run /ticket-kickoff ${ticket} to fetch + classify the ticket, move it to ${STATUS.in_progress}, and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes). Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan.${htmlClause}`
   return agent(prompt, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
 }))).filter(Boolean)
 // carry the dependency edges from scope onto the plans
 plans.forEach((p) => { p.depends_on = (scoped.find((s) => s.repo === p.repo)?.depends_on) || [] })
 const waveList = toWaves(plans)
 log(`Plan ${ticket}: ${plans.map((p) => `${p.repo}@${p.work_branch}→${p.base_branch}`).join(', ')}`)
+if (PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)
 log(`Waves: ${waveList.map((w) => `[${w.join(', ')}]`).join(' → ')}`)
 tick('kickoff')
+
+// PLAN-APPROVAL GATE — when planning.auto_approve is off, STOP here with the plan(s) ready
+// for a human to review/approve; the run does NOT proceed to build. Re-run with --approve-plan.
+if (!AUTO_APPROVE_PLAN && !approvePlan) {
+  const planList = plans.map((p) => `${p.repo}: ${p.plan_path}${p.plan_html ? ` (html: ${p.plan_html})` : ''}`).join('; ')
+  log(`⏸️ Plan approval required (planning.auto_approve=false) — plans ready for human review, NOT proceeding to build: ${planList}. Re-run \`/dev-cycle ${ticket} --approve-plan\` once approved.`)
+  const summary = await writeSummary('awaiting-plan-approval', { ticket, repos: waveList.flat(), plans })
+  return { ticket, status: 'awaiting-plan-approval', plans, summary, spend }
+}
 
 // 3. BUILD → OPEN PR → REVIEW — per repo, in dependency waves (∥ within a wave).
 // Reviewers (code-reviewer + guardian + performance) all review the OPEN PR.

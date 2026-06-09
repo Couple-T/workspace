@@ -8,6 +8,7 @@
 #   aiworks add    --url <git-url> [options]   # onboard one repo            (→ aiworks-add.sh)
 #   aiworks sync   [<product>]     [options]   # onboard repos from config   (→ aiworks-sync.sh)
 #   aiworks remove <repo>          [options]   # offboard a repo             (→ aiworks-remove.sh)
+#   aiworks config                 [options]   # regen the workflow CONFIG   (→ aiworks-config.sh)
 #   aiworks help | -h | --help
 #
 # Each subcommand has its own --help:  aiworks add -h  ·  aiworks sync -h  ·  aiworks remove -h
@@ -33,6 +34,10 @@ Commands:
              repos just SKIP. Use -n to preview.
   remove     Offboard a repo: deregister it from workspace.config.yaml products[].repos[],
              mani.d/<product>.yaml, mani.yaml and the .gitignore (optionally --purge the clone).
+  config     Regenerate the dev-cycle workflow's CONFIG block (.claude/workflows/dev-cycle.js)
+             FROM workspace.config.yaml — the workflow can't read the FS at runtime, so it keeps
+             an in-source mirror. add / remove / sync run this automatically; run it yourself
+             after hand-editing workspace.config.yaml (ticket_prefix, statuses, auto_merge, …).
   help       Show this help. Use `aiworks <command> -h` for a command's options.
 
 Examples:
@@ -50,6 +55,7 @@ case "$cmd" in
   add)            exec "$DIR/aiworks-add.sh" "$@" ;;
   sync)           exec "$DIR/aiworks-sync.sh" "$@" ;;
   remove|rm)      exec "$DIR/aiworks-remove.sh" "$@" ;;
+  config)         exec "$DIR/aiworks-config.sh" "$@" ;;
   help|-h|--help|"") usage ;;
   *) printf 'aiworks: unknown command %q (try `aiworks help`)\n' "$cmd" >&2; exit 1 ;;
 esac

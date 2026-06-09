@@ -9,9 +9,10 @@
 #     installs the skill packs, seeds hooks, scaffolds CLAUDE.md + scripts/dev.sh;
 #   • the adapters read their slice from scripts/{vcs,tracker}/.env;
 #   • the dev-cycle workflow keeps a mirrored CONFIG block at the top of
-#     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem) —
-#     keep that block in sync with `products`, `tracker`, `branch_model`, and
-#     `vcs.auto_merge` here.
+#     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem at
+#     runtime). `scripts/aiworks sync` — and every `add` / `remove` — REGENERATES that
+#     block from THIS file automatically (`scripts/aiworks config` is the standalone step),
+#     so the mirror always tracks this file. You never hand-edit dev-cycle.js.
 #
 # The fast path to onboard repos:  add their URLs under `products:` below, then run
 #   scripts/aiworks sync          # clone + onboard every declared repo (idempotent)
@@ -52,6 +53,16 @@ branch_model:
 quality_gate:
   provider: sonarqube              # sonarqube | none
 
+# ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
+planning:
+  auto_approve: true               # auto-approve-plan. true → execution proceeds straight from the
+                                   #   plan (no review). false → after a plan is produced the run
+                                   #   STOPS for a human to review + APPROVE before execution (build);
+                                   #   re-run the dev-cycle with --approve-plan to proceed past the gate.
+  to_html: false                   # plan-to-html. true → each plan is ALSO rendered to a self-contained
+                                   #   interactive HTML doc (the write-interactive-docs skill), alongside
+                                   #   the plan markdown — handy for sharing/reviewing when auto_approve is off.
+
 # ── Products & repos — THE PART EACH ORG CONFIGURES ────────────────────────────
 # A product groups the repos that ship together. Each product is ONE
 # mani.d/<id>.yaml file (GENERATED from this block by `aiworks` — don't hand-edit
@@ -65,8 +76,9 @@ quality_gate:
 #                                 cross-repo integration suite (test_suite)
 #                  generic      → developer builds, code-reviewer reviews (tune the gates per repo)
 #
-# After editing this block run `scripts/aiworks sync` to clone + onboard, then MIRROR
-# the repos into the dev-cycle.js CONFIG `REPOS` block (the workflow can't read the FS).
+# After editing this block run `scripts/aiworks sync` to clone + onboard. That (like `add` /
+# `remove`) also REGENERATES the dev-cycle.js CONFIG `REPOS` block from this file — the workflow
+# can't read the FS at runtime, so `scripts/aiworks config` keeps its mirror in sync for you.
 products:
   - id: <product-id>                          # → mani.d/<product-id>.yaml
     repos:

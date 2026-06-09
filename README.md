@@ -12,6 +12,8 @@ Everything organization-specific is swappable:
 |---|---|---|
 | **VCS** | `github` (`gh`) · `gitlab` (`glab`) | `scripts/vcs/` adapter + `vcs.provider` |
 | **Auto-merge** | `true` · `false` (+ per-repo override) | `vcs.auto_merge` + `products[].repos[].auto_merge` |
+| **Plan approval** | auto · human-approve before build | `planning.auto_approve` (+ `--approve-plan`) |
+| **Plan → HTML** | `true` · `false` | `planning.to_html` (write-interactive-docs) |
 | **Tracker** | `notion` · `jira` (both shell, curl+jq) | `scripts/tracker/` adapter + `tracker.*` |
 | **Quality gate** | `sonarqube` · `none` | `quality_gate.provider` + per-repo `guard` |
 | **Distribution** | `firebase` · `none` · `custom` | per-repo `distribute` |
@@ -39,9 +41,9 @@ scripts/tracker/  # notion | jira ticket adapter
 1. **Copy** this directory to a new workspace repo (or use it as one).
 2. **Config** — `cp workspace.config.example.yaml workspace.config.yaml` and fill it in:
    org name/product, `vcs.provider` + `vcs.auto_merge`, `tracker.provider` + `ticket_prefix`
-   + `statuses`, `branch_model`, `quality_gate`, and your repos — just add each repo's **URL**
-   (+ `kind`) under `products[].repos[]`. That `products:` block is all you declare; `mani.d/`
-   is generated from it.
+   + `statuses`, `branch_model`, `quality_gate`, `planning` (`auto_approve` / `to_html`), and
+   your repos — just add each repo's **URL** (+ `kind`) under `products[].repos[]`. That
+   `products:` block is all you declare; `mani.d/` is generated from it.
 3. **Tracker creds** — `cp scripts/tracker/.env.example scripts/tracker/.env`, set
    `TRACKER_PROVIDER` and that provider's block. Fill in
    `docs/agents/issue-tracker.md` (ids, status names).
@@ -52,11 +54,12 @@ scripts/tracker/  # notion | jira ticket adapter
    index, installs skill packs, seeds hooks, scaffolds `CLAUDE.md` + `scripts/dev.sh`). It's
    idempotent — re-run any time; already-onboarded repos just SKIP. Then `mani list projects`
    to confirm.
-6. **Workflow CONFIG block** — open `.claude/workflows/dev-cycle.js` and edit the
-   `── CONFIG ──` block at the top (the `REPOS` registry, `TICKET_PREFIX`, `AUTO_MERGE`, and
-   the status names) to match `workspace.config.yaml`. *Workflow scripts can't read the
-   filesystem, so this block is the workflow's own copy — keep the two in sync.* (Each
-   `aiworks add` prints a ready-to-paste `REPOS` entry; same idea for `prd.js` / `brd.js`.)
+6. **Workflow CONFIG block** — nothing to hand-edit. `.claude/workflows/dev-cycle.js` carries a
+   `── CONFIG ──` mirror (the `REPOS` registry, `TICKET_PREFIX`, `AUTO_MERGE`, `AUTO_APPROVE_PLAN`,
+   `PLAN_TO_HTML`, status names) only because Workflow scripts can't read the filesystem at
+   runtime. `scripts/aiworks sync` — and every `add` / `remove` — **regenerates that block from
+   `workspace.config.yaml` automatically**; run `scripts/aiworks config` yourself after any other
+   hand-edit to the config. (The same FS-mirror idea applies to `prd.js` / `brd.js`.)
 7. **De-brand pass** — replace the `{{ORG_NAME}}` / `{{PRODUCT_DESCRIPTION}}` placeholders
    in `CLAUDE.md`. The agents and workflows are already provider-agnostic; the
    **stack-specific** skills still carry example product/domain copy and tooling for the
@@ -76,7 +79,13 @@ scripts/aiworks sync feeed-me --dry-run       # preview just one product (run no
 scripts/aiworks add    --url git@github.com:your-org/feeedme-api.git --product backend --lang go --kind generic
 scripts/aiworks remove feeedme-api            # deregister (keeps the clone)
 scripts/aiworks remove feeedme-api --purge    # also delete the clone (refuses if dirty/unpushed)
+scripts/aiworks config                        # regen the dev-cycle.js CONFIG from the config
 ```
+
+**`aiworks config`** regenerates the `── CONFIG ──` mirror in `.claude/workflows/dev-cycle.js`
+straight from `workspace.config.yaml` (Workflow scripts can't read the FS at runtime, so the
+workflow needs an in-source copy). `sync` / `add` / `remove` all run it for you at the end —
+call it directly only after hand-editing a non-repo field (ticket prefix, statuses, flags).
 
 **`aiworks sync [<product>]`** is the fast path: it reads `products[].repos[]` from
 `workspace.config.yaml` (optionally one product) and runs the full per-repo toolchain for each,
@@ -109,22 +118,25 @@ workspace's own `.claude/hooks`; `settings.json` written from a built-in baselin
 jq-merged so existing plugin enablement is preserved), scaffolds a **`scripts/dev.sh`** shaped
 by the repo's own toolchain, and runs the skill generator. It's idempotent — anything already
 done/installed is skipped and reported; any missing tool (mani/codegraph/claude/npx/jq) is
-skipped with a printed summary + manual follow-ups. **At the end it prints a ready-to-paste
-`dev-cycle.js` CONFIG `REPOS` entry — paste it into the workflow** (which can't read the FS).
+skipped with a printed summary + manual follow-ups. **At the end it regenerates the
+`dev-cycle.js` CONFIG block from `workspace.config.yaml`** (the `aiworks config` step) — the
+workflow can't read the FS at runtime, so it keeps that in-source mirror, and you paste nothing.
 
 **`aiworks remove <repo>`** is the inverse: it deregisters the repo from
 `workspace.config.yaml` `products[].repos[]` (matched by the repo name in its URL; an emptied
 product block is left for you to delete), from `mani.d/<product>.yaml` (deleting the file + its
 `mani.yaml` import if that was the product's last repo), and from the workspace `.gitignore` —
 leaving the clone in place unless you pass `--purge` (which refuses on a dirty/unpushed tree
-unless `--force`). Then remove the repo from the `dev-cycle.js` CONFIG `REPOS` block by hand.
+unless `--force`). It then **regenerates the `dev-cycle.js` CONFIG block from
+`workspace.config.yaml`** too, so the removed repo drops out of the workflow mirror automatically.
 (Both commands have their own `-h`: `aiworks add -h`, `aiworks remove -h`.)
 
 ## Run it
 
 ```
-/dev-cycle FM-12          # one ticket, end to end across every repo it touches
-/dev-cycle FM-12 --dry-run  # stop before any merge/integration/distribute
+/dev-cycle FM-12              # one ticket, end to end across every repo it touches
+/dev-cycle FM-12 --dry-run    # stop before any merge/integration/distribute
+/dev-cycle FM-12 --approve-plan  # proceed past the plan-approval gate (when planning.auto_approve is off)
 ```
 
 ## Verify the wiring (no destructive ops)
@@ -152,9 +164,17 @@ bash -n scripts/vcs/*.sh scripts/tracker/*.sh
   squash-merged automatically. Set it `false` (or override one repo with
   `products[].repos[].auto_merge: false`) to have the run open the PR/MR and run every reviewer,
   then STOP and leave it open for a human to merge — integration/distribute/close are skipped.
-  Mirror the value into the `dev-cycle.js` CONFIG `AUTO_MERGE` constant. (`--dry-run` stops one
+  `aiworks config` (run by add/remove/sync) mirrors the value into the `dev-cycle.js` CONFIG
+  `AUTO_MERGE` constant for you. (`--dry-run` stops one
   step earlier — before the PR/MR is even merged-or-left; auto-merge off still merges nothing but
   *does* open + review the PR/MR.)
+- **Plan approval** (`planning.auto_approve`, default `true`) gates the *planning* step the
+  way auto-merge gates the *merge* step. Set it `false` to have the run produce the plan(s),
+  then STOP for a human to review + approve before any build — re-run with `--approve-plan` to
+  proceed. **Plan → HTML** (`planning.to_html`, default `false`): when on, each plan is also
+  rendered to a self-contained interactive HTML (via write-interactive-docs) next to its
+  markdown — useful for sharing the plan when approval is required. `aiworks config` mirrors both
+  into the `dev-cycle.js` CONFIG (`AUTO_APPROVE_PLAN`, `PLAN_TO_HTML`) automatically.
 - Quality-gate (SonarQube) and distribution (Firebase) are the reference impls; set
   `quality_gate.provider: none` and per-repo `distribute: none` to skip them.
 - `scripts/tracker/README.md` and `scripts/vcs/README.md` document each adapter and how

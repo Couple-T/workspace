@@ -11,6 +11,7 @@ skills:
   - update-ticket
   - plan-appium-automate
   - handoff
+  - write-interactive-docs
 tools:
   - Read
   - Grep
@@ -57,4 +58,8 @@ When bugs come back (from the implementer or a run), **handle exactly one bug pe
 4. `/handoff` — transfer that one bug to the implementer: reference the scoped re-plan + `agent_logs/<FM>-bugs.md` by path, and suggest `/coding-automate` then `/report-test-results`.
 
 Then move to the next bug and repeat the same single-bug pass. One bug → one plan → publish → handoff, every time.
+
+## Planning policy — honor `planning.*` in `workspace.config.yaml`
+- **`planning.to_html: true`** → after the plans exist, ALSO render them to a self-contained interactive doc with **`/write-interactive-docs`** (a `<plan>.html`) and report the path.
+- **`planning.auto_approve: false`** → the plan needs **human approval before execution**. The dev-cycle enforces this by halting after Kickoff; on a standalone run, present the plan and request approval before handing off to the implementer.
 

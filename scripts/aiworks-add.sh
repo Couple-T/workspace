@@ -97,18 +97,9 @@ print_summary() {
     for f in "${FOLLOWUP[@]}"; do printf '  • %s\n' "$f"; done
   fi
   [[ $((TOK_IN + TOK_OUT + TOK_CR + TOK_CW)) -gt 0 ]] && printf '%sClaude usage this run:%s in=%d out=%d cache(r=%d w=%d)  total cost=$%s\n' "$c_step" "$c_off" "$TOK_IN" "$TOK_OUT" "$TOK_CR" "$TOK_CW" "$TOK_COST"
-  # Print a ready-to-paste dev-cycle.js CONFIG `REPOS` entry — the workflow can't read the
-  # filesystem, so this block is its hand-maintained mirror of workspace.config.yaml.
-  if [[ -n "${REPO_NAME:-}" ]]; then
-    local jr jd
-    jr="$([[ "${WC_REVIEW:-}" == null ]] && printf 'null' || printf "'%s'" "${WC_REVIEW:-code-reviewer}")"
-    jd="$([[ -z "${DISTRIBUTE:-}" || "${DISTRIBUTE:-}" == none ]] && printf 'null' || printf "'%s'" "$DISTRIBUTE")"
-    printf '%sMirror into .claude/workflows/dev-cycle.js CONFIG REPOS (workflow can'\''t read the FS):%s\n' "$c_step" "$c_off"
-    printf "  '%s': { path: '%s', kind: '%s', base: { feature: '<feature_base>', fix: '<fix_base>' },\n" "$REPO_NAME" "${PATH_REL:-$REPO_NAME}" "${KIND:-generic}"
-    printf "    plan: '%s', build: '%s', review: %s, guard: %s, perf: %s,\n" "${WC_PLAN:-development-planner}" "${WC_BUILD:-developer}" "$jr" "${WC_GUARD:-true}" "${WC_PERF:-true}"
-    printf "    green: '<keep-it-green check>', guardianFocus: '<…>', testSuite: %s, distribute: %s },\n" "${WC_TEST_SUITE:-false}" "$jd"
-  fi
-  printf '%sNext:%s paste the entry above into dev-cycle.js (set base from branch_model + any autoMerge override), then `mani list projects`.\n' "$c_step" "$c_off"
+  # The dev-cycle.js CONFIG mirror is regenerated FROM workspace.config.yaml by step 2.6
+  # (scripts/aiworks-config.sh) — there is nothing to paste by hand anymore.
+  printf '%sNext:%s the .claude/workflows/dev-cycle.js CONFIG is auto-generated from workspace.config.yaml (regenerated at step 2.6; re-run `aiworks config` any time). Then `mani list projects`.\n' "$c_step" "$c_off"
 }
 # Append a literal line to a file iff absent. Returns 0 if it added it, 1 if already
 # present. Guarantees the file ends in a newline first so lines never merge.
@@ -270,16 +261,13 @@ tags_yaml=""; for t in "${tags_list[@]}"; do tags_yaml+="${tags_yaml:+, }$t"; do
 [[ "$PATH_REL" =~ ^[A-Za-z0-9._/-]+$ ]] || die "repo/dir name '$PATH_REL' is not a simple dir path — pass --path"
 [[ "$CLAUDE_TIMEOUT" =~ ^[0-9]+$ ]]     || CLAUDE_TIMEOUT=900
 
-# Map the repo kind → the role/gate defaults. These are NOT written into
-# workspace.config.yaml (the entry there stays minimal: url + kind); they're used only to
-# print a ready-to-paste dev-cycle.js CONFIG `REPOS` entry at the end (the workflow can't
-# read the FS, so its mirror is maintained by hand). appium-e2e has no code review and
-# provides the cross-repo integration suite; everything else is dev+review.
+# The repo kind drives the role/gate defaults (plan/build/review/guard/perf/testSuite/green/
+# guardianFocus/base) in the dev-cycle.js mirror — but that mapping now lives in ONE place:
+# scripts/aiworks-config.sh, which regenerates the workflow CONFIG from workspace.config.yaml
+# at the end of this run (step 2.6). Here we only sanity-check the kind value.
 case "$KIND" in
-  appium-e2e)             WC_PLAN=qa-planner;          WC_BUILD=qa-runner; WC_REVIEW=null;          WC_GUARD=false; WC_PERF=false; WC_TEST_SUITE=true ;;
-  flutter-app|generic)    WC_PLAN=development-planner; WC_BUILD=developer; WC_REVIEW=code-reviewer; WC_GUARD=true;  WC_PERF=true;  WC_TEST_SUITE=false ;;
-  *) printf '%s! unknown --kind "%s"; using generic role defaults%s\n' "$c_warn" "$KIND" "$c_off"
-     WC_PLAN=development-planner; WC_BUILD=developer; WC_REVIEW=code-reviewer; WC_GUARD=true; WC_PERF=true; WC_TEST_SUITE=false ;;
+  appium-e2e|flutter-app|generic) ;;
+  *) printf '%s! unknown --kind "%s"; the dev-cycle.js mirror will treat it as generic%s\n' "$c_warn" "$KIND" "$c_off" ;;
 esac
 
 printf '%sOnboarding repo "%s" → product "%s"  (dir: %s/, lang: %s)%s\n' "$c_step" "$REPO_NAME" "$PRODUCT" "$PATH_REL" "${LANG:-auto}" "$c_off"
@@ -370,6 +358,18 @@ else
   [[ -s "$WC" && -n "$(tail -c1 "$WC")" ]] && printf '\n' >> "$WC"
   printf 'products:\n  - id: %s\n    repos:\n%s' "$PRODUCT" "$repo_block" >> "$WC" \
     && ok "created products: block in workspace.config.yaml (product '$PRODUCT', repo '$REPO_NAME')"
+fi
+
+# ── 2.6. regenerate the dev-cycle workflow CONFIG from workspace.config.yaml ────
+# The workflow can't read the FS at runtime, so it carries an in-source mirror of the config.
+# Now that the repo is in workspace.config.yaml, regenerate that mirror — no hand-paste needed.
+step "2.6. Regenerate the dev-cycle.js CONFIG from workspace.config.yaml"
+GEN="$(cd "$(dirname "$0")" && pwd)/aiworks-config.sh"
+if [[ -x "$GEN" ]]; then
+  if out="$("$GEN" -q 2>&1)"; then ok "dev-cycle.js CONFIG mirrors workspace.config.yaml (no manual paste needed)"
+  else skip "2.6. could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand. Detail: ${out}"; fi
+else
+  skip "2.6. aiworks-config.sh not found next to aiworks-add.sh — mirror dev-cycle.js by hand"
 fi
 
 # ── 3. clone via mani + 3.1 gitignore ─────────────────────────────────────────

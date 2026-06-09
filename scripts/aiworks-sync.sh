@@ -128,6 +128,16 @@ while IFS=$'\037' read -r prod url kind lang dist path; do   # \037 (US) — emp
   fi
 done < <(parse_repos)
 
+# ── regenerate the workflow CONFIG once from the now up-to-date workspace.config.yaml ──
+# (the workflow can't read the FS at runtime, so it keeps an in-source mirror).
+if [[ "$DRY" -ne 1 ]]; then
+  GEN="$DIR/aiworks-config.sh"
+  if [[ -x "$GEN" ]]; then
+    step "Regenerate the dev-cycle.js CONFIG from workspace.config.yaml"
+    "$GEN" || warn "could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand"
+  fi
+fi
+
 # ── summary ──────────────────────────────────────────────────────────────────────
 printf '\n%s──────── sync summary ────────%s\n' "$c_step" "$c_off"
 if [[ "$total" -eq 0 ]]; then
@@ -139,6 +149,6 @@ else
   if [[ "${#noted[@]}" -gt 0 ]]; then
     printf '%sNotes:%s\n' "$c_warn" "$c_off"; for n in "${noted[@]}"; do printf '  • %s\n' "$n"; done
   fi
-  printf '%sNext:%s mirror any newly-onboarded repos into the .claude/workflows/dev-cycle.js CONFIG `REPOS` block (each `aiworks add` printed a paste-ready entry).\n' "$c_step" "$c_off"
+  printf '%sNext:%s `mani list projects` to see the set. (The .claude/workflows/dev-cycle.js CONFIG was regenerated from workspace.config.yaml automatically — no manual mirror needed.)\n' "$c_step" "$c_off"
 fi
 [[ "$failed" -eq 0 ]]
