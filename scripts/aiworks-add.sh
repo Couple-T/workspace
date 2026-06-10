@@ -511,31 +511,48 @@ else
   fi
 fi
 
-# ── 8. run the setup-matt-pocock-skills SKILL (idempotent) ─────────────────────
-# A PROMPT-DRIVEN Claude skill (installed in step 6): it explores, confirms, then scaffolds an
-# `## Agent skills` block (in CLAUDE.md/AGENTS.md) + docs/agents/. Run headless it can exit 0
-# WITHOUT writing anything, so "done" is judged by a real ARTIFACT — not just a 0-exit. The
-# sentinel only records that we ATTEMPTED it (so we don't re-run a fruitless headless call); the
-# skip message says exactly which signal matched, and a no-op attempt is reported honestly.
-step "8. Run the /setup-matt-pocock-skills skill"
-# What proves the skill actually did its job (vs. a headless 0-exit no-op):
+# ── 8. scaffold the matt-pocock per-repo config (NON-INTERACTIVE) ──────────────
+# /setup-matt-pocock-skills (installed in step 6) is a PROMPT-DRIVEN skill whose default flow is
+# explore → present findings → ASK THE USER → write. Run headless that "ask" step has no one to
+# answer (stdin is /dev/null), so it exits 0 having written nothing — which is why a bare invocation
+# always left step 8 asking for an interactive follow-up. So we DON'T invoke the bare slash command:
+# we pass a self-contained NON-INTERACTIVE prompt that tells the headless run to skip the ask/confirm
+# steps and write the artifacts directly with derived defaults (tracker ← git remote, canonical
+# triage labels 1:1, single-context). Success is still judged by a real ARTIFACT (docs/agents/ or the
+# '## Agent skills' block); the step is idempotent (once the artifact exists, later runs short-circuit)
+# and a genuine miss simply RETRIES on the next sync — no manual step.
+step "8. Scaffold matt-pocock per-repo config (/setup-matt-pocock-skills, non-interactive)"
+# What proves the skill actually did its job:
 mp_artifact() { [[ -d "$REPO_DIR/docs/agents" ]] || grep -qs '## Agent skills' "$REPO_DIR/CLAUDE.md" "$REPO_DIR/AGENTS.md"; }
+# The headless override prompt. Quoted heredoc → no expansion/command-substitution (the backticks
+# below are LITERAL); `read -d ''` returns non-zero at EOF but set -e is off, so it's safe (same
+# pattern as BASE_SETTINGS in step 9).
+read -r -d '' MP_PROMPT <<'EOF'
+Run the /setup-matt-pocock-skills skill for THIS repository in NON-INTERACTIVE (headless) mode.
+There is NO human available to answer questions and stdin is closed, so you MUST NOT ask for
+confirmation or wait for input. SKIP the skill's "Present findings and ask" and "Confirm and edit"
+steps entirely. Apply these defaults and WRITE the files directly:
+
+- Issue tracker: inspect `git remote -v`. If the origin remote is GitLab, use the gitlab seed
+  template; if GitHub, the github seed template; if there is no remote, the local-markdown seed
+  template. Copy the matching template from the skill folder to docs/agents/issue-tracker.md.
+- Triage labels: the five canonical roles mapped 1:1 to their default strings — write
+  docs/agents/triage-labels.md from the seed template unchanged.
+- Domain docs: single-context — write docs/agents/domain.md from the seed template.
+- Add (or update in place) the "## Agent skills" block in CLAUDE.md if it exists, else AGENTS.md,
+  else create CLAUDE.md. Never create the other file when one already exists.
+
+Write all three docs/agents/*.md files and the "## Agent skills" block now. Do not ask — just write.
+EOF
 if ! have claude; then skip "8. 'claude' CLI not found"
 elif [[ -d "$REPO_DIR/docs/agents" ]] && [[ "$FORCE" -ne 1 ]]; then
   skip "8. already done — docs/agents/ present"
 elif grep -qs '## Agent skills' "$REPO_DIR/CLAUDE.md" "$REPO_DIR/AGENTS.md" && [[ "$FORCE" -ne 1 ]]; then
   skip "8. already done — '## Agent skills' block present in CLAUDE.md/AGENTS.md"
-elif is_done step8-setup-mp && [[ "$FORCE" -ne 1 ]]; then
-  skip "8. attempted on a prior run (sentinel present) but NO docs/agents/ or '## Agent skills' yet — it's prompt-driven; run '/setup-matt-pocock-skills' INTERACTIVELY in $PATH_REL/ to finish (or --force to retry headless)"
-  FOLLOWUP+=("run /setup-matt-pocock-skills INTERACTIVELY in $PATH_REL/ to scaffold docs/agents/ + the '## Agent skills' block (headless can't finish this prompt-driven skill)")
-elif claude_run "/setup-matt-pocock-skills"; then
-  mark_done step8-setup-mp   # records the attempt either way, so we don't re-run a headless no-op every sync
-  if mp_artifact; then ok "/setup-matt-pocock-skills ran — scaffolded docs/agents/ or the '## Agent skills' block"
-  else
-    warn "8. /setup-matt-pocock-skills ran but wrote no docs/agents/ or '## Agent skills' block (prompt-driven skill no-ops headless) — run it INTERACTIVELY in $PATH_REL/ to finish scaffolding"
-    FOLLOWUP+=("run /setup-matt-pocock-skills INTERACTIVELY in $PATH_REL/ to scaffold docs/agents/ + the '## Agent skills' block (headless can't finish this prompt-driven skill)")
-  fi
-else skip "8. /setup-matt-pocock-skills failed (was step 6 able to install it?)"; fi
+elif claude_run "$MP_PROMPT"; then
+  if mp_artifact; then ok "/setup-matt-pocock-skills (non-interactive) scaffolded docs/agents/ + the '## Agent skills' block"
+  else warn "8. /setup-matt-pocock-skills wrote no docs/agents/ or '## Agent skills' block — retries on the next sync (re-run with --force to retry now; was step 6 able to install it?)"; fi
+else skip "8. /setup-matt-pocock-skills failed (auth? was step 6 able to install it?)"; fi
 
 # ── 9. hooks + permissions baseline (HARDCODED, sonar-free) ────────────────────
 # No reference repo: the hooks come from the workspace's own .claude/hooks (the dev-wrapper,
