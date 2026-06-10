@@ -36,6 +36,8 @@
 #   --distribute <how>     workspace.config.yaml distribute: none | firebase | custom (default: none).
 #   --path <dir>           Clone dir under the workspace root (default: the repo name from --url).
 #   --skill-cmd <slash>    Skill-generator command to run in the repo (default: /run-skill-generator).
+#                          It's told to make the generated run skill a thin wrapper over
+#                          `scripts/dev.sh run` (step 10) rather than re-derive how to run.
 #   --claude-timeout <s>   Per-step timeout (seconds) for each headless `claude` call so a hung
 #                          step can't stall the run (default: 900; 0 disables; needs timeout/gtimeout).
 #   --safe-perms           Run the headless `claude` steps with --permission-mode acceptEdits
@@ -633,7 +635,7 @@ if ! have claude; then skip "10. 'claude' CLI not found — author scripts/dev.s
 elif [[ -f "$REPO_DIR/scripts/dev.sh" && "$FORCE" -ne 1 ]]; then skip "10. scripts/dev.sh already present"
 else
   mkdir -p "$REPO_DIR/scripts"
-  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. After writing each run's log, prune the older logs for that command so only the most-recent N are kept (N from the DEV_LOG_KEEP env var, default 5; treat 0 or a non-numeric value as keep-all). POSIX bash, 'set -euo pipefail', a usage(), executable. Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
+  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | run | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. 'run' is the SINGLE SOURCE OF TRUTH for how to launch this repo: it builds if needed then launches/drives the app the repo's OWN way as a NON-INTERACTIVE agent path that proves it works and EXITS with a verdict (a server → start, poll a readiness/health check, report up/down, then tear down; a web app → build or start the dev server and confirm it serves; a CLI → a smoke invocation; a DB/migration repo → apply + verify; ANYTHING long-running MUST be backgrounded, polled for a ready marker, then stopped — never block forever), and it obeys the same verbose-log + one-line-summary rules as the others. After writing each run's log, prune the older logs for that command so only the most-recent N are kept (N from the DEV_LOG_KEEP env var, default 5; treat 0 or a non-numeric value as keep-all). POSIX bash, 'set -euo pipefail', a usage(), executable. Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
   glance "scaffolding scripts/dev.sh (${LANG:-language inferred}) ..."
   if claude_run "$gen_prompt"; then
     [[ -f "$REPO_DIR/scripts/dev.sh" ]] && chmod +x "$REPO_DIR/scripts/dev.sh" 2>/dev/null
@@ -646,13 +648,23 @@ fi
 # Idempotent: the generator writes a real skill dir under .claude/skills/ (the mattpocock
 # skills there are SYMLINKS, so `-type d` matches only a generated skill). That, or our
 # sentinel, means it already ran — SKIP (don't regenerate on every run).
+#
+# We FORCE the generated run skill to DELEGATE to `scripts/dev.sh run` (step 10) rather than
+# re-derive how to build/launch the app — that derivation is the expensive part, dev.sh already
+# owns it, and re-doing it burns tokens. The run skill stays a thin wrapper over dev.sh run.
 step "10.5. Run the skill generator ($SKILL_CMD) in $PATH_REL/"
 if ! have claude; then skip "10.5. 'claude' CLI not found — run $SKILL_CMD in $PATH_REL/ later"
 elif { is_done step10_5-skillgen || [[ -n "$(find "$REPO_DIR/.claude/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)" ]]; } && [[ "$FORCE" -ne 1 ]]; then
   skip "10.5. a generated skill already exists in .claude/skills/ (or sentinel) — not re-running $SKILL_CMD"
 else
+  skill_prompt="$SKILL_CMD"
+  if [[ -f "$REPO_DIR/scripts/dev.sh" ]]; then
+    skill_prompt="$SKILL_CMD
+
+This repo's scripts/dev.sh already has a 'run' subcommand that is the SINGLE SOURCE OF TRUTH for how to build, launch and drive this app (just generated for this exact stack). To stay lean on tokens, DO NOT re-derive how to run, and DO NOT build/launch the app yourself to discover it — trust scripts/dev.sh run. The generated run skill MUST be a THIN WRAPPER: its 'Run (agent path)' section simply invokes 'scripts/dev.sh run' (and points at 'scripts/dev.sh status' / 'scripts/dev.sh why run' for diagnosis). Do NOT write a separate driver script that duplicates dev.sh, and keep Prerequisites/Setup to the few lines dev.sh assumes."
+  fi
   glance "running ${SKILL_CMD} ..."
-  if claude_run "$SKILL_CMD"; then ok "$SKILL_CMD ran"; mark_done step10_5-skillgen
+  if claude_run "$skill_prompt"; then ok "$SKILL_CMD ran (delegates to scripts/dev.sh run)"; mark_done step10_5-skillgen
   else skip "10.5. $SKILL_CMD failed (is the skill installed? override the name with --skill-cmd)"; fi
 fi
 
