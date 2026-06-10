@@ -1,4 +1,4 @@
-# Workspace template — multi-repo agent orchestration
+# AI Agents Workspace(aiworks) — multi-repo agent orchestration
 
 A reusable, provider-agnostic starting point for running a **"product team" of Claude
 agents** across multiple repos.
