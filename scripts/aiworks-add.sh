@@ -410,12 +410,18 @@ cd "$REPO_DIR" || die "cannot cd into $REPO_DIR"
 
 # ── 3.2. repo .gitignore — ignore agent_logs/ (agent plans / run summaries / bug logs,
 #         incl. the dev.sh verbose logs in agent_logs/executed_verbose/) + .aiworks/ (this
-#         tool's per-repo idempotency sentinels) ──────────
-step "3.2. Ignore agent_logs/ + .aiworks/ in $PATH_REL/.gitignore"
+#         tool's per-repo idempotency sentinels) + the codegraph daemon runtime files
+#         (.codegraph/daemon.pid + .codegraph/codegraph.lock — machine-local, never committed) ──────────
+step "3.2. Ignore agent_logs/ + .aiworks/ + codegraph runtime in $PATH_REL/.gitignore"
 if ensure_line "$REPO_DIR/.gitignore" "agent_logs/"; then ok "added agent_logs/ to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores agent_logs/"; fi
 if ensure_line "$REPO_DIR/.gitignore" ".aiworks/"; then ok "added .aiworks/ to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores .aiworks/"; fi
+ensure_line "$REPO_DIR/.gitignore" "# codegraph" || true   # group header for the two runtime files below
+if ensure_line "$REPO_DIR/.gitignore" ".codegraph/daemon.pid"; then ok "added .codegraph/daemon.pid to $PATH_REL/.gitignore"
+else skip "3.2. $PATH_REL/.gitignore already ignores .codegraph/daemon.pid"; fi
+if ensure_line "$REPO_DIR/.gitignore" ".codegraph/codegraph.lock"; then ok "added .codegraph/codegraph.lock to $PATH_REL/.gitignore"
+else skip "3.2. $PATH_REL/.gitignore already ignores .codegraph/codegraph.lock"; fi
 
 # ── 4. codegraph index ────────────────────────────────────────────────────────
 step "4. Initialize the codegraph index (in $PATH_REL/)"
@@ -610,7 +616,7 @@ if ! have claude; then skip "10. 'claude' CLI not found — author scripts/dev.s
 elif [[ -f "$REPO_DIR/scripts/dev.sh" && "$FORCE" -ne 1 ]]; then skip "10. scripts/dev.sh already present"
 else
   mkdir -p "$REPO_DIR/scripts"
-  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. POSIX bash, 'set -euo pipefail', a usage(), executable. Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
+  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. After writing each run's log, prune the older logs for that command so only the most-recent N are kept (N from the DEV_LOG_KEEP env var, default 5; treat 0 or a non-numeric value as keep-all). POSIX bash, 'set -euo pipefail', a usage(), executable. Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
   glance "scaffolding scripts/dev.sh (${LANG:-language inferred}) ..."
   if claude_run "$gen_prompt"; then
     [[ -f "$REPO_DIR/scripts/dev.sh" ]] && chmod +x "$REPO_DIR/scripts/dev.sh" 2>/dev/null
