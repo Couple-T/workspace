@@ -77,11 +77,14 @@ planning:
 #
 #   id / path  ← the repo NAME from the URL (last path segment, minus .git).  Override
 #                the clone dir with `path:`.
-#   kind       → the role/gate defaults the orchestration uses:
-#                  flutter-app  → developer (TDD) builds, code-reviewer reviews, guard+perf gates
+#   kind       → a FREE-FORM, tech-agnostic dev-context LABEL (frontend, backend, web-app,
+#                service, migration, generic, …) — the tech goes in `lang`, NOT the kind.
+#                It selects one of two role/gate ARCHETYPES:
 #                  test-suite   → qa-runner builds the test suite (E2E / API / load), no code
-#                                 review, provides the cross-repo test-suite (QA) gate
-#                  generic      → developer builds, code-reviewer reviews (tune the gates per repo)
+#                                 review, provides the cross-repo test-suite (QA) gate. The ONE
+#                                 special kind name.
+#                  <any other>  → a code repo: developer builds (TDD), code-reviewer reviews,
+#                                 guard+perf gates on (tune per repo via green / guardian_focus)
 #
 # After editing this block run `scripts/aiworks sync` to clone + onboard. That (like `add` /
 # `remove`) also REGENERATES the dev-cycle.js CONFIG `REPOS` block from this file — the workflow
@@ -90,8 +93,8 @@ products:
   - id: <product-id>                          # → mani.d/<product-id>.yaml
     repos:
       - url: git@github.com:your-org/your-app.git   # ← all you must provide
-        kind: flutter-app                           # flutter-app | test-suite | generic
-        lang: dart                                  # optional; else auto-detected from the clone
+        kind: frontend                              # any dev-context label; test-suite = QA archetype
+        lang: dart                                  # the TECH lives here; else auto-detected from the clone
         distribute: firebase                        # firebase | none | custom  (default: none)
         # auto_merge: false                         # optional — override vcs.auto_merge for this repo
         # path: your-app                            # optional — clone dir (default: the repo name)

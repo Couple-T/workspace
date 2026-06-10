@@ -117,6 +117,8 @@ does the rest.
 ```sh
 scripts/aiworks sync                       # onboard EVERY repo in the config
 scripts/aiworks sync feeed-me --dry-run    # preview one product (runs nothing)
+scripts/aiworks sync agent-db              # onboard ONLY one repo (by name)
+scripts/aiworks sync --repo agent-db,paotung-template   # …or several named repos
 
 scripts/aiworks add --url git@github.com:your-org/feeedme-api.git \
                     --product backend --lang go --kind generic   # onboard one repo

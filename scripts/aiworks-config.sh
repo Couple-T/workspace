@@ -131,6 +131,13 @@ if [[ -z "$STATUS_PAIRS" ]]; then
 fi
 
 # ── 2. kind → role/gate DEFAULTS (the one authoritative table) ────────────────────
+# `kind` is a FREE-FORM, tech-agnostic development-context label (frontend, backend,
+# web-app, service, migration, generic, …) — the tech is captured by `lang`, NOT the kind.
+# Behaviour is decided by ARCHETYPE, and there are exactly two:
+#   test-suite → QA pipeline: qa-planner/qa-runner build the suite, no code review, and this
+#                repo PROVIDES the cross-repo test-suite gate. The ONE behaviourally-special kind.
+#   * (any     → a "code" repo: plan→build→review (development-planner + developer + code-reviewer)
+#   other kind)  with the guard + perf gates on. Refine per repo via green / guardian_focus.
 # Echoes TAB-separated: plan build review guard perf testSuite base_feature base_fix
 # green guardianFocus   — `review`/`base_*` are bare; green/guardianFocus are free text.
 kind_defaults() {
@@ -141,12 +148,7 @@ kind_defaults() {
         qa-planner qa-runner null false false true "$FIX_BASE" "$FIX_BASE" \
         'the ticket + regression specs (scoped `npm test -- <specs>`, POM) green on every target platform the suite covers — the full-suite run is on-demand' \
         '' ;;
-    flutter-app)
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
-        development-planner developer code-reviewer true true false "$FEATURE_BASE" "$FIX_BASE" \
-        'lint + unit tests (via scripts/dev.sh)' \
-        'no hardcoded secrets/keys in source, dependency health, data-protection for personal data stored locally, least-privilege platform permissions, keeping sensitive data out of logs, safe deep-link handling' ;;
-    *)  # generic (and any unknown kind)
+    *)  # any code repo: frontend, backend, web-app, service, migration, generic, …
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
         development-planner developer code-reviewer true true false "$FEATURE_BASE" "$FIX_BASE" \
         '<unit + integration tests>' \

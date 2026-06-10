@@ -28,7 +28,10 @@
 #   --tags <a,b,…>         EXTRA tags, appended after [product, language] in the mani entry
 #                          (e.g. "ui,offline"). Default: none.
 #   --desc <text>          mani entry description (default: "The <repo-name> repo.").
-#   --kind <kind>          workspace.config.yaml repo kind: generic | flutter-app | test-suite
+#   --kind <kind>          repo kind — a free-form, tech-agnostic dev-context label (frontend,
+#                          backend, web-app, service, migration, generic, …; the tech goes in
+#                          --lang). Only 'test-suite' is special (QA archetype); any other kind
+#                          is a code repo (plan→build→review + guard/perf). Default: generic.
 #                          (default: generic) — drives the plan/build/review/guard/perf/test-suite defaults.
 #   --distribute <how>     workspace.config.yaml distribute: none | firebase | custom (default: none).
 #   --path <dir>           Clone dir under the workspace root (default: the repo name from --url).
@@ -55,6 +58,10 @@ skip()  { printf '    %s⤼ SKIP: %s%s\n' "$c_warn" "$*" "$c_off"; SKIPPED+=("$*
 glance(){ printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; }
 die()   { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 have()  { command -v "$1" >/dev/null 2>&1; }
+# A repo is codegraph-"initialized" only when the graph DB exists — a bare .codegraph/ dir
+# (just its .gitignore, e.g. from an interrupted init) is NOT initialized and `codegraph sync`
+# rejects it. Both the init (step 4) and sync (step 10.6) steps gate on THIS, so they agree.
+cg_indexed() { local f; for f in "$1"/.codegraph/*.db; do [[ -e "$f" ]] && return 0; done; return 1; }
 
 # Ask on the CONTROLLING TERMINAL (/dev/tty), not stdin — so a prompt still works even when
 # stdin is a pipe or has been consumed by a child. Sets REPLY. Returns 0 if it asked, 1 if
@@ -261,13 +268,16 @@ tags_yaml=""; for t in "${tags_list[@]}"; do tags_yaml+="${tags_yaml:+, }$t"; do
 [[ "$PATH_REL" =~ ^[A-Za-z0-9._/-]+$ ]] || die "repo/dir name '$PATH_REL' is not a simple dir path — pass --path"
 [[ "$CLAUDE_TIMEOUT" =~ ^[0-9]+$ ]]     || CLAUDE_TIMEOUT=900
 
-# The repo kind drives the role/gate defaults (plan/build/review/guard/perf/testSuite/green/
-# guardianFocus/base) in the dev-cycle.js mirror — but that mapping now lives in ONE place:
-# scripts/aiworks-config.sh, which regenerates the workflow CONFIG from workspace.config.yaml
-# at the end of this run (step 2.6). Here we only sanity-check the kind value.
+# `kind` is a FREE-FORM, tech-agnostic dev-context label (frontend, backend, web-app, service,
+# migration, generic, …) — the tech is captured by --lang. Behaviour is by ARCHETYPE: 'test-suite'
+# selects the QA pipeline (qa-planner/qa-runner, no code review, provides the cross-repo test-suite
+# gate); EVERY other kind is a "code" repo (plan→build→review + guard/perf). The kind→defaults
+# mapping lives in ONE place — scripts/aiworks-config.sh — applied when the dev-cycle.js CONFIG is
+# regenerated at the end of this run (step 2.6). Here we only note which archetype the kind selects.
 case "$KIND" in
-  test-suite|flutter-app|generic) ;;
-  *) printf '%s! unknown --kind "%s"; the dev-cycle.js mirror will treat it as generic%s\n' "$c_warn" "$KIND" "$c_off" ;;
+  test-suite)  printf '%s  kind "%s" → QA archetype (qa-runner builds the suite; no code review)%s\n' "$c_dim" "$KIND" "$c_off" ;;
+  ''|generic)  ;;
+  *)           printf '%s  kind "%s" → code repo (plan→build→review + guard/perf); tune via green/guardian_focus%s\n' "$c_dim" "$KIND" "$c_off" ;;
 esac
 
 printf '%sOnboarding repo "%s" → product "%s"  (dir: %s/, lang: %s)%s\n' "$c_step" "$REPO_NAME" "$PRODUCT" "$PATH_REL" "${LANG:-auto}" "$c_off"
@@ -410,8 +420,8 @@ else skip "3.2. $PATH_REL/.gitignore already ignores .aiworks/"; fi
 # ── 4. codegraph index ────────────────────────────────────────────────────────
 step "4. Initialize the codegraph index (in $PATH_REL/)"
 if ! have codegraph; then skip "4. 'codegraph' not installed — run 'codegraph init' in $PATH_REL/ later"
-elif [[ -d "$REPO_DIR/.codegraph" && "$FORCE" -ne 1 ]]; then skip "4. .codegraph already initialized"
-elif codegraph init "$REPO_DIR"; then ok "codegraph index built"
+elif cg_indexed "$REPO_DIR" && [[ "$FORCE" -ne 1 ]]; then skip "4. .codegraph index already built"
+elif codegraph init "$REPO_DIR"; then ok "codegraph index built"   # recovers a bare/partial .codegraph/ too
 else skip "4. 'codegraph init' failed"; fi
 
 # ── 5. karpathy skills plugin — INSTALL **and ENABLE** at project scope ─────────
@@ -496,14 +506,29 @@ else
 fi
 
 # ── 8. run the setup-matt-pocock-skills SKILL (idempotent) ─────────────────────
-# It's a Claude skill (installed in step 6), invoked as the /slash command. It scaffolds an
-# `## Agent skills` block (in CLAUDE.md/AGENTS.md) + docs/agents/, so treat any of those — or
-# our own sentinel — as "already done" and SKIP (it's an interactive skill; don't re-run it).
+# A PROMPT-DRIVEN Claude skill (installed in step 6): it explores, confirms, then scaffolds an
+# `## Agent skills` block (in CLAUDE.md/AGENTS.md) + docs/agents/. Run headless it can exit 0
+# WITHOUT writing anything, so "done" is judged by a real ARTIFACT — not just a 0-exit. The
+# sentinel only records that we ATTEMPTED it (so we don't re-run a fruitless headless call); the
+# skip message says exactly which signal matched, and a no-op attempt is reported honestly.
 step "8. Run the /setup-matt-pocock-skills skill"
+# What proves the skill actually did its job (vs. a headless 0-exit no-op):
+mp_artifact() { [[ -d "$REPO_DIR/docs/agents" ]] || grep -qs '## Agent skills' "$REPO_DIR/CLAUDE.md" "$REPO_DIR/AGENTS.md"; }
 if ! have claude; then skip "8. 'claude' CLI not found"
-elif { is_done step8-setup-mp || [[ -d "$REPO_DIR/docs/agents" ]] || grep -qs '## Agent skills' "$REPO_DIR/CLAUDE.md" "$REPO_DIR/AGENTS.md"; } && [[ "$FORCE" -ne 1 ]]; then
-  skip "8. setup-matt-pocock-skills already done (sentinel / docs/agents/ / '## Agent skills' present)"
-elif claude_run "/setup-matt-pocock-skills"; then ok "/setup-matt-pocock-skills ran"; mark_done step8-setup-mp
+elif [[ -d "$REPO_DIR/docs/agents" ]] && [[ "$FORCE" -ne 1 ]]; then
+  skip "8. already done — docs/agents/ present"
+elif grep -qs '## Agent skills' "$REPO_DIR/CLAUDE.md" "$REPO_DIR/AGENTS.md" && [[ "$FORCE" -ne 1 ]]; then
+  skip "8. already done — '## Agent skills' block present in CLAUDE.md/AGENTS.md"
+elif is_done step8-setup-mp && [[ "$FORCE" -ne 1 ]]; then
+  skip "8. attempted on a prior run (sentinel present) but NO docs/agents/ or '## Agent skills' yet — it's prompt-driven; run '/setup-matt-pocock-skills' INTERACTIVELY in $PATH_REL/ to finish (or --force to retry headless)"
+  FOLLOWUP+=("run /setup-matt-pocock-skills INTERACTIVELY in $PATH_REL/ to scaffold docs/agents/ + the '## Agent skills' block (headless can't finish this prompt-driven skill)")
+elif claude_run "/setup-matt-pocock-skills"; then
+  mark_done step8-setup-mp   # records the attempt either way, so we don't re-run a headless no-op every sync
+  if mp_artifact; then ok "/setup-matt-pocock-skills ran — scaffolded docs/agents/ or the '## Agent skills' block"
+  else
+    warn "8. /setup-matt-pocock-skills ran but wrote no docs/agents/ or '## Agent skills' block (prompt-driven skill no-ops headless) — run it INTERACTIVELY in $PATH_REL/ to finish scaffolding"
+    FOLLOWUP+=("run /setup-matt-pocock-skills INTERACTIVELY in $PATH_REL/ to scaffold docs/agents/ + the '## Agent skills' block (headless can't finish this prompt-driven skill)")
+  fi
 else skip "8. /setup-matt-pocock-skills failed (was step 6 able to install it?)"; fi
 
 # ── 9. hooks + permissions baseline (HARDCODED, sonar-free) ────────────────────
@@ -613,7 +638,7 @@ fi
 # skills) AFTER the step-4 index build, so re-sync so the index reflects the final tree.
 step "10.6. Sync the codegraph index (in $PATH_REL/)"
 if ! have codegraph; then skip "10.6. 'codegraph' not installed — run 'codegraph sync $PATH_REL' later"
-elif [[ ! -d "$REPO_DIR/.codegraph" ]]; then skip "10.6. no .codegraph index to sync (step 4 didn't run) — 'codegraph init $PATH_REL' first"
+elif ! cg_indexed "$REPO_DIR"; then skip "10.6. no .codegraph index to sync (step 4 didn't build one) — run 'codegraph init $PATH_REL' first"
 elif codegraph sync "$REPO_DIR"; then ok "codegraph index synced"
 else skip "10.6. 'codegraph sync' failed"; fi
 
