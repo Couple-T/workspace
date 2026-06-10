@@ -29,7 +29,8 @@ export const meta = {
 //                 keys it doesn't emit are carried for humans/other tools.
 // REPOS         — one entry per repo (derived from products[].repos[] + its kind):
 //   path        — dir relative to the workspace launch root                 ← repos[].path (or repo name)
-//   kind        — flutter-app | test-suite | generic (selects role behaviour)← repos[].kind
+//   kind        — free-form dev-context label (frontend|backend|web-app|…); 'test-suite' selects
+//                 the QA archetype, any other kind selects the code archetype.            ← repos[].kind
 //   base        — branch a ticket targets: { feature, fix }                 ← branch_model (test-suite ⇒ fix base)
 //   plan/build/review — agentTypes set by kind. review:null ⇒ no code review (test-suite repo); its
 //                 PR/MR is merged by the build role (qa-runner) instead of a code-reviewer.
@@ -62,15 +63,6 @@ const STATUS = {
   done: 'DONE',
 }
 const REPOS = {
-  'agent-db': {
-    path: 'agent-db', kind: 'migration',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'migrate passed successfully and rollback able',
-    guardianFocus: 'secrets',
-    distribute: null,
-  },
 }
 // <<< AIWORKS:CONFIG END >>>
 
