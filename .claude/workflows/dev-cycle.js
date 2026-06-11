@@ -12,6 +12,7 @@ export const meta = {
     { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). If vcs.auto_merge is on: each repo squash-merged UPSTREAM→DOWNSTREAM via scripts/vcs/merge-pr.sh so the web PR/MR is marked Merged, not Closed; each SHA recorded — by the code-reviewer (code repos) or the qa-runner (test-suite repo). If auto-merge is off (global or per-repo) the validated, reviewed PR/MR is left OPEN for a human and the run stops here (nothing merged or distributed).', model: 'sonnet[1m]' },
     { title: 'Distribute', detail: 'per-repo: build a release artifact from the MERGED base and ship it to the repo\'s distribution target (e.g. Firebase App Distribution); then the WORKFLOW moves the ticket to done.', model: 'sonnet' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-repo/role token table (summarize-workflow-performance)', model: 'haiku' },
+    { title: 'Notify', detail: 'OPTIONAL — only when notify.enabled AND auto-merge is off: post a "please review" digest of the open PR/MR per repo to the configured chat channel (scripts/notify/). With auto-merge on, the run merges + distributes itself, so nothing is left to review and this phase is skipped.', model: 'haiku' },
   ],
 }
 
@@ -47,12 +48,19 @@ export const meta = {
 // AUTO_APPROVE_PLAN — planning.auto_approve. false ⇒ after Kickoff the run STOPS for human plan
 //   approval before build; re-run with --approve-plan to proceed.
 // PLAN_TO_HTML — planning.to_html. true ⇒ planners ALSO render each plan to interactive HTML.
+// NOTIFY / NOTIFY_PROVIDER / NOTIFY_CHANNEL — notify.{enabled,provider,channel}. When NOTIFY is
+//   true AND AUTO_MERGE is false, the final Notify phase posts a "please review" digest (the open
+//   PR/MR per repo) to NOTIFY_CHANNEL via the scripts/notify/ adapter. With auto-merge ON the run
+//   merges + distributes itself, so there is nothing to review and the phase is skipped.
 // ──────────────────────────────────────────────────────────────────────────
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
 const TICKET_PREFIX = 'OFB'
 const AUTO_MERGE = false        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
 const AUTO_APPROVE_PLAN = false // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
 const PLAN_TO_HTML = true     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
+const NOTIFY = false        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
+const NOTIFY_PROVIDER = 'slack' // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
+const NOTIFY_CHANNEL = '' // from workspace.config.yaml notify.channel; the chat channel the digest goes to
 const STATUS = {
   to_do: 'TO DO',
   in_progress: 'IN PROGRESS',
@@ -246,6 +254,15 @@ const SUMMARY_SCHEMA = {
     note: { type: 'string' },
   },
 }
+const NOTIFY_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['sent'],
+  properties: {
+    sent: { type: 'boolean' }, // true ONLY after the notify adapter exited 0 (printed ok=1)
+    channel: { type: ['string', 'null'] }, permalink: { type: ['string', 'null'] },
+    note: { type: 'string' },
+  },
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -334,6 +351,45 @@ Return summary_path (the file you actually wrote + confirmed exists via Read), t
   if (s && s.token_table_appended === false) log('⚠️ Summary file written but the token/time table was NOT appended (parser empty/failed) — run parse_workflow_usage.py manually.')
   log(`Run summary: ${s?.summary_path ?? '(summary agent did not converge)'}`)
   return s ?? { summary_path: null, token_table_appended: false, note: 'summary agent did not converge' }
+}
+
+// ── Notify (review request) — OPTIONAL phase, runs LAST (after Summary) ──
+// Called ONLY from the auto-merge-OFF (merge-skipped) path: every repo is built + reviewed
+// and the cross-repo test-suite gate is green, but the validated PR/MR are left OPEN for a
+// human to merge — so we ping the team to review them. Gated on notify.enabled (NOTIFY). With
+// auto-merge ON the run merges + distributes itself (nothing to review), so this is never
+// reached. Best-effort: a send failure NEVER changes the run's outcome — the PRs are already
+// open + validated. Message format (the user-specified template):
+//   Please review, <KEY> <title>.
+//   - <repo>: <pr_url>
+//   - <repo>: <pr_url>
+// `reposInOrder` = repo ids in dependency order; their PR/MR URLs come from repoResults[id].pr.
+async function notifyReview(reposInOrder) {
+  if (!NOTIFY) return null
+  phase('Notify')
+  const title = scope?.title || plans.find((p) => p?.title)?.title || ''
+  const rows = reposInOrder
+    .map((id) => ({ id, url: repoResults[id]?.pr?.pr_url }))
+    .filter((r) => r.url)
+  if (!rows.length) { log('[notify] no open PR/MR URL to announce — Notify skipped.'); return null }
+  const message = `Please review, ${ticket}${title ? ` ${title}` : ''}.\n` +
+    rows.map((r) => `- ${r.id}: ${r.url}`).join('\n')
+  const channelArg = NOTIFY_CHANNEL ? ` --channel ${JSON.stringify(NOTIFY_CHANNEL)}` : ''
+  const msgPath = `agent_logs/${ticket}-notify.txt`
+  const r = await safeAgent(
+    `${tag('all', 'notifier', 'notify')} Post a "please review" notification for ${ticket} to the team chat via the notify adapter. This is a one-shot send — do NOT touch git, the tracker, or any product repo; stay at the WORKSPACE (org) ROOT (the dir holding .claude/), never cd into a repo.
+1. With the Write tool, write the message below VERBATIM (everything between the «MSG» fences, fences EXCLUDED — keep the line breaks exactly) to ${msgPath}:
+«MSG»
+${message}
+«MSG»
+2. Send it (pipe the file on stdin so the newlines survive — do NOT retype the message inline):
+\`scripts/notify/send.sh${channelArg} < ${msgPath}\`
+The adapter reads NOTIFY_PROVIDER (${NOTIFY_PROVIDER}) + creds from scripts/notify/.env and posts to ${NOTIFY_CHANNEL || 'its default channel'}; on success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY if the command exited 0 (printed ok=1) — include the permalink if one was printed and channel="${NOTIFY_CHANNEL}"; on ANY failure return sent:false with the adapter's stderr in note. Do NOT reword the message and do NOT retry more than once.`,
+    { agentType: 'documentor', model: 'haiku', phase: 'Notify', label: `notify:${ticket}`, schema: NOTIFY_SCHEMA },
+  )
+  tick('notify')
+  log(`[notify] review request → ${NOTIFY_CHANNEL || '(default channel)'}: ${r?.sent ? (r.permalink || 'sent') : `NOT sent (${r?.note ?? 'agent did not converge'})`}`)
+  return r ?? { sent: false, note: 'notify agent did not converge' }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -616,7 +672,10 @@ for (const id of mergeOrder) {
     merges[id] = { merged: false, base: rp.base_branch, note: 'auto-merge disabled — PR/MR left open for a human', pr: rr.pr?.pr_url }
     log(`⏸️ [${id}] auto-merge disabled — reviewed + validated PR/MR left OPEN for human merge: ${rr.pr?.pr_url ?? '(see run)'}. Nothing merged or distributed this run.`)
     const summary = await writeSummary('merge-skipped', { ticket, mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, merges })
-    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, summary, spend }
+    // NOTIFY (final phase) — auto-merge is off, so the validated PR/MR are awaiting a human:
+    // ping the configured chat channel to review them. No-op unless notify.enabled.
+    const notify = await notifyReview(mergeOrder)
+    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, summary, notify, spend }
   }
   const merger = desc.review || desc.build // test-suite repo (no reviewer): the qa-runner merges its own PR
   const mergePreamble = desc.review
