@@ -1,6 +1,6 @@
 import:
 
-sync_gitignore: false 
+sync_gitignore: false
 
 specs:
   custom:
