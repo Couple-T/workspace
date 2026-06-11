@@ -5,7 +5,7 @@ export const meta = {
   phases: [
     { title: 'Scope', detail: 'cto: classify which repos the ticket touches + dependency order + whether the cross-repo test-suite (QA) gate applies', model: 'opus' },
     { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (code) · qa-planner designs the test plan + automation plan (test-suite repo) → branch + plan. The WORKFLOW moves the ticket to in_progress (per-repo agents no longer touch status). If planning.to_html, each plan is also rendered to interactive HTML; if planning.auto_approve is off, the run STOPS here for human plan approval (re-run with --approve-plan).', model: 'opus' },
-    { title: 'Build', detail: 'per repo, in dependency waves (∥ within a wave): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its spec(s) + regression scope — before the PR/MR.', model: 'sonnet/opus' },
+    { title: 'Build', detail: 'ALL scoped repos in parallel (build-order decoupled from merge-order — a build needs only the agreed contract, not a merged upstream; depends_on is still honored at Merge, upstream→downstream): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its spec(s) + regression scope — before the PR/MR.', model: 'sonnet/opus' },
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
     { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch; scoped re-review; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet[1m]' },
     { title: 'Test suite', detail: 'qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `npm test -- <specs>`, NOT the full suite. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
@@ -317,10 +317,12 @@ async function moveTicket(keys, why, phaseName) {
   return false
 }
 
-// Topologically sort the scoped repo plans into dependency WAVES. Repos in the
-// same wave have no interdependency and run in parallel; waves run in sequence.
-// Edges referencing out-of-scope repos are ignored. A cycle/unmet-dep is not
-// fatal: the remaining repos are emitted as one final wave so the run proceeds.
+// Topologically sort the scoped repo plans into dependency WAVES. Build no longer
+// gates on these waves — every scoped repo is built in parallel (build-order is
+// decoupled from merge-order). The waves are kept for their FLATTENED order
+// (waveList.flat()), the upstream→downstream sequence the Merge / Distribute phases
+// follow. Edges referencing out-of-scope repos are ignored. A cycle/unmet-dep is not
+// fatal: the remaining repos are emitted as one final wave so the order still resolves.
 function toWaves(plans) {
   const ids = new Set(plans.map((p) => p.repo))
   const deps = {}
@@ -579,7 +581,7 @@ plans.forEach((p) => { p.depends_on = (scoped.find((s) => s.repo === p.repo)?.de
 const waveList = toWaves(plans)
 log(`Plan ${ticket}: ${plans.map((p) => `${p.repo}@${p.work_branch}→${p.base_branch}`).join(', ')}`)
 if (PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)
-log(`Waves: ${waveList.map((w) => `[${w.join(', ')}]`).join(' → ')}`)
+log(`Build: all ${plans.length} repo(s) in parallel · merge order: ${waveList.map((w) => `[${w.join(', ')}]`).join(' → ')}`)
 tick('kickoff')
 
 // PLAN-APPROVAL GATE — when planning.auto_approve is off, STOP here with the plan(s) ready
@@ -591,22 +593,20 @@ if (!AUTO_APPROVE_PLAN && !approvePlan) {
   return { ticket, status: 'awaiting-plan-approval', plans, summary, spend }
 }
 
-// 3. BUILD → OPEN PR → REVIEW — per repo, in dependency waves (∥ within a wave).
-// Reviewers (code-reviewer + guardian + performance) all review the OPEN PR.
+// 3. BUILD → OPEN PR → REVIEW — ALL scoped repos IN PARALLEL.
+// Build-order is decoupled from merge-order: a repo's build only needs the agreed
+// contract, not a merged upstream artifact, so every scoped repo is built + reviewed
+// concurrently regardless of depends_on. depends_on is still honored at Merge
+// (mergeOrder, below) so the squash-merges land upstream → downstream. Reviewers
+// (code-reviewer + guardian + performance) all review the OPEN PR.
 phase('Build')
 const repoResults = {}
-let aborted = null
-for (const wave of waveList) {
-  if (aborted) break
-  const res = await parallel(wave.map((id) => () => runRepoPipeline(plans.find((p) => p.repo === id), REPOS[id])))
-  res.forEach((r, i) => { if (r) repoResults[wave[i]] = r })
-  const failed = wave.filter((id) => !repoResults[id] || repoResults[id].status !== 'ready')
-  if (failed.length) {
-    aborted = failed
-    log(`⚠️ ${failed.join(', ')} did not reach 'ready' — stopping; downstream waves skipped.`)
-  }
-}
-if (aborted) {
+const buildIds = waveList.flat() // every scoped repo, in dependency (merge) order
+const buildRes = await parallel(buildIds.map((id) => () => runRepoPipeline(plans.find((p) => p.repo === id), REPOS[id])))
+buildRes.forEach((r, i) => { if (r) repoResults[buildIds[i]] = r })
+const aborted = buildIds.filter((id) => !repoResults[id] || repoResults[id].status !== 'ready')
+if (aborted.length) {
+  log(`⚠️ ${aborted.join(', ')} did not reach 'ready' — the whole change set must be ready before any merge; stopping.`)
   const summary = await writeSummary('repo-unresolved', { ticket, aborted, repoResults })
   return { ticket, status: 'repo-unresolved', aborted, repoResults, summary, spend }
 }
