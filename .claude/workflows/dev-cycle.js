@@ -495,9 +495,16 @@ const plans = (await parallel(scoped.map((r) => () => {
   const workBranch = `${branchKind}/${ticket}`
   const slice = r.summary || 'see ticket'
   const planPath = desc.kind === 'test-suite' ? `agent_logs/${ticket}-appium-plan.md` : `agent_logs/development-planner/${ticket}-${r.repo}-plan.md`
+  const planHtmlPath = `agent_logs/${ticket}-${r.repo}-plan.html`
   // PLAN_TO_HTML: after the plan markdown exists, render it to a shareable interactive HTML.
+  // The markdown at planPath stays the SOURCE OF TRUTH this workflow reads at build — the HTML
+  // is human-only. When auto_approve is OFF, turn on the skill's plan-approval mode so the
+  // reviewer's in-page decisions flow back into THAT markdown (approve downloads it to replace planPath).
+  const approvalClause = !AUTO_APPROVE_PLAN
+    ? ` Since planning.auto_approve is OFF, turn ON plan-approval mode in that HTML: set data-plan-approval="pending", data-plan-md="${planPath}" (the authoritative markdown this workflow reads at build — never replace it with the HTML), data-plan-cmd="/dev-cycle ${ticket} --approve-plan", and inline plan-approval.js. The human approves in the page; approving downloads the markdown to drop over ${planPath} before the re-run.`
+    : ''
   const htmlClause = PLAN_TO_HTML
-    ? ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at agent_logs/${ticket}-${r.repo}-plan.html (it must read as a human-facing plan write-up), and set plan_html to that path in your structured result.`
+    ? ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at ${planHtmlPath} (it must read as a human-facing plan write-up; the markdown at ${planPath} stays the source of truth a later phase executes), and set plan_html to that path in your structured result.${approvalClause}`
     : ''
   const prompt = desc.kind === 'test-suite'
     ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo. Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-appium-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
