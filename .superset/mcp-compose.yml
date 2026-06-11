@@ -35,7 +35,7 @@ services:
       # Postgres via host.docker.internal (mapped to the host gateway below).
       DATABASE_URI: ${DATABASE_URI:-postgresql://postgres:postgres@host.docker.internal:5432/postgres}
     ports:
-      - "127.0.0.1:${MCP_POSTGRES_PORT:-8000}:8000"
+      - "127.0.0.1:${MCP_POSTGRES_PORT:-25432}:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Linux: make host.docker.internal resolve
     restart: unless-stopped

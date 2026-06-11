@@ -6,7 +6,7 @@
     },
     "postgres": {
       "type": "sse",
-      "url": "http://localhost:8000/sse"
+      "url": "http://localhost:25432/sse"
     },
     "redis": {
       "command": "uvx",
