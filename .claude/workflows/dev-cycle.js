@@ -93,6 +93,13 @@ const approvePlan = /--approve-plan\b/i.test(rawArg) || opt.approvePlan === true
 const tag = (repo, role, phase, round) =>
   `[dev-cycle ${ticket} repo=${repo} role=${role} phase=${phase}${round ? ` round=${round}` : ''}]`
 
+// PR/MR titles follow Conventional Commits. The type comes from the branch the ticket
+// is on — a `fix/*` branch → `fix`, anything else (`feature/*`) → `feat` — matching the
+// branch model's fix_base/feature_base split. The squash-merge subject reuses the same
+// title so the commit that lands on the base is itself a conventional commit.
+const ccType = (branch) => (/^fix\//i.test(branch ?? '') ? 'fix' : 'feat')
+const prTitle = (rp) => `${ccType(rp.work_branch)}(${ticket}): ${rp.title ?? '<Task name>'}`
+
 // ──────────────────────────────────────────────────────────────────────────
 // Schemas
 // ──────────────────────────────────────────────────────────────────────────
@@ -377,8 +384,8 @@ async function runRepoPipeline(rp, desc) {
   // PR/MR via the VCS adapter. Code repos via /open-pr; the test-suite repo via the adapter
   // directly. Open ONLY — never merge (the final cross-repo Merge phase merges).
   const openPrPrompt = desc.kind === 'test-suite'
-    ? `${tag(R, desc.build, 'open-pr')} The ticket scope (spec(s) + regression specs) for ${ticket} is green in ${R}. ${inRepo} Ensure git status is clean, then open the PR/MR with the VCS adapter (it pushes ${rp.work_branch} for you): \`scripts/vcs/open-pr.sh --base ${rp.base_branch} --head ${rp.work_branch} --title "${ticket}: ${rp.title ?? '<Task name>'}" --body "<what was automated + the scoped (ticket spec(s) + regression) green evidence>"\`. Do NOT merge it — the workflow squash-merges in dependency order. Return the PR/MR URL (pr_url) + number (the adapter prints \`number=<n>\`).`
-    : `${tag(R, desc.build, 'open-pr')} ${ticket} is built in ${R} — open the PR/MR now so the reviewers (code-reviewer + guardian + performance) can review it on the host. ${inRepo} Ensure git status is clean (commit any stray artifact), then run /open-pr ${ticket} to open the PR/MR for ${rp.work_branch} → ${rp.base_branch}, titled "${ticket}: ${rp.title ?? '<Task name>'}". Do NOT merge it. Return the PR/MR URL + number.`
+    ? `${tag(R, desc.build, 'open-pr')} The ticket scope (spec(s) + regression specs) for ${ticket} is green in ${R}. ${inRepo} Ensure git status is clean, then open the PR/MR with the VCS adapter (it pushes ${rp.work_branch} for you): \`scripts/vcs/open-pr.sh --base ${rp.base_branch} --head ${rp.work_branch} --title "${prTitle(rp)}" --body "<what was automated + the scoped (ticket spec(s) + regression) green evidence>"\`. The title is Conventional Commits (\`<type>(${ticket}): <title>\`) — keep it exactly as given. Do NOT merge it — the workflow squash-merges in dependency order. Return the PR/MR URL (pr_url) + number (the adapter prints \`number=<n>\`).`
+    : `${tag(R, desc.build, 'open-pr')} ${ticket} is built in ${R} — open the PR/MR now so the reviewers (code-reviewer + guardian + performance) can review it on the host. ${inRepo} Ensure git status is clean (commit any stray artifact), then run /open-pr ${ticket} to open the PR/MR for ${rp.work_branch} → ${rp.base_branch}, titled per Conventional Commits "${prTitle(rp)}". Do NOT merge it. Return the PR/MR URL + number.`
   const pr = await safeAgent(
     openPrPrompt,
     { agentType: desc.build, phase: 'Open PR', label: `open-pr:${ticket}:${R}`, schema: PR_SCHEMA },
@@ -617,7 +624,7 @@ for (const id of mergeOrder) {
     : `The ticket scope (spec(s) + regression specs) for ${ticket} is green and its PR/MR is open in ${id} (${rr.pr.pr_url}). It is now your turn in the dependency order to squash-merge it.`
   const m = await safeAgent(
     `${tag(id, merger, 'merge')} ${mergePreamble} Work in the ${id} repo (cwd ${desc.path}/). Squash-merge PR/MR number ${rr.pr?.pr_number ?? '(see ' + rr.pr?.pr_url + ')'} into ${rp.base_branch} THROUGH THE HOST (via the VCS adapter) so the web PR/MR is marked **Merged** — do NOT run a local "git merge --squash" + push: that advances the base but leaves the PR/MR showing **Closed**, the exact bug we avoid. Run:
-\`scripts/vcs/merge-pr.sh ${rr.pr?.pr_number ?? '<number>'} --subject "${ticket}: ${rp.title ?? '<Task name>'}"\` — this squash-merges server-side, advances ${rp.base_branch}, marks the PR/MR Merged, and prints \`state=\` + \`merge_sha=\`.
+\`scripts/vcs/merge-pr.sh ${rr.pr?.pr_number ?? '<number>'} --subject "${prTitle(rp)}"\` (the same Conventional Commits subject as the PR/MR title) — this squash-merges server-side, advances ${rp.base_branch}, marks the PR/MR Merged, and prints \`state=\` + \`merge_sha=\`.
 VERIFY the printed \`state=MERGED\` before reporting (re-check with \`scripts/vcs/pr-view.sh ${rr.pr?.pr_number ?? '<number>'}\` if unsure). Return merged:true ONLY when state is MERGED (not Closed), base=${rp.base_branch}, and sha = the printed merge_sha on ${rp.base_branch}.`,
     { agentType: merger, phase: 'Merge', label: `merge:${ticket}:${id}`, schema: MERGE_SCHEMA },
   )
