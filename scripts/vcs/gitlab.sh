@@ -81,6 +81,16 @@ vcs_pr_comments() {
     || die "could not read notes for MR !$num"
 }
 
+# vcs_close_pr NUMBER [DRY] -> close the MR without merging (branch kept), then pr-view.
+vcs_close_pr() {
+  local num="$1" dry="${2:-0}"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — glab mr close %s\n' "$num"; return 0
+  fi
+  glab mr close "$num"
+  vcs_pr_view "$num"
+}
+
 # vcs_merge_pr NUMBER SUBJECT [DRY] -> squash-merge server-side (MR shows Merged), then pr-view.
 # The squash commit message defaults to the MR title (== SUBJECT, since we open the MR with it).
 vcs_merge_pr() {

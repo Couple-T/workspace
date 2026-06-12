@@ -71,6 +71,16 @@ vcs_pr_comments() {
   gh pr view "$1" --comments 2>/dev/null || die "could not read comments for PR #$1"
 }
 
+# vcs_close_pr NUMBER [DRY] -> close the PR without merging (branch kept), then pr-view.
+vcs_close_pr() {
+  local num="$1" dry="${2:-0}"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — gh pr close %s\n' "$num"; return 0
+  fi
+  gh pr close "$num"
+  vcs_pr_view "$num"
+}
+
 # vcs_merge_pr NUMBER SUBJECT [DRY] -> server-side squash-merge (PR shows Merged), then pr-view.
 vcs_merge_pr() {
   local num="$1" subject="$2" dry="${3:-0}"
