@@ -6,6 +6,12 @@ vcs_require_config() {
 }
 
 # vcs_open_pr BASE HEAD TITLE BODY [DRY] -> prints "<url>" then "number=<n>".
+# NOTE: GitHub has no per-PR "squash" checkbox to set at create time (unlike GitLab's
+# --squash-before-merge) — the merge method is chosen at merge time. Squash is guaranteed
+# two ways: the adapter merges with --squash (vcs_merge_pr below), and for human web-UI
+# merges (when vcs.auto_merge is off) the repo should allow ONLY squash merging
+# (Settings → General → Pull Requests: enable "Allow squash merging", disable merge
+# commits + rebase). That repo setting is the GitHub equivalent of "always squash".
 vcs_open_pr() {
   local base="$1" head="$2" title="$3" body="$4" dry="${5:-0}"
   # Reuse an open PR for this head branch (avoid duplicates).
