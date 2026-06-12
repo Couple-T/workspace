@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Checks the ticket body for acceptance criteria before estimating (reads the full ticket, not just the board listing / description property)",
+      "passed": true,
+      "evidence": "summary.md reads the full spec before sizing: 'Well-specified spec: Figma frame 327-8 ground truth, 8 verifiable AC, 6 edge cases. No missing-AC guardrail triggered; the ticket is fully estimable' \u2014 details that exist only in the page body, matching the corrected premise."
+    },
+    {
+      "text": "Produces SEPARATE Developer points and QA points, each with a stated effort-based reason",
+      "passed": true,
+      "evidence": "estimation-comment.md has 'Dev points: Medium (low end) \u2014 one new screen... three non-trivial nav behaviors...' and separately 'QA points: Medium \u2014 8 verifiable AC + 6 edge cases... executed on Android AND iOS; nav-stack assertions are fiddly to automate'."
+    },
+    {
+      "text": "Handles the pre-existing effort value (Small) explicitly: either re-estimates with a recorded 'Re-estimated from X to Y \u2014 reason' justified by comparables, or confirms it \u2014 never silently overwrites",
+      "passed": true,
+      "evidence": "estimation-comment.md records 'Re-estimated from Small to Medium \u2014 every Done Small on this board is a single-file tweak (FM-35, FM-34, FM-30, FM-12), while FM-29 is a full screen... which lines up with the board's smaller Mediums (FM-10, FM-37)' \u2014 explicit and comparable-justified."
+    },
+    {
+      "text": "Sets the effort property using the board's observed scale value (Small / Medium / Large) via upsert-ticket-details.sh with --dry-run",
+      "passed": true,
+      "evidence": "upsert-dry-run.txt shows 'scripts/tracker/upsert-ticket-details.sh FM-29 --effort \"Medium\" --dry-run' with a PATCH payload setting the 'Effort level' select to 'Medium'."
+    },
+    {
+      "text": "Touches ONLY the effort property \u2014 no status/title/priority/description/body change in any dry-run payload",
+      "passed": true,
+      "evidence": "The only dry-run payload contains solely the 'Effort level' select change; summary.md confirms only read scripts touched the board otherwise and the breakdown was saved as the (un-posted) comment text."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  }
+}

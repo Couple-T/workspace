@@ -1,0 +1,11 @@
+$ scripts/tracker/upsert-ticket-details.sh FM-49 --effort "Small" --dry-run
+DRY RUN — PATCH /pages/378a0adb-bf46-812c-a39d-c5f33c83e368
+{
+  "properties": {
+    "Effort level": {
+      "select": {
+        "name": "Small"
+      }
+    }
+  }
+}

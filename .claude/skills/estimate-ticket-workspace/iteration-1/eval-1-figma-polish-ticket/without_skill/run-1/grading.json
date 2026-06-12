@@ -1,0 +1,40 @@
+{
+  "expectations": [
+    {
+      "text": "Calibrates before estimating: shows evidence of reading the effort value of at least 3 Done tickets from the board before producing the estimate",
+      "passed": true,
+      "evidence": "summary.md step 2 says it calibrated via find-tickets.sh + per-ticket details, and the comment carries a calibration table with efforts: Small FM-12/14/33/35/39, Medium FM-7/8/10, Large FM-9, each with a description of the work."
+    },
+    {
+      "text": "Produces SEPARATE Developer points and QA points, each with a stated effort-based reason",
+      "passed": true,
+      "evidence": "estimation-comment.md has '### Developer \u2014 5 points' (9 audited deltas, overflow risk, asset dependency, constraint discipline) and a separate '### QA \u2014 3 points' section with its own rationale."
+    },
+    {
+      "text": "Sets the effort property using the board's observed scale value (Small / Medium / Large) via upsert-ticket-details.sh with --dry-run (captured in upsert-dry-run.txt)",
+      "passed": true,
+      "evidence": "upsert-dry-run.txt shows 'upsert-ticket-details.sh FM-24 --effort Large --dry-run' with a PATCH payload setting 'Effort level' select to 'Large'; the invented numeric points (8 = 5+3) appear only in the comment, not the property write."
+    },
+    {
+      "text": "Names at least 2 comparable tickets by key (FM-xx) that justify the estimate",
+      "passed": true,
+      "evidence": "Comment justifies the size against FM-10 ('Heavier than FM-10 (Medium, one screen + use case)') and FM-9 ('closest peer is FM-9 (Large)'), plus the table of FM-7/8/12/14/33/35/39."
+    },
+    {
+      "text": "QA estimate reasoning reflects the ticket's actual test burden (multi-element UI alignment against a Figma frame, Android+iOS visual verification) rather than restating the dev reasoning",
+      "passed": false,
+      "evidence": "The QA section does cover Figma-parity burden ('11 acceptance criteria, mostly pixel/content parity against Figma 108:25', interaction matrix, two device-size passes, selector regression) and is distinct from the dev reasoning, but it never mentions Android+iOS / dual-platform visual verification anywhere in the QA rationale \u2014 a named component of the ticket's actual test burden."
+    },
+    {
+      "text": "Touches ONLY the effort property: no status/title/priority/description/body change in the dry-run payload; breakdown lives in the comment text, not the ticket body",
+      "passed": true,
+      "evidence": "The dry-run PATCH payload contains only the 'Effort level' select; summary.md confirms the point-split lives in estimation-comment.md (to have been posted via add-ticket-comment.sh) and no other property/body change appears."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 1,
+    "total": 6,
+    "pass_rate": 0.8333
+  }
+}

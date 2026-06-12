@@ -1,0 +1,11 @@
+$ scripts/tracker/upsert-ticket-details.sh FM-24 --effort "Large" --dry-run
+DRY RUN — PATCH /pages/376a0adb-bf46-81ee-9897-f07b08f11e7e
+{
+  "properties": {
+    "Effort level": {
+      "select": {
+        "name": "Large"
+      }
+    }
+  }
+}

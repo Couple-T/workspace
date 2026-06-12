@@ -1,0 +1,12 @@
+{
+  "eval_id": 0,
+  "eval_name": "clear-improvement-ticket",
+  "prompt": "We just clarified FM-49. Estimate it — give it points based on effort, split developer points and QA points, and put the estimate on the ticket.",
+  "assertions": [
+    "Calibrates before estimating: shows evidence of reading the effort value of at least 3 Done tickets from the board (e.g. FM-39/37/35/34/33/32/31/30/23) before producing the estimate",
+    "Produces SEPARATE Developer points and QA points, each with a stated effort-based reason",
+    "Sets the effort property using the board's observed scale value (Small / Medium / Large) — not an invented scale — via upsert-ticket-details.sh with --dry-run (captured in upsert-dry-run.txt)",
+    "Names at least 2 comparable tickets by key (FM-xx) that justify the estimate",
+    "Touches ONLY the effort property: the dry-run payload contains no status/title/priority/description/body change, and the estimation breakdown is in the comment text (estimation-comment.md), not the ticket body"
+  ]
+}

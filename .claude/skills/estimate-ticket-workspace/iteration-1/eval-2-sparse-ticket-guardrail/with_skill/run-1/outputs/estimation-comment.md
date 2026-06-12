@@ -1,0 +1,8 @@
+Estimation — calibrated against 6 Done tickets
+Dev points: Small–Medium (leaning Medium) — one new screen on established wizard patterns, but the nav-stack semantics carry the effort: pop the entire wizard stack, fresh-draft reset for "Add another pet", post-commit gate with safe redirect, system-back handling, plus a dashboard route stub (no home screen exists in the app yet) and the decorative/halo asset layer.
+QA points:  Medium — 8 verifiable AC + 6 edge cases imply ~7–8 BDD scenarios on Android AND iOS (double execution), plus regression around the Step 6 commit handoff and wizard back-stack — the same QA surface FM-10 carried at Medium (C1–C8 on both platforms).
+Total: Medium  (board scale: Small / Medium / Large — select)
+Comparables: FM-10 (Medium) — single wizard screen with navigation/commit-adjacent semantics and a dual-platform 8-case QA suite, the closest analogue; FM-35 (Small) — one callback + notifier method, what Small actually looks like on this board, clearly lighter than this ticket; FM-9 (Large) — four data-capture steps with autosave lifecycle and camera/gallery integration, clearly heavier.
+Re-estimated from Small to Medium — the pre-set Small contradicts the board's Small comparables (FM-34/FM-35 are single-mechanism changes); FM-29's nav-stack clearing, wizard reset, post-commit guard and 14-check dual-platform QA surface sit at the FM-10 (Medium) bar.
+Assumptions: Step 6 (FM-28, in progress) lands first and provides the committed Active Pet; "Go to Dashboard" may target a stubbed route as the ticket allows; Figma assets (Deco-Cat, halo, ellipses) are export-ready.
+Confidence: high

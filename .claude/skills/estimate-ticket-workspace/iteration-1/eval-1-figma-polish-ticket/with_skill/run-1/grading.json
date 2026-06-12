@@ -1,0 +1,40 @@
+{
+  "expectations": [
+    {
+      "text": "Calibrates before estimating: shows evidence of reading the effort value of at least 3 Done tickets from the board before producing the estimate",
+      "passed": true,
+      "evidence": "summary.md derives the bar from named Done tickets with efforts \u2014 Small: FM-23, FM-34; Medium: FM-7, FM-10, FM-37; Large: FM-9 \u2014 and notes the board has '21 Done tickets carry one' (Effort level select), all before the FM-24 match step. FM-23/FM-34 Small and FM-37 Medium are consistent with ground truth."
+    },
+    {
+      "text": "Produces SEPARATE Developer points and QA points, each with a stated effort-based reason",
+      "passed": true,
+      "evidence": "estimation-comment.md has 'Dev points: Large \u2014 full visual rebuild of one screen... tie broken upward on novelty + asset dependency' and a distinct 'QA points: Medium \u2014 ~6\u20138 BDD scenarios from the 11 AC... executed on Android and iOS, plus regression of the Sex/Neuter selectors'."
+    },
+    {
+      "text": "Sets the effort property using the board's observed scale value (Small / Medium / Large) via upsert-ticket-details.sh with --dry-run (captured in upsert-dry-run.txt)",
+      "passed": true,
+      "evidence": "upsert-dry-run.txt shows 'scripts/tracker/upsert-ticket-details.sh FM-24 --effort \"Large\" --dry-run' producing a PATCH payload that sets the 'Effort level' select to 'Large'."
+    },
+    {
+      "text": "Names at least 2 comparable tickets by key (FM-xx) that justify the estimate",
+      "passed": true,
+      "evidence": "estimation-comment.md's Comparables line names FM-9 (Large, the board's bar), FM-10 (Medium, exceeded on visual novelty) and FM-37 (Medium, wide-but-mechanical) with per-ticket justification."
+    },
+    {
+      "text": "QA estimate reasoning reflects the ticket's actual test burden (multi-element UI alignment against a Figma frame, Android+iOS visual verification) rather than restating the dev reasoning",
+      "passed": true,
+      "evidence": "QA line cites the 11 AC (copy parity, grid behavior incl. disabled tiles, selected state, CTA gate, hero composition, small/large device layout) 'executed on Android and iOS' plus selector/wizard regression \u2014 test-burden specific, not a restatement of the dev rationale."
+    },
+    {
+      "text": "Touches ONLY the effort property: no status/title/priority/description/body change in the dry-run payload; breakdown lives in the comment text, not the ticket body",
+      "passed": true,
+      "evidence": "The dry-run PATCH payload contains only {\"properties\":{\"Effort level\":{\"select\":{\"name\":\"Large\"}}}}; the dev/QA breakdown is in estimation-comment.md (summary.md: 'no comment posted \u2014 intended text in estimation-comment.md')."
+    }
+  ],
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1.0
+  }
+}
