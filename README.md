@@ -93,7 +93,7 @@ The whole setup is "fill in one config, then run one command." Here's the full p
    in `CLAUDE.md`. The agents and workflows are already provider-agnostic, but a few
    **stack-specific** skills still ship with the reference stack's copy/tooling (a Flutter
    app + an Appium test-suite repo). Adapt these to your stack:
-   `.claude/skills/{coding-feature,coding-automate,plan-appium-automate}` and the
+   `.claude/skills/{coding-feature,coding-automate,plan-automate}` and the
    `coding-feature/*.md` references. (VCS/tracker wiring needs no further edits.)
 
 > **You never hand-edit the workflow.** `.claude/workflows/dev-cycle.js` keeps a mirrored
