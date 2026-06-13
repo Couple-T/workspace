@@ -31,7 +31,7 @@ note:        Re-estimation case — FM-24 already carried Effort level = Large; 
 PetType step — new hero zone with decorative art + portrait cluster, overlapping rounded
 content card, 2x3 grid with 4 disabled "Soon" tiles, new selected-tile treatment, exact
 copy parity, and overflow-safe layout SE->large — plus a designer asset-re-export
-dependency. A code skim (codegraph, feeedme-app) confirmed the current screen is minimal
+dependency. A code skim (codegraph, your-app) confirmed the current screen is minimal
 (73-line step + shared 94-line SegmentedTileSelector reused by Sex/Neuter steps, which
 must not regress), so almost everything in the design is net-new bespoke UI. Dev sits at
 the Medium/Large boundary (above FM-10, below FM-9's four steps); the skill's tie-break

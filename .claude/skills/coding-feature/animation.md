@@ -1,6 +1,6 @@
 # Motion & Animation (mandatory)
 
-Motion is a core part of the "Feeed me" brand, not a finishing touch. **Nothing ships static.** Every page, every action, every transition, and every crucial branding element must be animated. A screen with no motion is treated as an incomplete feature.
+Motion is a core part of the app's brand, not a finishing touch. **Nothing ships static.** Every page, every action, every transition, and every crucial branding element must be animated. A screen with no motion is treated as an incomplete feature.
 
 ## The rule
 

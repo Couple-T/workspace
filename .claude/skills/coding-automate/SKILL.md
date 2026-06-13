@@ -21,7 +21,7 @@ Turn the approved Appium implementation plan into **working test code** the way 
 **Codegraph FIRST.** Find the existing Page Objects/specs to reuse and the idiom to copy by querying the repo's codegraph index — `codegraph explore` ("where are the Page Objects / how does a spec wire the runner"), `codegraph search` (a named Page Object/method), `codegraph callers` (who already uses a Page Object). It is the pre-built index for this repo, so use it instead of globbing+reading; reserve `Grep`/`Glob`/`Read` as a last resort to confirm a detail it didn't cover. The artifacts to look for:
 
 - `pages/*.js` — Page Objects to **reuse**, and the idiom to copy (`pages/WelcomePage.js`): a `class` with `constructor(driver)`, selector **getters** returning `this.driver.$('~accessibility-id')`, a bounded-wait `isLoaded()`, and intent-named action methods.
-- `config/capabilities.js` — platform caps + app id (`com.feeedme.feeedme`); the cross-platform accessibility-id (`~`) is the default strategy — branch android/ios only when labels actually differ.
+- `config/capabilities.js` — platform caps + the app-under-test id. That id is declared in the workspace `workspace.config.yaml` (the mobile app repo's `app_id` under `products[].repos[]`); `config/capabilities.js` must match it — don't hardcode a different one. The cross-platform accessibility-id (`~`) is the default strategy — branch android/ios only when labels actually differ.
 - `test.js` + `scripts/run-tests.js` — how a spec runs today: `run-tests.js` runs the **single hardcoded `test.js`** per platform and there is **no `tests/` discovery yet**, so making `npm test` actually execute your new spec is part of the job (§3, step 4).
 
 ## 3. Implement — strictly POM

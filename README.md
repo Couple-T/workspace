@@ -116,15 +116,15 @@ does the rest.
 
 ```sh
 scripts/aiworks sync                       # onboard EVERY repo in the config
-scripts/aiworks sync feeed-me --dry-run    # preview one product (runs nothing)
+scripts/aiworks sync your-product --dry-run # preview one product (runs nothing)
 scripts/aiworks sync agent-db              # onboard ONLY one repo (by name)
 scripts/aiworks sync --repo agent-db,paotung-template   # …or several named repos
 
-scripts/aiworks add --url git@github.com:your-org/feeedme-api.git \
+scripts/aiworks add --url git@github.com:your-org/your-api.git \
                     --product backend --lang go --kind generic \
                     --desc "REST API + data layer"             # onboard one repo
-scripts/aiworks remove feeedme-api         # deregister (keeps the clone)
-scripts/aiworks remove feeedme-api --purge # also delete the clone (refuses if dirty/unpushed)
+scripts/aiworks remove your-api         # deregister (keeps the clone)
+scripts/aiworks remove your-api --purge # also delete the clone (refuses if dirty/unpushed)
 
 scripts/aiworks config                     # regen the dev-cycle.js CONFIG from the config
 ```
@@ -144,7 +144,7 @@ safe to re-run after adding a URL. Add `-n` / `--dry-run` to preview the command
 Onboards a single repo from flags **and** writes its entry back into the config. Defaults
 are derived from the URL:
 
-- **clone dir / mani key / config entry** ← the repo name from the URL (e.g. `feeedme-api/`)
+- **clone dir / mani key / config entry** ← the repo name from the URL (e.g. `your-api/`)
 - **`--product`** — its group under `products:` (and the `mani.d/<product>.yaml` file;
   default = the repo name)
 - **`--kind`** — drives the role/gate defaults

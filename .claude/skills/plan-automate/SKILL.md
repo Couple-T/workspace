@@ -21,7 +21,7 @@ Turn an approved test plan into an implementation plan for automating it the way
 Map what already exists so the plan reflects it, not a generic template — **codegraph FIRST.** Query the repo's codegraph index (`codegraph explore` for "where are the Page Objects / how is the runner wired", `codegraph search` for a named Page Object/method, `codegraph callers` for reuse) instead of a grep+read sweep; it is the pre-built index for this repo. Reserve `Grep`/`Glob`/`Read` for a last-resort detail codegraph didn't surface. The artifacts to map:
 
 - `pages/*.js` — existing Page Objects to **reuse**, and the idiom to follow (see `pages/WelcomePage.js`): a `class` with `constructor(driver)`, selector **getters** returning `this.driver.$('~accessibility-id')`, an `isLoaded()` bounded-wait check, and intent-named action methods. **No assertions, no test logic in a Page Object.**
-- `config/capabilities.js` — platform caps + app id (`com.feeedme.feeedme`); selectors prefer the cross-platform accessibility-id (`~`) — branch android/ios only when the labels actually differ.
+- `config/capabilities.js` — platform caps + the app-under-test id. That id is declared in the workspace `workspace.config.yaml` (the mobile app repo's `app_id` under `products[].repos[]`); `config/capabilities.js` must match it. Selectors prefer the cross-platform accessibility-id (`~`) — branch android/ios only when the labels actually differ.
 - `test.js` + `scripts/run-tests.js` — how a spec is run today. **Note the current reality:** there is no `tests/` directory yet and the runner executes only the hardcoded root `test.js`, so "where the new spec lives and how it gets run" is a real planning item, not a given.
 
 ## 3. Map each scenario to POM artifacts
