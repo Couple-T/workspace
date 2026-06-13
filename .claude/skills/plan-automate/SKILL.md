@@ -1,13 +1,13 @@
 ---
 name: plan-automate
-description: Read a test plan (agent_logs/<KEY>-testcases.md) and plan how to automate it with Appium in THIS project's Page Object Model — which Page Objects and specs to add or reuse, the selectors to confirm, the runner/wiring changes needed, and which scenarios are automatable vs manual-only. Plan only; writes the plan to agent_logs/ and never writes test code or runs the app.
+description: Read a test plan (agent_logs/<KEY>-testcases.md) and plan how to automate it in THIS project's Page Object Model — which Page Objects and specs to add or reuse, the selectors to confirm, the runner/wiring changes needed, and which scenarios are automatable vs manual-only. Plan only; writes the plan to agent_logs/ and never writes test code or runs the app.
 argument-hint: "[ticket]"
 arguments: [ticket]
 ---
 
-# Plan Appium automation
+# Plan automation
 
-Turn an approved test plan into an implementation plan for automating it the way **this** project does Appium. **Plan only — never write Page Objects/specs and never run the app or `npm test`.** The output is a Markdown file in `agent_logs/`, produced by filling the shared `appium-plan-template.md`.
+Turn an approved test plan into an implementation plan for automating it the way **this** project does automation. **Plan only — never write Page Objects/specs and never run the app or `npm test`.** The output is a Markdown file in `agent_logs/`, produced by filling the shared `automation-plan-template.md`.
 
 ## 1. Read the test plan — the input
 
@@ -35,7 +35,7 @@ For every BDD scenario in the test plan, work out:
 
 ## 4. Decide what's automatable
 
-Mark each scenario **Automatable / Partial / Manual-only** with a one-line reason. Be honest about Appium's reach — e.g. forcing offline/save-failure states, exhaustive "no internal wording leaks" content sweeps, OS-level permission dialogs, or visual/layout checks are often Partial or Manual-only. A plan that over-promises wastes the implementer's time.
+Mark each scenario **Automatable / Partial / Manual-only** with a one-line reason. Be honest about the automation's reach — e.g. forcing offline/save-failure states, exhaustive "no internal wording leaks" content sweeps, OS-level permission dialogs, or visual/layout checks are often Partial or Manual-only. A plan that over-promises wastes the implementer's time.
 
 ## 5. Plan the spec + runner wiring and prerequisites
 
@@ -44,4 +44,4 @@ Mark each scenario **Automatable / Partial / Manual-only** with a one-line reaso
 
 ## 6. Fill the template and write to agent_logs/
 
-Read **`appium-plan-template.md`** (next to this skill), fill every `{{ … }}` placeholder, delete the `<!-- … -->` guidance comments and unused placeholder rows, and write the result to `agent_logs/<FM>-appium-plan.md` (create `agent_logs/` if missing). Finish by reporting the file path.
+Read **`automation-plan-template.md`** (next to this skill), fill every `{{ … }}` placeholder, delete the `<!-- … -->` guidance comments and unused placeholder rows, and write the result to `agent_logs/<FM>-automation-plan.md` (create `agent_logs/` if missing). Finish by reporting the file path.

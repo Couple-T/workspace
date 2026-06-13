@@ -102,7 +102,7 @@ planning:
 #                (`description:` is accepted as an alias.)
 #   app_id     → MOBILE APP REPOS ONLY — the application / bundle id of the app this repo builds
 #                (Android applicationId / iOS bundle identifier, e.g. com.acme.app). The QA /
-#                Appium skills read it from here as the app-under-test id, and the test-suite repo's
+#                automation skills read it from here as the app-under-test id, and the test-suite repo's
 #                config/capabilities.js should match it. Omit for non-mobile repos.
 #   kind       → a FREE-FORM, tech-agnostic dev-context LABEL (frontend, backend, web-app,
 #                service, migration, generic, …) — the tech goes in `lang`, NOT the kind.

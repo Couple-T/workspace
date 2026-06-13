@@ -37,7 +37,7 @@
 #                          (default: generic) — drives the plan/build/review/guard/perf/test-suite defaults.
 #   --distribute <how>     workspace.config.yaml distribute: none | firebase | custom (default: none).
 #   --app-id <id>          MOBILE APP REPOS ONLY — application/bundle id (e.g. com.acme.app), written
-#                          to workspace.config.yaml app_id:. The QA/Appium skills read it as the
+#                          to workspace.config.yaml app_id:. The QA/automation skills read it as the
 #                          app-under-test id. (optional; omit for non-mobile repos)
 #   --path <dir>           Clone dir under the workspace root (default: the repo name from --url).
 #   --skill-cmd <slash>    Skill-generator command to run in the repo (default: /run-skill-generator).

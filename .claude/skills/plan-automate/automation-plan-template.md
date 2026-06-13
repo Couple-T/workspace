@@ -1,4 +1,4 @@
-Appium automation plan — {{ Ticket Number }}
+Automation plan — {{ Ticket Number }}
 
 {{ One-line summary: what this automates, and the test plan it builds on (agent_logs/<FM>-testcases.md) }}
 

@@ -559,7 +559,7 @@ const plans = (await parallel(scoped.map((r) => () => {
   const baseBranch = desc.base[branchKind]
   const workBranch = `${branchKind}/${ticket}`
   const slice = r.summary || 'see ticket'
-  const planPath = desc.kind === 'test-suite' ? `agent_logs/${ticket}-appium-plan.md` : `agent_logs/development-planner/${ticket}-${r.repo}-plan.md`
+  const planPath = desc.kind === 'test-suite' ? `agent_logs/${ticket}-automation-plan.md` : `agent_logs/development-planner/${ticket}-${r.repo}-plan.md`
   const planHtmlPath = `agent_logs/${ticket}-${r.repo}-plan.html`
   // PLAN_TO_HTML: after the plan markdown exists, render it to a shareable interactive HTML.
   // The markdown at planPath stays the SOURCE OF TRUTH this workflow reads at build — the HTML
@@ -635,7 +635,7 @@ if (scope.test_suite?.needed && testSuiteRepo && mergeOrder.some((id) => !REPOS[
     : ''
   testSuite = await safeAgent(
     `${tag(testSuiteRepo, 'qa-runner', 'test-suite')} CROSS-REPO TEST-SUITE gate for ${ticket} — SCOPED to THIS ticket, NOT the full suite. Validate the CANDIDATE (the ticket's work branches, NOT yet merged): build the app/service repo(s) from their ticket work branch(es) — ${candidates.join(', ')} (checkout that branch in each repo before building). Work in the ${testSuiteRepo} repo (cwd ${REPOS[testSuiteRepo].path}/, already on its work branch ${repoResults[testSuiteRepo].plan.work_branch}). Then run ONLY this ticket's scope:
-1. SCOPE = (a) the ticket's own spec(s) automated for ${ticket} + (b) the ticket's regression spec(s). Derive (a) from the spec map in agent_logs/${ticket}-appium-plan.md${specHint} Derive (b) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" recap — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)).
+1. SCOPE = (a) the ticket's own spec(s) automated for ${ticket} + (b) the ticket's regression spec(s). Derive (a) from the spec map in agent_logs/${ticket}-automation-plan.md${specHint} Derive (b) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" recap — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)).
 2. RUN SCOPED — \`npm test -- <spec-token…>\` covering exactly the ticket + regression spec(s) on each platform the suite targets. Do NOT run \`npm test\` with no args: the FULL-suite run is ON-DEMAND (the user triggers it separately) and is NOT part of this gate.
 On a red: SINGLE-CASE triage — re-run just the broken case to rule out flake: \`PLATFORM=<failing-platform> npm test -- <spec-token>\` (+ \`npm run why\`). If it reproduces as a genuine APP/feature bug, report it as-is — comment a reproducible report ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with platform + evidence, list it in failures, and fail the gate (you do NOT fix app code here — only re-run to triage).
 Return passed:true only if the scoped run (ticket + regression spec(s)) is green; otherwise passed:false with the failures.`,

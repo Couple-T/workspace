@@ -92,7 +92,7 @@ The whole setup is "fill in one config, then run one command." Here's the full p
 6. **De-brand pass.** Replace the `{{ORG_NAME}}` / `{{PRODUCT_DESCRIPTION}}` placeholders
    in `CLAUDE.md`. The agents and workflows are already provider-agnostic, but a few
    **stack-specific** skills still ship with the reference stack's copy/tooling (a Flutter
-   app + an Appium test-suite repo). Adapt these to your stack:
+   app + an E2E automation test-suite repo). Adapt these to your stack:
    `.claude/skills/{coding-feature,coding-automate,plan-automate}` and the
    `coding-feature/*.md` references. (VCS/tracker wiring needs no further edits.)
 
