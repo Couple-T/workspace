@@ -19,7 +19,7 @@ allowed-tools:
     - Bash(dart *)
     - Bash(mkdir *)
     - Bash(xcrun *)
-    - mcp__plugin_figma_figma
+    - mcp__claude_ai_Figma
 model: sonnet[1m]
 effort: high
 ---

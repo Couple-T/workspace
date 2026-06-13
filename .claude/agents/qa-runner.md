@@ -35,9 +35,6 @@ tools:
   # Read the ticket for context, then publish results onto it (report-test-results + update-ticket).
   - Bash(*scripts/tracker/*)
   # Confirm design intent when the ticket links a figma.com screen.
-  - mcp__plugin_figma_figma__get_screenshot
-  - mcp__plugin_figma_figma__get_metadata
-  - mcp__plugin_figma_figma__get_design_context
   - mcp__claude_ai_Figma__get_screenshot
   - mcp__claude_ai_Figma__get_metadata
   - mcp__claude_ai_Figma__get_design_context
