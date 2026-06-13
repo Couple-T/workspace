@@ -13,7 +13,6 @@ tools:
   - Glob
   - Skill
   - Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py:*)
-  - mcp__plugin_figma_figma
   - mcp__claude_ai_Figma
   - Bash(*scripts/tracker/*)
 ---

@@ -33,7 +33,7 @@ TICKETING   → Workflow(prd, {stage:'ticketing', ...})    headless, links URL s
 
 ### 0. Preflight — confirm Figma is connected
 Run `claude mcp list` (Bash) and confirm a Figma server is **✔ Connected**
-(`claude.ai Figma` → `mcp__claude_ai_Figma__*`, or the plugin → `mcp__plugin_figma_figma__*`).
+(`claude.ai Figma` → `mcp__claude_ai_Figma__*`).
 - If connected: proceed.
 - If **not** connected: tell the user to authenticate Figma (`/mcp` → connect
   Figma), or offer to run a **specs-only** pass (skip step 2's frame build; the

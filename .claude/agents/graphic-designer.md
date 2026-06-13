@@ -11,7 +11,6 @@ tools:
   - Glob
   - Skill
   - mcp__mcp-image
-  - mcp__plugin_figma_figma
   - mcp__claude_ai_Figma
 ---
 

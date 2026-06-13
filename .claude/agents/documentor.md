@@ -19,7 +19,6 @@ tools:
   - Bash(*scripts/tracker/*)
   # Dev-cycle Notify phase: send the "please review" digest through the notify adapter.
   - Bash(*scripts/notify/*)
-  - mcp__plugin_figma_figma
   - mcp__claude_ai_Figma
 ---
 

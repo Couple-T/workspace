@@ -18,9 +18,6 @@ tools:
   - Bash(git *)
   - Bash(codegraph *)
   - Bash(*scripts/tracker/*)
-  - mcp__plugin_figma_figma__get_screenshot
-  - mcp__plugin_figma_figma__get_metadata
-  - mcp__plugin_figma_figma__get_design_context
   - mcp__claude_ai_Figma__get_screenshot
   - mcp__claude_ai_Figma__get_metadata
   - mcp__claude_ai_Figma__get_design_context
