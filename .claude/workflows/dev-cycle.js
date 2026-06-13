@@ -148,6 +148,10 @@ const SCOPE_SCHEMA = {
     test_suite: {
       type: 'object', additionalProperties: false,
       properties: {
+        // needed:true is necessary but NOT sufficient — the gate only runs if the registered
+        // test-suite repo is ALSO listed in `repos` (its qa-planner/qa-runner author + build the
+        // specs the gate runs). needed:true on its own does nothing; pull the test-suite repo into
+        // `repos` (depends_on the app/service repos) too. The workflow backstops this if omitted.
         needed: { type: 'boolean' }, suite: { type: 'string' }, notes: { type: 'string' },
       },
     },
@@ -374,7 +378,7 @@ async function writeSummary(runStatus, runResult) {
   const s = await safeAgent(
     `Run-recorder for the development-cycle workflow on ${ticket} (final status: ${runStatus}). You HAVE the Write tool + a narrow Bash perm for the usage parser — actually PRODUCE the file, do not just describe it.
 1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.
-${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}3. WRITE that narrative with the Write tool to agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md at the WORKSPACE (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
+${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}3. WRITE that narrative with the Write tool to agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md at the WORKSPACE (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
 4. As the LAST step, RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write the file AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
 Return summary_path (the file you actually wrote + confirmed exists via Read), token_table_appended:true ONLY if you ran the parser and appended its real table, and a one-line note.`,
     { agentType: 'documentor', phase: 'Summary', label: `summary:${ticket}`, schema: SUMMARY_SCHEMA },
@@ -563,8 +567,11 @@ async function runRepoPipeline(rp, desc) {
 
 // 1. SCOPE — which repos does this ticket touch, and in what dependency order?
 phase('Scope')
+// The repo(s) that PROVIDE the cross-repo test-suite (QA) gate — injected into the scope
+// prompt so the cto knows which repo must be scoped for the gate to run at all.
+const testSuiteRepoIds = Object.keys(REPOS).filter((id) => REPOS[id].testSuite)
 const scope = await safeAgent(
-  `${tag('all', 'cto', 'scope')} You are the scoping stage for ${ticket}. Read the ticket via the tracker adapter (\`scripts/tracker/get-ticket-details.sh ${ticket}\`, + \`get-ticket-comments.sh\`) and decide which of the workspace's repos it requires changes in: ${Object.keys(REPOS).join(', ')} (only these are registered). For each touched repo return { repo, depends_on (other touched repo ids that must be built/merged first — typically a backend → app → test-suite order), summary (what that repo must change) }. Set test_suite.needed:true when the change should be validated end-to-end by the cross-repo test suite (E2E / API / load) against the candidate build. Most tickets touch ONLY the app repo — if so, return just that one repo. Also set tracker_reachable: true ONLY if the adapter actually returned the live ticket this call — set it false if the tracker was unreachable and you proceeded from inline/contextual info (the run then loudly flags that Status moves, comments, and improvement tickets did NOT persist). Return the structured scope.`,
+  `${tag('all', 'cto', 'scope')} You are the scoping stage for ${ticket}. Read the ticket via the tracker adapter (\`scripts/tracker/get-ticket-details.sh ${ticket}\`, + \`get-ticket-comments.sh\`) and decide which of the workspace's repos it requires changes in: ${Object.keys(REPOS).join(', ')} (only these are registered). For each touched repo return { repo, depends_on (other touched repo ids that must be built/merged first — typically a backend → app → test-suite order), summary (what that repo must change) }. The registered cross-repo test-suite (QA) repo(s) are: ${testSuiteRepoIds.length ? testSuiteRepoIds.join(', ') : 'none'}. When this change should be validated end-to-end by the cross-repo test suite (E2E / API / load) against the candidate build, set test_suite.needed:true AND include that test-suite repo in \`repos\`, with depends_on listing the app/service repos it validates (so it builds + merges LAST). The gate CANNOT run unless the test-suite repo is in \`repos\` — needed:true on its own does nothing. If no test-suite repo is registered, leave needed:false. Most tickets touch only the app repo; when they also need end-to-end validation, return the app repo PLUS the test-suite repo. Also set tracker_reachable: true ONLY if the adapter actually returned the live ticket this call — set it false if the tracker was unreachable and you proceeded from inline/contextual info (the run then loudly flags that Status moves, comments, and improvement tickets did NOT persist). Return the structured scope.`,
   { agentType: 'cto', phase: 'Scope', label: `scope:${ticket}`, schema: SCOPE_SCHEMA },
 )
 if (!scope) throw new Error(`dev-cycle: scope stage did not converge for ${ticket}`)
@@ -572,6 +579,26 @@ trackerReachable = scope.tracker_reachable !== false
 if (!trackerReachable) log('⚠️ TRACKER UNREACHABLE — ticket Status moves, comments, and /clarifying-ticket improvement tickets will NOT persist this run; all ticket-tracking is best-effort. Flagged in the run result + summary.')
 const scoped = (scope.repos || []).filter((r) => REPOS[r.repo])
 if (!scoped.length) throw new Error(`Scope returned no known repos for ${ticket} (got: ${JSON.stringify(scope.repos)})`)
+const testSuiteRequested = scope.test_suite?.needed === true
+// A flagged test-suite gate is only RUNNABLE if the test-suite repo is in the built set
+// (its qa-planner/qa-runner author + build the specs the gate runs). The scope agent can
+// flag needed without listing the repo — reconcile here so the gate can never be silently
+// requested-but-skipped.
+let testSuiteGateUnavailable = null
+if (scope.test_suite?.needed && !scoped.some((r) => REPOS[r.repo]?.testSuite)) {
+  const tsRepo = Object.keys(REPOS).find((id) => REPOS[id].testSuite)
+  if (tsRepo) {
+    scoped.push({
+      repo: tsRepo,
+      depends_on: scoped.map((r) => r.repo),
+      summary: `Cross-repo ${scope.test_suite.suite || 'E2E'} validation for ${ticket}`,
+    })
+    log(`[scope] test-suite gate requested — auto-added ${tsRepo} to scope (depends_on: ${scoped.filter((r) => r.repo !== tsRepo).map((r) => r.repo).join(', ') || 'none'}).`)
+  } else {
+    testSuiteGateUnavailable = `test_suite.needed was set but NO test-suite repo is registered in REPOS — gate cannot run.`
+    log(`⚠️  [scope] ${testSuiteGateUnavailable}`)
+  }
+}
 log(`Scope ${ticket} (${scope.type}): ${scoped.map((r) => r.repo).join(', ')}${scope.test_suite?.needed ? ' + test-suite gate' : ''}`)
 tick('scope')
 
@@ -619,8 +646,8 @@ tick('kickoff')
 if (!AUTO_APPROVE_PLAN && !approvePlan) {
   const planList = plans.map((p) => `${p.repo}: ${p.plan_path}${p.plan_html ? ` (html: ${p.plan_html})` : ''}`).join('; ')
   log(`⏸️ Plan approval required (planning.auto_approve=false) — plans ready for human review, NOT proceeding to build: ${planList}. Re-run \`/dev-cycle ${ticket} --approve-plan\` once approved.`)
-  const summary = await writeSummary('awaiting-plan-approval', { ticket, repos: waveList.flat(), plans })
-  return { ticket, status: 'awaiting-plan-approval', plans, summary, spend }
+  const summary = await writeSummary('awaiting-plan-approval', { ticket, repos: waveList.flat(), plans, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: 'awaiting-plan-approval', plans, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // 3. BUILD → OPEN PR → REVIEW — ALL scoped repos IN PARALLEL.
@@ -637,8 +664,8 @@ buildRes.forEach((r, i) => { if (r) repoResults[buildIds[i]] = r })
 const aborted = buildIds.filter((id) => !repoResults[id] || repoResults[id].status !== 'ready')
 if (aborted.length) {
   log(`⚠️ ${aborted.join(', ')} did not reach 'ready' — the whole change set must be ready before any merge; stopping.`)
-  const summary = await writeSummary('repo-unresolved', { ticket, aborted, repoResults })
-  return { ticket, status: 'repo-unresolved', aborted, repoResults, summary, spend }
+  const summary = await writeSummary('repo-unresolved', { ticket, aborted, repoResults, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: 'repo-unresolved', aborted, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // All scoped repos are built, reviewed, and approved — the WHOLE change set is ready.
@@ -675,17 +702,21 @@ Return passed:true only if the scoped run (ticket + regression spec(s)) is green
   tick('test-suite')
   if (!testSuite?.passed) {
     log('⚠️ Test-suite gate failed — stopping before Distribute + Merge. The candidate does not pass; NOTHING merged; left for human review.')
-    const summary = await writeSummary('test-suite-failed', { ticket, mergeOrder, repoResults, testSuite })
-    return { ticket, status: 'test-suite-failed', mergeOrder, repoResults, testSuite, summary, spend }
+    const summary = await writeSummary('test-suite-failed', { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested })
+    return { ticket, status: 'test-suite-failed', mergeOrder, repoResults, testSuite, testSuiteRequested, summary, spend }
   }
+} else if (scope.test_suite?.needed && !testSuiteRepo) {
+  testSuiteGateUnavailable = testSuiteGateUnavailable
+    || `test-suite gate was requested but no test-suite repo reached the build set — gate did NOT run.`
+  log(`⚠️  ${testSuiteGateUnavailable} The ticket is shipping WITHOUT the requested E2E validation.`)
 }
 
 // DRY RUN stop — repos built/reviewed and the test-suite gate passed. Stop BEFORE the
 // outward/irreversible steps (Merge, then Distribute): no squash-merge, no distribution.
 if (dryRun) {
   log(`🧪 DRY RUN — all repos 'ready'${testSuite ? ` + test-suite ${testSuite.passed ? 'PASS' : 'n/a'}` : ''}; stopping before Merge + Distribute (no merge, no distribution). Per-repo: ${mergeOrder.map((id) => `${id}=${repoResults[id]?.status}`).join(', ')}.`)
-  const summary = await writeSummary('dry-run', { ticket, repos: mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null })
-  return { ticket, status: 'dry-run', dryRun: true, repoResults, testSuite, summary, spend }
+  const summary = await writeSummary('dry-run', { ticket, repos: mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: 'dry-run', dryRun: true, repoResults, testSuite, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // 5. MERGE — the commit gate. After review + the test-suite gate have validated the candidate
@@ -701,11 +732,11 @@ for (const id of mergeOrder) {
   if ((desc.autoMerge ?? AUTO_MERGE) === false) {
     merges[id] = { merged: false, base: rp.base_branch, note: 'auto-merge disabled — PR/MR left open for a human', pr: rr.pr?.pr_url }
     log(`⏸️ [${id}] auto-merge disabled — reviewed + validated PR/MR left OPEN for human merge: ${rr.pr?.pr_url ?? '(see run)'}. Nothing merged or distributed this run.`)
-    const summary = await writeSummary('merge-skipped', { ticket, mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, merges })
+    const summary = await writeSummary('merge-skipped', { ticket, mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable, merges })
     // NOTIFY (final phase) — auto-merge is off, so the validated PR/MR are awaiting a human:
     // ping the configured chat channel to review them. No-op unless notify.enabled.
     const notify = await notifyReview(mergeOrder)
-    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, summary, notify, spend }
+    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, testSuiteRequested, testSuiteGateUnavailable, summary, notify, spend }
   }
   const merger = desc.review || desc.build // test-suite repo (no reviewer): the qa-runner merges its own PR
   const mergePreamble = desc.review
@@ -722,8 +753,8 @@ VERIFY the printed \`state=MERGED\` before reporting (re-check with \`scripts/vc
   tick(`${id}:merge`)
   if (!m?.merged) {
     log(`⚠️ [${id}] merge did not complete — stopping before distribution; left for human review (review + test-suite already passed).`)
-    const summary = await writeSummary('merge-failed', { ticket, mergeOrder, repoResults, merges })
-    return { ticket, status: 'merge-failed', failedAt: id, repoResults, merges, testSuite, summary, spend }
+    const summary = await writeSummary('merge-failed', { ticket, mergeOrder, repoResults, merges, testSuiteRequested, testSuiteGateUnavailable })
+    return { ticket, status: 'merge-failed', failedAt: id, repoResults, merges, testSuite, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
   }
 }
 
@@ -779,11 +810,13 @@ const summary = await writeSummary('shipped', {
     pr: repoResults[id].pr?.pr_url, sha: merges[id]?.sha, distribution: dists[id]?.release_link,
   })),
   testSuite: testSuite ? { passed: testSuite.passed } : null,
+  testSuiteRequested, testSuiteGateUnavailable,
 })
 
 return {
   ticket, status: 'shipped',
   repos: mergeOrder, repoResults, merges,
-  testSuite, distribution: dists, closed: close?.closed === true, summary, trackerReachable,
+  testSuite, testSuiteRequested, testSuiteGateUnavailable,
+  distribution: dists, closed: close?.closed === true, summary, trackerReachable,
   spend, // per-phase output-token deltas; the per-repo/role table lives in summary.summary_path
 }

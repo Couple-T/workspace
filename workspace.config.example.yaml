@@ -134,4 +134,8 @@ products:
         desc: Android/iOS E2E UI tests for the app.      # one-line repo responsibility
 
 # Repo dependency edges (build/merge order) are decided per-ticket by the scoping
-# stage; a typical chain is backend → app → test-suite.
+# stage; a typical chain is backend → app → test-suite. When a ticket needs end-to-end
+# validation the scoping stage pulls the test-suite repo INTO scope (last, depends_on the
+# app/service repos) — that is what makes the cross-repo test-suite (QA) gate run. Flagging
+# the gate without scoping that repo does nothing, so the dev-cycle backstops it by
+# auto-adding the registered test-suite repo when the scope flags the gate but omits it.

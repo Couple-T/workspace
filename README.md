@@ -243,6 +243,11 @@ bash -n scripts/vcs/*.sh scripts/tracker/*.sh
 **The candidate is validated *before* merge.** Review and the cross-repo test-suite gate
 both run on the ticket's work branches pre-merge, so a failing candidate never reaches the
 base branch. Merge is the commit gate; distribution ships the *merged* build right after.
+The test-suite gate runs only when the ticket's scope includes the registered test-suite
+repo — needing end-to-end validation pulls that repo into scope (it builds + merges last).
+If the scope flags the gate but omits the repo, the run auto-adds it; if no test-suite repo
+is registered at all, the run ships with a loud warning (recorded in the summary) that the
+requested gate did not run — it never reports an unvalidated run as test-suite-validated.
 
 **Auto-merge** (`vcs.auto_merge`, default `true`) decides whether that merge happens
 automatically. Set it `false` — or override a single repo with
