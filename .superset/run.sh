@@ -27,6 +27,11 @@
 # Usage — first arg or SUPERSET_RUN_DEVICE picks the target (default: ios):
 #   ./.superset/run.sh                 # iOS simulator (boots a default iPhone if needed)
 #   ./.superset/run.sh android         # Android emulator (launches the first AVD if needed)
+#   ./.superset/run.sh both            # iOS simulator AND Android emulator at once (boots either
+#                                      #   if needed). Two parallel `flutter run` sessions, output
+#                                      #   line-prefixed [ios]/[android]; hot-reload keys (r/R/q)
+#                                      #   are NOT wired in this mode — Ctrl-C stops both. For an
+#                                      #   interactive single-device session use `ios` / `android`.
 #   ./.superset/run.sh auto            # first already-running device; never auto-boots
 #   ./.superset/run.sh <device-id>     # a specific id from `flutter devices`
 #   SUPERSET_RUN_DEVICE=android ./.superset/run.sh
@@ -88,6 +93,8 @@ resolve_auto() {                         # first already-running/connected devic
 case "$DEVICE" in
   ios|simulator) TARGET="$(resolve_ios)" ;;
   android)       TARGET="$(resolve_android)" ;;
+  # Resolve (and boot, if needed) BOTH real devices up front, before pub get / codegen.
+  both)          IOS_TARGET="$(resolve_ios)"; AND_TARGET="$(resolve_android)"; TARGET="iOS=$IOS_TARGET + Android=$AND_TARGET" ;;
   auto)          TARGET="$(resolve_auto)" ;;
   *)             TARGET="$DEVICE" ;;     # literal device id / chrome / web-server / macos
 esac
@@ -104,6 +111,18 @@ case "$DEVICE" in
   web-server|web)
     # 0.0.0.0 so a preview is reachable from outside the sandbox; foreground (keeps serving).
     exec flutter run -d web-server --web-hostname 0.0.0.0 --web-port "$PORT"
+    ;;
+  both)
+    # Two devices at once: can't `exec` (two processes), and `flutter run -d all` would also
+    # grab macos/chrome — both dead-ends for this app (see header) — so launch one `flutter run`
+    # per resolved device. Each stream is line-prefixed via a process substitution, so $! stays
+    # the flutter PID (not sed's) and teardown is clean. Ctrl-C / SIGTERM stops both.
+    echo "==> hot-reload keys (r/R/q) are not wired in 'both' mode — Ctrl-C stops both sessions."
+    pids=()
+    flutter run -d "$IOS_TARGET" > >(sed 's/^/[ios]     /') 2>&1 &     pids+=("$!")
+    flutter run -d "$AND_TARGET" > >(sed 's/^/[android] /') 2>&1 &     pids+=("$!")
+    trap 'echo; echo "==> Stopping both sessions…"; kill "${pids[@]}" 2>/dev/null || true' INT TERM
+    wait "${pids[@]}"
     ;;
   *)
     exec flutter run -d "$TARGET"
