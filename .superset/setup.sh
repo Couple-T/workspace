@@ -25,7 +25,8 @@ mani sync
 # Seed the adapter .env files (git-ignored local config). On a fresh worktree, copy them
 # from the root workspace if present; harmless to skip — each adapter also reads env vars.
 seed_env() {
-  local rel="$1" root_src="${SUPERSET_ROOT_PATH:-}/$rel"
+  local rel="$1"
+  local root_src="${SUPERSET_ROOT_PATH:-}/$rel"
   if [[ ! -f "$rel" && -n "${SUPERSET_ROOT_PATH:-}" && -f "$root_src" ]]; then
     cp "$root_src" "$rel" && echo "==> Seeded $rel from the root workspace."
   fi

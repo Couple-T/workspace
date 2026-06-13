@@ -1,0 +1,3 @@
+# Re-include repos the root .gitignore hides, so Cursor can index + search them.
+!feeedme-app/
+!feeedme-appium/

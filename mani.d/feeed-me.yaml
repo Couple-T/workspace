@@ -1,0 +1,12 @@
+# feeed-me — mani projects. path is relative to THIS file dir (mani.d/), so ../feeedme-app resolves under the workspace root.
+projects:
+  feeedme-appium:
+    desc: Android/iOS E2E UI tests for the feeed-me app.
+    url: git@github.com:Couple-T/feeedme-appium.git
+    path: ../feeedme-appium
+    tags: [feeed-me, javascript ]
+  feeedme-app:
+    desc: The mobile app for the feeed-me platform.
+    url: git@github.com:Couple-T/feeedme-app.git
+    path: ../feeedme-app
+    tags: [feeed-me, dart]

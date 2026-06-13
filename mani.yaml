@@ -1,4 +1,5 @@
 import:
+  - mani.d/feeed-me.yaml
 
 sync_gitignore: false
 
