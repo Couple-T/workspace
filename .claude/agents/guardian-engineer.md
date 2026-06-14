@@ -23,8 +23,11 @@ tools:
   - Bash(scripts/dev.sh why:*)
   # gh is the default GitHub interface (no MCP) — comment findings on the PR/MR.
   - Bash(*scripts/vcs/*)
-  - mcp__plugin_firebase_firebase
+  # Quality gate via the SonarQube MCP when the server is session-connected; in runtimes
+  # where it is NOT (e.g. a worktree-isolated Workflow run) fall back to the installed
+  # `sonar` CLI over Bash so the scan still runs instead of silently passing.
   - mcp__sonarqube
+  - Bash(sonar *)
   # The reporter owns the ticket: file your own Improvement tickets via /clarifying-ticket
   # (returns the real FM-<n>) — never leave a placeholder for a human.
   - Bash(*scripts/tracker/*)
