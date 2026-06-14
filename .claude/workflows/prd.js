@@ -79,11 +79,21 @@ const PLAN_SCHEMA = {
 }
 const ASSETS_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['assets'],
+  required: ['assets', 'image_gen_available'],
   properties: {
+    // false → no usable image backend (no mcp-image / no GEMINI_API_KEY / quota): nothing was generated.
+    image_gen_available: { type: 'boolean' },
     assets: { type: 'array', items: {
       type: 'object', additionalProperties: false,
-      properties: { name: { type: 'string' }, figma_location: { type: 'string' } } } },
+      required: ['name', 'status'],
+      properties: {
+        name: { type: 'string' },
+        // created = generated this run; reused = already on the Assets page; placeholder = temp
+        // stand-in (NOT dev-ready); unavailable = image-gen unusable, nothing produced.
+        status: { type: 'string', enum: ['created', 'reused', 'placeholder', 'unavailable'] },
+        figma_location: { type: ['string', 'null'] },
+        reason: { type: 'string' },
+      } } },
     note: { type: 'string' },
   },
 }
@@ -95,6 +105,9 @@ const FIGMA_SCHEMA = {
     figma_frames: { type: 'array', items: {
       type: 'object', additionalProperties: false,
       properties: { screen: { type: 'string' }, url: { type: 'string' } } } },
+    // States/frames still on a placeholder or unavailable asset — MUST be non-empty when any
+    // asset-dependent state was built on a stand-in, and dev_ready MUST be false in that case.
+    asset_gaps: { type: 'array', items: { type: 'string' } },
     note: { type: 'string' },
   },
 }
@@ -185,13 +198,13 @@ if (stage === 'all') {
       let assets = null
       if (plan.asset_requests && plan.asset_requests.length) {
         assets = await agent(
-          `${tag('graphic-designer', 'design', slug)} Generate the assets requested by the design plan for "${f.name}" (${workKey}) and lay them into the Figma Assets page (6-col grid, transparent, species+number snake_case, @1x/2x/3x), under the budget rules. Requests: ${JSON.stringify(plan.asset_requests).slice(0, 1800)}. Return where each asset lives.`,
+          `${tag('graphic-designer', 'design', slug)} Generate the assets requested by the design plan for "${f.name}" (${workKey}) and lay them into the Figma Assets page (6-col grid, transparent, species+number snake_case, @1x/2x/3x), under the budget rules. Requests: ${JSON.stringify(plan.asset_requests).slice(0, 1800)}. Run your availability gate FIRST: if mcp__mcp-image is not in your toolset or generation errors on auth/key/quota, set image_gen_available=false and mark every asset status='unavailable' with a reason+fix — do NOT improvise placeholders or claim assets exist. Otherwise return per-asset status (created/reused/placeholder/unavailable) and where each lives. Never report a placeholder/missing asset as created.`,
           { agentType: 'graphic-designer', phase: 'Design', label: `assets:${slug}`, schema: ASSETS_SCHEMA },
         )
       }
       // 2c. Build (Jane) — production Figma frames from the plan, using the assets.
       const figma = await agent(
-        `${tag('ux-ui-designer', 'design', slug)} Build the production-ready Figma frames for "${f.name}" (${workKey}) from Mia's plan at ${plan.plan_path} — all screens and states, design-system tokens only, motion intent noted. Assets available: ${assets ? JSON.stringify(assets.assets).slice(0, 1200) : 'none requested'}. Return the frame URLs + the file URL; dev_ready=true only when every state is covered and dev-ready.`,
+        `${tag('ux-ui-designer', 'design', slug)} Build the production-ready Figma frames for "${f.name}" (${workKey}) from Mia's plan at ${plan.plan_path} — all screens and states, design-system tokens only, motion intent noted. Assets available: ${assets ? JSON.stringify(assets.assets).slice(0, 1200) : 'none requested'}. Honor each asset's status: any state depending on a 'placeholder' or 'unavailable' asset is NOT dev-ready — list it in asset_gaps and set dev_ready=false. Return the frame URLs + the file URL; dev_ready=true ONLY when every state is covered, dev-ready, and asset_gaps is empty.`,
         { agentType: 'ux-ui-designer', phase: 'Design', label: `figma:${slug}`, schema: FIGMA_SCHEMA },
       )
       return { feature: f.name, plan, assets, figma }

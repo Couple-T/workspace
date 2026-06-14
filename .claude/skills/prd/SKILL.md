@@ -31,7 +31,7 @@ TICKETING   → Workflow(prd, {stage:'ticketing', ...})    headless, links URL s
 
 ## Process
 
-### 0. Preflight — confirm Figma is connected
+### 0a. Preflight — confirm Figma is connected
 Run `claude mcp list` (Bash) and confirm a Figma server is **✔ Connected**
 (`claude.ai Figma` → `mcp__claude_ai_Figma__*`).
 - If connected: proceed.
@@ -39,6 +39,31 @@ Run `claude mcp list` (Bash) and confirm a Figma server is **✔ Connected**
   Figma), or offer to run a **specs-only** pass (skip step 2's frame build; the
   designers still produce build-ready markdown specs, tickets link those instead
   of frames). Do not silently 403.
+
+### 0b. Preflight — confirm image generation is available
+The graphic-designer (`Fiona`) generates assets via the **`mcp-image`** server
+(`mcp__mcp-image__generate_image`, Gemini) + the `/image-generation` skill. It
+needs the server enabled **and** `GEMINI_API_KEY` set. A connected server with no
+key still cannot generate — so check BOTH:
+1. From `claude mcp list`, is **`mcp-image` ✔ Connected**?
+2. Is the key present? `[ -n "$GEMINI_API_KEY" ]`, or a non-empty `GEMINI_API_KEY`
+   in `.claude/settings.local.json` `env` (e.g.
+   `grep -A2 '"env"' .claude/settings.local.json`).
+
+- **Both true → image-gen available.** Proceed; the designers generate real assets.
+- **Otherwise → image-gen UNAVAILABLE.** Do **not** proceed silently into placeholder
+  art. Warn the user and offer an explicit choice:
+  - **(a) Enable it** — set `GEMINI_API_KEY` in `.claude/settings.local.json`'s `env`
+    block (get a key at https://aistudio.google.com/apikey), then restart the session
+    so `mcp-image` picks it up. See `docs/agents/image-generation.md`.
+  - **(b) Proceed placeholder/specs-only** — designers still build frames, but any
+    asset-dependent state stays on an **explicit placeholder**, the graphic-designer
+    returns `unavailable`/`placeholder`, and the ux-ui-designer must **flag those
+    frames in `asset_gaps` and NOT mark them `dev_ready`**. Surface this in the final
+    report so nobody mistakes a placeholder frame for finished work.
+  - **(c) Abort** — stop the run.
+
+  Pick the path with the user; never default into (b) silently.
 
 ### 1. INTAKE (headless workflow)
 ```
@@ -59,12 +84,19 @@ for all features in one message — but keep each feature's own chain sequential
    `asset_requests`). Mirror the prompt the workflow used (see `prd.js` step 2a).
 2. **Assets** — only if the plan returned `asset_requests`:
    `Agent(subagent_type: 'graphic-designer')` to generate them into the Figma
-   Assets page. (prd.js step 2b.)
+   Assets page. (prd.js step 2b.) Require it to return `image_gen_available` plus a
+   per-asset `status` (`created`/`reused`/`placeholder`/`unavailable`). If you chose
+   the **placeholder/specs-only** path at preflight 0b (or the agent reports
+   `image_gen_available:false`), expect `placeholder`/`unavailable` here — carry that
+   forward, don't discard it.
 3. **Build frames** — `Agent(subagent_type: 'ux-ui-designer')`: build the
    production Figma frames from the plan, using the assets. It calls
    `use_figma`/`create_new_file` etc. — which now succeed because you are
-   in-session. Require it to return `figma_frames[].url` + `figma_file_url` and
-   `dev_ready`. (prd.js step 2c.)
+   in-session. Require it to return `figma_frames[].url` + `figma_file_url`,
+   `asset_gaps`, and `dev_ready`. Pass the asset statuses in; instruct it that any
+   state on a `placeholder`/`unavailable` asset goes in `asset_gaps` and forces
+   `dev_ready:false` — never let a placeholder frame come back `dev_ready:true`.
+   (prd.js step 2c.)
 
 Collect two structures as features complete:
 - `figmaByFeature` — `{ "<feature name>": "<primary frame or file URL>" }`
@@ -90,7 +122,11 @@ so it's headless-safe). The documentor writes the run summary.
 Summarize to the user: features intaken, frames built (with URLs), tickets created
 (names + URLs + board URL), and any feature that fell back to specs-only or failed
 to get a frame. Surface failures honestly — don't imply frames exist if a build
-returned `dev_ready:false` or no URL.
+returned `dev_ready:false` or no URL. **Call out image-gen explicitly:** if assets
+came back `placeholder`/`unavailable` or any frame reported `asset_gaps`, list those
+frames as **not dev-ready (placeholder art)** and restate how to enable real
+generation (preflight 0b option (a)). Never present a placeholder-backed frame as
+finished.
 
 ## Notes
 - Pass `args` as a real JSON object to Workflow, not a stringified one.

@@ -67,7 +67,11 @@ done
 if [[ ${#media[@]} -gt 0 ]]; then
   [[ -n "$ticket" ]] || ticket="$(printf '%s' "$head" | grep -oiE '[A-Z]+-[0-9]+' | head -n1 || true)"
   dryflag=(); [[ "$dry" -eq 1 ]] && dryflag=(--dry-run)
-  section="$("$DIR/upload-media.sh" --ticket "$ticket" "${dryflag[@]}" "${media[@]}" || true)"
+  # bash 3.2 (macOS /bin/bash): expanding an EMPTY array as "${dryflag[@]}" trips
+  # `set -u` ("unbound variable"). The ${arr[@]+"${arr[@]}"} form expands to nothing
+  # when empty and to the elements (one word each) when set — bash-3.2-safe, and unlike
+  # "${arr[@]:-}" it never injects a spurious empty positional argument.
+  section="$("$DIR/upload-media.sh" --ticket "$ticket" ${dryflag[@]+"${dryflag[@]}"} "${media[@]}" || true)"
   if [[ -n "$section" ]]; then
     body="${body:+$body$'\n\n'}$section"
   fi

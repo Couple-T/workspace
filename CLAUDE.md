@@ -22,6 +22,9 @@ files generated from it by `scripts/aiworks`. `mani list projects` for the full 
   `scripts/aiworks sync` sets everything up from it.
 - `docs/agents/issue-tracker.md` — how to read/write tickets (the tracker adapter,
   status names, id format).
+- `docs/agents/image-generation.md` — how the graphic-designer generates assets
+  (the `mcp-image` server + `GEMINI_API_KEY`); the design/PRD phase fails loud when
+  it's not set up rather than shipping placeholder art.
 - Provider adapters: `scripts/vcs/` (PR/MR via `github`|`gitlab`),
   `scripts/tracker/` (tickets via `notion`|`jira`), and `scripts/notify/` (chat via
   `slack`). **Always go through the adapters — never call `gh`/`glab`/Notion/Jira/Slack
