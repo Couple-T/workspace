@@ -18,6 +18,12 @@
 # for notion; notify.provider/channel → NOTIFY_PROVIDER/NOTIFY_CHANNEL). An existing .env is left
 # untouched — you still fill in the secrets by hand (e.g. the Slack token in notify/.env).
 #
+# It also PREPARES the image-generation config: ensures the git-ignored
+# .claude/settings.local.json enables the `mcp-image` MCP server and carries a GEMINI_API_KEY
+# placeholder (the key the graphic-designer's asset pipeline needs). A non-empty key is never
+# clobbered. Fill it in (https://aistudio.google.com/apikey) to turn image generation on; until
+# then the /prd preflight detects the gap and fails loud instead of shipping placeholder art.
+#
 # Usage:
 #   aiworks sync [<product>|<repo>] [options]
 #
@@ -215,6 +221,57 @@ prepare_adapter_env() {
   seed_env_file "$DIR/notify" NOTIFY_PROVIDER "$notify_provider" NOTIFY_CHANNEL "$notify_channel"
 }
 
+# ── image-generation config (mcp-image + GEMINI_API_KEY) ─────────────────────────
+# The graphic-designer (Fiona) generates assets through the `mcp-image` MCP server
+# (`mcp__mcp-image__generate_image`, Gemini) + the /image-generation skill. That server
+# is declared in the committed .mcp.json with env GEMINI_API_KEY=${GEMINI_API_KEY} — so the
+# key must be present in the environment. We keep it OUT of version control by putting it in
+# the git-ignored .claude/settings.local.json `env` block (Claude Code exports that env to MCP
+# servers, where .mcp.json's ${GEMINI_API_KEY} expands it). Here we ensure that file enables
+# "mcp-image" and carries a GEMINI_API_KEY placeholder for the user to fill in. An EXISTING,
+# non-empty key is never clobbered; other settings are preserved (JSON merge, with a .bak).
+seed_image_gen_settings() {
+  local sl="$ROOT/.claude/settings.local.json" rel=".claude/settings.local.json"
+  step "Prepare image-gen config (mcp-image + GEMINI_API_KEY) in $rel"
+  if [[ "$DRY" -eq 1 ]]; then
+    printf '    %swould ensure %s enables "mcp-image" and carries an env.GEMINI_API_KEY placeholder%s\n' "$c_dim" "$rel" "$c_off"
+    return 0
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    warn "node not found — can't auto-prepare $rel; add \"mcp-image\" to enabledMcpjsonServers and env.GEMINI_API_KEY by hand (see docs/agents/image-generation.md)"
+    return 0
+  fi
+  local out
+  out="$(NODE_SL="$sl" node <<'NODE'
+const fs = require('fs');
+const f = process.env.NODE_SL;
+let raw = '';
+try { raw = fs.readFileSync(f, 'utf8'); } catch (e) { raw = ''; }
+let j;
+if (raw.trim() === '') { j = {}; }
+else { try { j = JSON.parse(raw); } catch (e) { console.log('PARSE_ERROR'); process.exit(0); } }
+j.enabledMcpjsonServers = Array.isArray(j.enabledMcpjsonServers) ? j.enabledMcpjsonServers : [];
+let changed = false;
+if (!j.enabledMcpjsonServers.includes('mcp-image')) { j.enabledMcpjsonServers.unshift('mcp-image'); changed = true; }
+j.env = (j.env && typeof j.env === 'object' && !Array.isArray(j.env)) ? j.env : {};
+let seededKey = false;
+if (!('GEMINI_API_KEY' in j.env)) { j.env.GEMINI_API_KEY = ''; changed = true; seededKey = true; }
+const hasKey = typeof j.env.GEMINI_API_KEY === 'string' && j.env.GEMINI_API_KEY.trim() !== '';
+if (changed) {
+  try { if (fs.existsSync(f)) fs.copyFileSync(f, f + '.bak'); } catch (e) {}
+  fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
+}
+console.log((changed ? 'CHANGED' : 'OK') + (seededKey ? ' SEEDED' : '') + (hasKey ? ' HAS_KEY' : ' NO_KEY'));
+NODE
+)"
+  case "$out" in
+    PARSE_ERROR) warn "$rel is not valid JSON — left untouched; add \"mcp-image\" + env.GEMINI_API_KEY by hand" ;;
+    *HAS_KEY*)   ok "$rel ready — GEMINI_API_KEY set; image generation enabled" ;;
+    *NO_KEY*)    ok "$rel prepared — now set env.GEMINI_API_KEY (key: https://aistudio.google.com/apikey) to enable image generation (see docs/agents/image-generation.md)" ;;
+    *)           warn "could not determine image-gen state for $rel" ;;
+  esac
+}
+
 # Resolve the positional: a known products[].id is a product filter; anything else is a repo name.
 if [[ -n "$SELECTOR" ]]; then
   if parse_repos | awk -F$'\037' -v p="$SELECTOR" '$1==p{f=1} END{exit f?0:1}'; then
@@ -234,6 +291,11 @@ printf '%sSyncing repos declared in workspace.config.yaml%s%s\n' "$c_step" "$sel
 # Seed the adapter .env files (idempotent; never overwrites an existing .env) before the
 # per-repo work, so the adapters the onboarded repos link to are already configured.
 prepare_adapter_env
+
+# Prepare the image-generation config (enable mcp-image + seed a GEMINI_API_KEY placeholder
+# in the git-ignored settings.local.json) so the graphic-designer's asset pipeline can work
+# once the user supplies a key — and fails loud (via the /prd preflight) when it can't.
+seed_image_gen_settings
 
 # ── iterate every declared repo and delegate to aiworks-add.sh ───────────────────
 total=0; synced=0; failed=0; noted=(); MATCHED=""
