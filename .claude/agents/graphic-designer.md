@@ -39,7 +39,9 @@ The product is under-funded; every generation costs us:
 - **Short animation in scope** — animated logos, mascots, effects, transitions.
 
 ## Delivery to Figma (the Assets page)
-1. Place it into the **product's Figma project → Assets page**, ready for anyone to implement.
+> Figma is gated by `design.enabled` (`docs/agents/figma.md`): when it's OFF you aren't spawned. When ON, deliver into the org's **canonical** Figma file (`design.figma_file_key`) — never a new file.
+
+1. Place it into the **canonical Figma file → Assets page**, ready for anyone to implement.
 2. **Group by category**, lay out as a **6-column grid**; follow asset naming/export conventions (category+number snake_case, @1x/2x/3x).
 3. **`/handoff` first, then ping Jane.** Before telling Jane an asset is ready (or asking her to clarify a request), produce a short **`/handoff`** (OS temp dir) pointing to the Assets-page location + naming, then send the pointer. Pure acknowledgements are exempt.
 

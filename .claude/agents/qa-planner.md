@@ -24,7 +24,9 @@ tools:
   - Bash(codegraph *)
   # Read the ticket (plan-testcases) and publish to it (update-ticket).
   - Bash(*scripts/tracker/*)
-  # Confirm design intent when the ticket links a figma.com screen.
+  # Confirm design intent when the ticket links a figma.com screen — ONLY when
+  # design.enabled is true (the workspace-wide Figma switch; see docs/agents/figma.md).
+  # When Figma is OFF, derive intent from the ticket spec, not a Figma read.
   - mcp__claude_ai_Figma__get_screenshot
   - mcp__claude_ai_Figma__get_metadata
   - mcp__claude_ai_Figma__get_design_context

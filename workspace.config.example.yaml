@@ -88,6 +88,25 @@ planning:
                                    #   interactive HTML doc (the write-interactive-docs skill), alongside
                                    #   the plan markdown — handy for sharing/reviewing when auto_approve is off.
 
+# ── Design (governs ALL Figma usage across the workspace) ──────────────────────
+# How the team works with Figma — see docs/agents/figma.md for the full convention.
+design:
+  enabled: false                   # MASTER Figma switch (default OFF). false → NO agent calls Figma:
+                                   #   the /prd design phase is skipped (tickets carry build-ready specs,
+                                   #   no frames) and the dev/QA agents build from the spec instead of a
+                                   #   Figma screenshot. true → the design pipeline runs (planner → assets
+                                   #   → designer) and needs a connected Figma MCP. Turn this ON to design.
+  figma_file_key: ""               # the org's ONE canonical design file — the key in
+                                   #   figma.com/design/<KEY>/…. Set → every /prd run builds its screens
+                                   #   as a NEW PAGE inside THIS file, reusing its variables/components
+                                   #   (zero orphan files); tickets link node URLs within it. Empty → each
+                                   #   run creates a NEW (orphan) file and the run WARNS how to configure
+                                   #   this. Only consulted when enabled: true.
+  page_naming: "{work_key} / {feature}"   # page-name template inside the canonical file. Tokens:
+                                   #   {work_key} (e.g. phase-2) and {feature}. The default gives one page
+                                   #   per feature so parallel designers don't collide; use "{work_key}"
+                                   #   for a single shared page per run.
+
 # ── Products & repos — THE PART EACH ORG CONFIGURES ────────────────────────────
 # A product groups the repos that ship together. Each product is ONE
 # mani.d/<id>.yaml file (GENERATED from this block by `aiworks` — don't hand-edit

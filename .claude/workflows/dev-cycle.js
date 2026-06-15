@@ -52,6 +52,10 @@ export const meta = {
 //   true AND AUTO_MERGE is false, the final Notify phase posts a "please review" digest (the open
 //   PR/MR per repo) to NOTIFY_CHANNEL via the scripts/notify/ adapter. With auto-merge ON the run
 //   merges + distributes itself, so there is nothing to review and the phase is skipped.
+// DESIGN_ENABLED — design.enabled (the workspace-wide Figma switch). false ⇒ Figma is OFF: the
+//   dev/QA agents do NOT call Figma — they build from the ticket spec, not a Figma screenshot
+//   (see FIGMA_DIRECTIVE below and docs/agents/figma.md). The /prd design phase is what authors
+//   Figma; this flag only governs the read-side here.
 // ──────────────────────────────────────────────────────────────────────────
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
 const TICKET_PREFIX = 'OFB'
@@ -61,6 +65,7 @@ const PLAN_TO_HTML = true     // from workspace.config.yaml planning.to_html; tr
 const NOTIFY = false        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
 const NOTIFY_PROVIDER = 'slack' // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
 const NOTIFY_CHANNEL = '' // from workspace.config.yaml notify.channel; the chat channel the digest goes to
+const DESIGN_ENABLED = false     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
 const STATUS = {
   to_do: 'TO DO',
   in_progress: 'IN PROGRESS',
@@ -73,6 +78,13 @@ const STATUS = {
 const REPOS = {
 }
 // <<< AIWORKS:CONFIG END >>>
+
+// Workspace-wide Figma kill-switch (design.enabled). When OFF, every Figma-reading role
+// (development-planner / developer / qa-planner / qa-runner) gets this appended to its prompt
+// so it builds from the ticket spec instead of calling Figma. See docs/agents/figma.md.
+const FIGMA_DIRECTIVE = (typeof DESIGN_ENABLED !== 'undefined' ? DESIGN_ENABLED : false)
+  ? ''
+  : ' Figma is DISABLED workspace-wide (design.enabled=false): do NOT call any Figma tools (get_screenshot/get_metadata/get_design_context) — build strictly from the ticket spec/written plan.'
 
 // ──────────────────────────────────────────────────────────────────────────
 // Inputs
@@ -453,7 +465,7 @@ async function runRepoPipeline(rp, desc) {
 6. RETURN CONTRACT (mandatory) — /handoff, then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of the suite state (green, or red + the bug ids you reported), commit count, and in "fixed" the spec/Page Object files you touched. Do NOT move the ticket status — the workflow does that. A red-but-reported suite is SUCCESS for this phase — never withhold the structured result to investigate further, and never exceed the step-4 triage budget.`
     : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} Run /karpathy-guidelines, then build it slice-by-slice with /tdd, commit each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.`
   let dev = await safeAgent(
-    buildPrompt,
+    buildPrompt + FIGMA_DIRECTIVE,
     { agentType: desc.build, phase: 'Build', label: `build:${ticket}:${R}`, schema: DEV_SCHEMA },
   )
   // A null build means the agent never produced a structured handoff — for the test-suite
@@ -636,7 +648,7 @@ const plans = (await parallel(scoped.map((r) => () => {
   const prompt = desc.kind === 'test-suite'
     ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo. Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
     : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/). Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes) — the workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan.${htmlClause}`
-  return agent(prompt, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
+  return agent(prompt + FIGMA_DIRECTIVE, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
 }))).filter(Boolean)
 // carry the dependency edges from scope onto the plans
 plans.forEach((p) => { p.depends_on = (scoped.find((s) => s.repo === p.repo)?.depends_on) || [] })
