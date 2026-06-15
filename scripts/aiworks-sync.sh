@@ -250,8 +250,38 @@ prepare_adapter_env() {
 seed_image_gen_settings() {
   local sl="$ROOT/.claude/settings.local.json" rel=".claude/settings.local.json"
   step "Prepare image-gen config (mcp-image + GEMINI_API_KEY) in $rel"
+
+  # image_generation policy from workspace.config.yaml (default OFF). When disabled we do NOT
+  # wire up mcp-image — the graphic-designer's availability gate then returns assets as
+  # 'unavailable'. quality/max are behavioral (the graphic-designer passes quality= per call
+  # and honors the budget cap), surfaced here for visibility. See docs/agents/image-generation.md.
+  local ig_enabled='' ig_quality='balanced' ig_max='2'
+  if [[ -f "$WC" ]]; then
+    while IFS=$'\t' read -r k v; do
+      case "$k" in
+        IG_ENABLED) ig_enabled="$v" ;;
+        IG_QUALITY) ig_quality="$v" ;;
+        IG_MAX)     ig_max="$v" ;;
+      esac
+    done < <(
+      awk '
+        function val(s){ sub(/^[^:]*:[ \t]*/,"",s); sub(/[ \t]+#.*$/,"",s);
+                         gsub(/^[ \t]+|[ \t]+$/,"",s); gsub(/^["'\'']|["'\'']$/,"",s); return s }
+        /^[A-Za-z_][A-Za-z0-9_]*:/ { sec=$0; sub(/:.*/,"",sec) }
+        sec=="image_generation" && /^  enabled:/         { print "IG_ENABLED\t" val($0); next }
+        sec=="image_generation" && /^  quality:/         { print "IG_QUALITY\t" val($0); next }
+        sec=="image_generation" && /^  max_per_request:/ { print "IG_MAX\t"     val($0); next }
+      ' "$WC"
+    )
+  fi
+  case "$(printf '%s' "$ig_enabled" | tr '[:upper:]' '[:lower:]')" in
+    true|yes|1) : ;;   # enabled — wire up mcp-image below
+    *) ok "Image generation DISABLED (image_generation.enabled is off — the default). mcp-image not wired up; the graphic-designer returns assets 'unavailable'. Set image_generation.enabled: true to generate."
+       return 0 ;;
+  esac
+
   if [[ "$DRY" -eq 1 ]]; then
-    printf '    %swould ensure %s enables "mcp-image" and carries an env.GEMINI_API_KEY placeholder%s\n' "$c_dim" "$rel" "$c_off"
+    printf '    %swould ensure %s enables "mcp-image" and carries an env.GEMINI_API_KEY placeholder (quality=%s, max_per_request=%s)%s\n' "$c_dim" "$rel" "$ig_quality" "$ig_max" "$c_off"
     return 0
   fi
   if ! command -v node >/dev/null 2>&1; then
@@ -283,8 +313,8 @@ NODE
 )"
   case "$out" in
     PARSE_ERROR) warn "$rel is not valid JSON — left untouched; add \"mcp-image\" + env.GEMINI_API_KEY by hand" ;;
-    *HAS_KEY*)   ok "$rel ready — GEMINI_API_KEY set; image generation enabled" ;;
-    *NO_KEY*)    ok "$rel prepared — now set env.GEMINI_API_KEY (key: https://aistudio.google.com/apikey) to enable image generation (see docs/agents/image-generation.md)" ;;
+    *HAS_KEY*)   ok "$rel ready — GEMINI_API_KEY set; image generation ENABLED (quality=${ig_quality}, max_per_request=${ig_max})" ;;
+    *NO_KEY*)    ok "$rel prepared — now set env.GEMINI_API_KEY (key: https://aistudio.google.com/apikey) to enable image generation (quality=${ig_quality}, max_per_request=${ig_max}; see docs/agents/image-generation.md)" ;;
     *)           warn "could not determine image-gen state for $rel" ;;
   esac
 }

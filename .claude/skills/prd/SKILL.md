@@ -60,6 +60,15 @@ Run `claude mcp list` (Bash) and confirm a Figma server is **✔ Connected**
   of frames). Do not silently 403.
 
 ### 0b. Preflight — confirm image generation is available
+**Config gate first:** read `image_generation.enabled` from `workspace.config.yaml`
+(`sed -n '/^image_generation:/,/^[A-Za-z]/p' workspace.config.yaml`). If it is `false`
+(the default) or absent, **image-gen is OFF by config** — don't probe the server or key;
+treat image-gen as UNAVAILABLE and run the **placeholder/specs-only** path (the
+graphic-designer returns every asset `unavailable`, the designer flags asset-dependent
+states in `asset_gaps` and never marks them `dev_ready`). Tell the user how to enable it
+(`image_generation.enabled: true`). If it is `true`, also capture `quality`
+(fast|balanced|quality) and `max_per_request` to pass to Fiona, then continue:
+
 The graphic-designer (`Fiona`) generates assets via the **`mcp-image`** server
 (`mcp__mcp-image__generate_image`, Gemini) + the `/image-generation` skill. It
 needs the server enabled **and** `GEMINI_API_KEY` set. A connected server with no
@@ -105,8 +114,11 @@ name** (resolve `page_naming`: `{work_key}`→`workKey`, `{feature}`→the featu
    `asset_requests`). Mirror the prompt the workflow used (see `prd.js` step 2a).
 2. **Assets** — only if the plan returned `asset_requests`:
    `Agent(subagent_type: 'graphic-designer')` to generate them into the Figma
-   Assets page. (prd.js step 2b.) Require it to return `image_gen_available` plus a
-   per-asset `status` (`created`/`reused`/`placeholder`/`unavailable`). If you chose
+   Assets page. (prd.js step 2b.) Pass the `image_generation` policy from preflight 0b:
+   if **disabled**, instruct it to generate nothing (return every asset `unavailable`);
+   if **enabled**, tell it to pass `quality='<quality>'` to each generate_image call and
+   generate at most `max_per_request` images. Require it to return `image_gen_available`
+   plus a per-asset `status` (`created`/`reused`/`placeholder`/`unavailable`). If you chose
    the **placeholder/specs-only** path at preflight 0b (or the agent reports
    `image_gen_available:false`), expect `placeholder`/`unavailable` here — carry that
    forward, don't discard it.

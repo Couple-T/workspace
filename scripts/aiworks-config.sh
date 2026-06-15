@@ -26,6 +26,9 @@
 #   design.enabled                   → const DESIGN_ENABLED          (dev-cycle.js AND prd.js)
 #   design.figma_file_key            → const DESIGN_FIGMA_FILE_KEY   (prd.js only)
 #   design.page_naming               → const DESIGN_PAGE_NAMING      (prd.js only)
+#   image_generation.enabled         → const IMAGE_GEN_ENABLED          (prd.js only)
+#   image_generation.quality         → const IMAGE_GEN_QUALITY          (prd.js only)
+#   image_generation.max_per_request → const IMAGE_GEN_MAX_PER_REQUEST  (prd.js only)
 #   branch_model.{feature,fix}_base  → each repo's base.{feature,fix} (kind may override)
 #   products[].repos[]               → const REPOS  (one entry per repo)
 #       url               → the REPOS key (repo name) + path default
@@ -110,6 +113,7 @@ PREFIX='FM'; AM_RAW='true'; AA_RAW='true'; TH_RAW='false'
 FEATURE_BASE='develop'; FIX_BASE='main'
 NT_RAW='false'; NOTIFY_PROVIDER='slack'; NOTIFY_CHANNEL=''
 DESIGN_EN_RAW='false'; DESIGN_KEY=''; DESIGN_PAGE='{work_key} / {feature}'   # Figma OFF unless design.enabled: true
+IMG_EN_RAW='false'; IMG_QUALITY='balanced'; IMG_MAX='2'   # image-gen OFF unless image_generation.enabled: true
 STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
                   # in declared order. The workflow drives a monotonic subset (STATUS_ORDER); the
                   # rest are carried for humans/other tools — so a rich board isn't silently dropped.
@@ -127,6 +131,9 @@ while IFS=$'\t' read -r k v; do
     DESIGN_ENABLED)     DESIGN_EN_RAW="$v" ;;
     DESIGN_FIGMA_KEY)   DESIGN_KEY="$v" ;;
     DESIGN_PAGE_NAMING) DESIGN_PAGE="$v" ;;
+    IMG_ENABLED)        IMG_EN_RAW="$v" ;;
+    IMG_QUALITY)        IMG_QUALITY="$v" ;;
+    IMG_MAX)            IMG_MAX="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
 done < <(
@@ -150,6 +157,9 @@ done < <(
     sec=="design"       && /^  enabled:/         { print "DESIGN_ENABLED\t"     val($0); next }
     sec=="design"       && /^  figma_file_key:/  { print "DESIGN_FIGMA_KEY\t"   val($0); next }
     sec=="design"       && /^  page_naming:/     { print "DESIGN_PAGE_NAMING\t" val($0); next }
+    sec=="image_generation" && /^  enabled:/         { print "IMG_ENABLED\t" val($0); next }
+    sec=="image_generation" && /^  quality:/         { print "IMG_QUALITY\t" val($0); next }
+    sec=="image_generation" && /^  max_per_request:/ { print "IMG_MAX\t"     val($0); next }
   ' "$WC"
 )
 AUTO_MERGE="$(jsbool "$AM_RAW" true)"
@@ -157,6 +167,9 @@ AUTO_APPROVE="$(jsbool "$AA_RAW" true)"
 TO_HTML="$(jsbool "$TH_RAW" false)"
 NOTIFY="$(jsbool "$NT_RAW" false)"
 DESIGN_ENABLED="$(jsbool "$DESIGN_EN_RAW" false)"   # Figma OFF by default — opt in with design.enabled: true
+IMAGE_GEN_ENABLED="$(jsbool "$IMG_EN_RAW" false)"   # image-gen OFF by default — opt in with image_generation.enabled: true
+case "$IMG_QUALITY" in fast|balanced|quality) ;; *) IMG_QUALITY='balanced' ;; esac   # clamp to the valid presets
+[[ "$IMG_MAX" =~ ^[0-9]+$ ]] || IMG_MAX='2'         # numeric budget cap; fall back to 2
 # Fall back to the historical 5-phase lifecycle when the org declared no statuses.
 if [[ -z "$STATUS_PAIRS" ]]; then
   STATUS_PAIRS=$'not_started\tNot started\nin_progress\tIn progress\nready_to_test\tReady to test\ntesting\tTesting\ndone\tDone\n'
@@ -279,6 +292,9 @@ ${repos_body}}
 PRD_BODY="const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ design phase skipped (no Figma)
 const DESIGN_FIGMA_FILE_KEY = $(jsq "$DESIGN_KEY") // from workspace.config.yaml design.figma_file_key; set ⇒ build into THIS file (new page/feature), never create_new_file; empty ⇒ orphan file + WARN
 const DESIGN_PAGE_NAMING = $(jsq "$DESIGN_PAGE")  // from workspace.config.yaml design.page_naming; tokens {work_key} {feature}
+const IMAGE_GEN_ENABLED = ${IMAGE_GEN_ENABLED}     // from workspace.config.yaml image_generation.enabled; false ⇒ graphic-designer generates no images (assets 'unavailable')
+const IMAGE_GEN_QUALITY = $(jsq "$IMG_QUALITY") // from workspace.config.yaml image_generation.quality (fast|balanced|quality)
+const IMAGE_GEN_MAX_PER_REQUEST = ${IMG_MAX}        // from workspace.config.yaml image_generation.max_per_request; the graphic-designer's per-request budget cap
 "
 
 if [[ "$DRY" -eq 1 ]]; then
@@ -329,6 +345,6 @@ commit_block "$TARGET" "$DEVCYCLE_BODY" \
 
 if [[ -n "$PRD_OK" ]]; then
   commit_block "$PRD_TARGET" "$PRD_BODY" \
-    "prd.js design CONFIG already in sync with workspace.config.yaml (Figma ${DESIGN_ENABLED})" \
-    "regenerated prd.js design CONFIG from workspace.config.yaml (design.enabled=${DESIGN_ENABLED})"
+    "prd.js design/image-gen CONFIG already in sync with workspace.config.yaml (Figma ${DESIGN_ENABLED}, image-gen ${IMAGE_GEN_ENABLED})" \
+    "regenerated prd.js design/image-gen CONFIG from workspace.config.yaml (design.enabled=${DESIGN_ENABLED}, image_generation.enabled=${IMAGE_GEN_ENABLED})"
 fi

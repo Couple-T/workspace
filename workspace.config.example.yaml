@@ -107,6 +107,21 @@ design:
                                    #   per feature so parallel designers don't collide; use "{work_key}"
                                    #   for a single shared page per run.
 
+# ── Image generation (the graphic-designer's asset pipeline; feeds the design phase) ──
+# How Fiona (graphic-designer) makes assets via the mcp-image server — see
+# docs/agents/image-generation.md for setup (the GEMINI_API_KEY lives in the git-ignored
+# .claude/settings.local.json, never here).
+image_generation:
+  enabled: false                   # MASTER switch for mcp-image generation (default OFF). false →
+                                   #   the graphic-designer generates NO images (returns every asset
+                                   #   'unavailable'; the design phase stays specs/placeholder-only).
+                                   #   true → real assets via mcp-image, which needs GEMINI_API_KEY.
+                                   #   `aiworks sync` only wires up the mcp-image server when this is true.
+  quality: balanced                # fast | balanced | quality → the mcp-image IMAGE_QUALITY preset
+                                   #   (seeded into .claude/settings.local.json env by `aiworks sync`).
+  max_per_request: 2               # budget cap: the MOST generations the graphic-designer fires per
+                                   #   request (keeps Gemini spend bounded). Raise only when needed.
+
 # ── Products & repos — THE PART EACH ORG CONFIGURES ────────────────────────────
 # A product groups the repos that ship together. Each product is ONE
 # mani.d/<id>.yaml file (GENERATED from this block by `aiworks` — don't hand-edit

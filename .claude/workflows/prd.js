@@ -23,11 +23,19 @@ export const meta = {
 //                        every feature into THIS file on a NEW PAGE, reuse its variables/
 //                        components, NEVER create_new_file. Empty ⇒ orphan file + a WARN.
 // DESIGN_PAGE_NAMING   — design.page_naming. Page-name template; tokens {work_key} {feature}.
+// IMAGE_GEN_ENABLED    — image_generation.enabled. false ⇒ the graphic-designer generates NO
+//                        images (every asset comes back 'unavailable'); the design phase stays
+//                        specs/placeholder-only. Needs GEMINI_API_KEY when true.
+// IMAGE_GEN_QUALITY    — image_generation.quality (fast|balanced|quality).
+// IMAGE_GEN_MAX_PER_REQUEST — image_generation.max_per_request. The graphic-designer's budget cap.
 // ──────────────────────────────────────────────────────────────────────────
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
 const DESIGN_ENABLED = false     // from workspace.config.yaml design.enabled; false ⇒ design phase skipped (no Figma)
 const DESIGN_FIGMA_FILE_KEY = '' // from workspace.config.yaml design.figma_file_key; set ⇒ build into THIS file (new page/feature), never create_new_file; empty ⇒ orphan file + WARN
 const DESIGN_PAGE_NAMING = '{work_key} / {feature}'  // from workspace.config.yaml design.page_naming; tokens {work_key} {feature}
+const IMAGE_GEN_ENABLED = false     // from workspace.config.yaml image_generation.enabled; false ⇒ graphic-designer generates no images (assets 'unavailable')
+const IMAGE_GEN_QUALITY = 'balanced' // from workspace.config.yaml image_generation.quality (fast|balanced|quality)
+const IMAGE_GEN_MAX_PER_REQUEST = 2        // from workspace.config.yaml image_generation.max_per_request; the graphic-designer's per-request budget cap
 // <<< AIWORKS:CONFIG END >>>
 
 // Build the per-feature directive the planner/designer get about WHERE to build. When a
@@ -42,6 +50,12 @@ const figmaTarget = (featureName, workKey) => {
   }
   return ` No canonical Figma file is configured (design.figma_file_key is empty), so this run will create a NEW, ORPHAN Figma file — set design.figma_file_key in workspace.config.yaml to build into the org's one canonical file instead.`
 }
+
+// Image-generation policy the graphic-designer (Fiona) gets. OFF ⇒ generate nothing; ON ⇒
+// carry the configured quality + per-request budget cap. See docs/agents/image-generation.md.
+const imageGenRule = IMAGE_GEN_ENABLED
+  ? ` Budget: generate AT MOST ${IMAGE_GEN_MAX_PER_REQUEST} image(s) this request, and pass quality='${IMAGE_GEN_QUALITY}' to every generate_image call.`
+  : ` Image generation is DISABLED (image_generation.enabled=false in workspace.config.yaml): do NOT generate any image — set image_gen_available=false and return EVERY asset status='unavailable' with reason='image generation disabled by config'.`
 
 // ──────────────────────────────────────────────────────────────────────────
 // Input — auto-detect: brd work-key | doc-space/Figma URL | docs/brd/<key>.md path
@@ -234,7 +248,7 @@ if (stage === 'all') {
       let assets = null
       if (plan.asset_requests && plan.asset_requests.length) {
         assets = await agent(
-          `${tag('graphic-designer', 'design', slug)} Generate the assets requested by the design plan for "${f.name}" (${workKey}) and lay them into the Figma Assets page (6-col grid, transparent, species+number snake_case, @1x/2x/3x), under the budget rules. Requests: ${JSON.stringify(plan.asset_requests).slice(0, 1800)}. Run your availability gate FIRST: if mcp__mcp-image is not in your toolset or generation errors on auth/key/quota, set image_gen_available=false and mark every asset status='unavailable' with a reason+fix — do NOT improvise placeholders or claim assets exist. Otherwise return per-asset status (created/reused/placeholder/unavailable) and where each lives. Never report a placeholder/missing asset as created.`,
+          `${tag('graphic-designer', 'design', slug)} Generate the assets requested by the design plan for "${f.name}" (${workKey}) and lay them into the Figma Assets page (6-col grid, transparent, species+number snake_case, @1x/2x/3x), under the budget rules.${imageGenRule} Requests: ${JSON.stringify(plan.asset_requests).slice(0, 1800)}. Run your availability gate FIRST: if image generation is disabled by config, or mcp__mcp-image is not in your toolset, or generation errors on auth/key/quota, set image_gen_available=false and mark every asset status='unavailable' with a reason+fix — do NOT improvise placeholders or claim assets exist. Otherwise return per-asset status (created/reused/placeholder/unavailable) and where each lives. Never report a placeholder/missing asset as created.`,
           { agentType: 'graphic-designer', phase: 'Design', label: `assets:${slug}`, schema: ASSETS_SCHEMA },
         )
       }
