@@ -165,6 +165,36 @@ const REPO_PLAN_SCHEMA = {
     summary: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } },
   },
 }
+// Resolves the absolute workspace (org) root ONCE at Kickoff so the workflow can hand every
+// planner an absolute, repo-anchored artifact path (the engine runs all agents at the workspace
+// root and agent() has no cwd override — see the Kickoff anchoring block).
+const WS_ROOT_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['workspace_root'],
+  properties: { workspace_root: { type: 'string' } }, // absolute pwd of the dir holding .claude/
+}
+// Post-plan placement guard report: per repo, which expected plan artifacts were already
+// correctly placed, which were relocated from the workspace root into the repo, and which
+// were missing everywhere. Drives the fail-loud / relocate-and-warn behaviour.
+const PLAN_GUARD_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['repos'],
+  properties: {
+    workspace_root: { type: 'string' },
+    repos: {
+      type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        required: ['repo'],
+        properties: {
+          repo: { type: 'string' },
+          ok: { type: 'array', items: { type: 'string' } },        // already under <repo>/agent_logs/
+          relocated: { type: 'array', items: { type: 'string' } }, // moved workspace-root → <repo>/agent_logs/
+          missing: { type: 'array', items: { type: 'string' } },   // found neither under the repo nor at the root
+        },
+      },
+    },
+  },
+}
 const DEV_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['work_branch', 'summary'],
@@ -627,33 +657,132 @@ tick('scope')
 phase('Kickoff')
 await moveTicket(['in_progress'], 'kickoff started', 'Kickoff')
 const branchKind = scope.type === 'bug' ? 'fix' : 'feature' // polish rides the feature flow
+
+// ── Per-repo plan artifacts MUST land under their repo clone, NOT the workspace root ──
+// The workflow engine runs every agent with cwd = the workspace (org) root and agent() exposes
+// NO cwd override, so we cannot rely on a planner voluntarily cd-ing into its repo before it
+// writes a bare `agent_logs/...` path — some do, some don't (OFB-2141: two planners dumped their
+// plan/.html/testcases at the workspace root). We make placement cwd-independent in three steps:
+//   (1) resolve the absolute workspace root ONCE here,
+//   (2) hand each planner an ABSOLUTE, repo-anchored output path (code repos write the plan
+//       themselves → absolute Write target; the test-suite repo's skills write a FIXED relative
+//       path → require cd-into-repo-first), and
+//   (3) run a post-plan guard that relocates anything a planner still misfiled and normalizes the
+//       recorded plan_path/plan_html. Workspace-level run summaries are never touched.
+const repoDirs = [...new Set(scoped.map((r) => REPOS[r.repo].path.replace(/\/+$/, '')))]
+const wsRootRes = await safeAgent(
+  `${tag('all', 'workspace', 'kickoff')} One-shot setup for the ${ticket} planning phase — touch NO git, NO tracker, write NO plan files. Your cwd IS the workspace (org) root (the dir that holds .claude/ and workspace.config.yaml).
+1. Print its ABSOLUTE path with \`pwd -P\` (resolve symlinks).
+2. Pre-create the plan-artifact dirs so later writes have a target UNDER each repo (paths are relative to your cwd — do NOT cd): \`mkdir -p ${repoDirs.map((d) => `"${d}/agent_logs" "${d}/agent_logs/development-planner"`).join(' ')}\`.
+Return workspace_root = the absolute path from step 1.`,
+  { agentType: 'general-purpose', model: 'haiku', phase: 'Kickoff', label: `ws-root:${ticket}`, schema: WS_ROOT_SCHEMA },
+)
+const WORKSPACE_ROOT = (wsRootRes?.workspace_root || '').trim().replace(/\/+$/, '')
+const haveAbs = WORKSPACE_ROOT.startsWith('/')
+if (!haveAbs) log(`⚠️ [kickoff] could NOT resolve an absolute workspace root (got ${JSON.stringify(wsRootRes?.workspace_root)}) — planners will anchor by cd-into-repo and the post-plan guard relocates any artifact still misfiled at the root.`)
+
+// Per-repo path bookkeeping (computed in JS, NOT from the agent, so it's consistent for every
+// repo). planRel/planHtmlRel are repo-ROOT-relative (the data-plan-md convention + what the
+// build/gate phases read from inside the repo); planPath/planHtmlPath are the ABSOLUTE forms we
+// hand the planner and record on the plan.
+const planMeta = {}
+for (const r of scoped) {
+  const desc = REPOS[r.repo]
+  const repoDir = desc.path.replace(/\/+$/, '')
+  const repoRoot = haveAbs ? `${WORKSPACE_ROOT}/${repoDir}` : null
+  const planRel = desc.kind === 'test-suite' ? `agent_logs/${ticket}-automation-plan.md` : `agent_logs/development-planner/${ticket}-${r.repo}-plan.md`
+  const planHtmlRel = `agent_logs/${ticket}-${r.repo}-plan.html`
+  const testcasesRel = `agent_logs/${ticket}-testcases.md`
+  planMeta[r.repo] = {
+    kind: desc.kind, repoDir, repoRoot, planRel, planHtmlRel, testcasesRel,
+    planPath: repoRoot ? `${repoRoot}/${planRel}` : planRel,
+    planHtmlPath: repoRoot ? `${repoRoot}/${planHtmlRel}` : planHtmlRel,
+  }
+}
+
 const plans = (await parallel(scoped.map((r) => () => {
   const desc = REPOS[r.repo]
   const planner = desc.plan
   const baseBranch = desc.base[branchKind]
   const workBranch = `${branchKind}/${ticket}`
   const slice = r.summary || 'see ticket'
-  const planPath = desc.kind === 'test-suite' ? `agent_logs/${ticket}-automation-plan.md` : `agent_logs/development-planner/${ticket}-${r.repo}-plan.md`
-  const planHtmlPath = `agent_logs/${ticket}-${r.repo}-plan.html`
+  const m = planMeta[r.repo]
+  const { repoDir, repoRoot, planRel, planPath, planHtmlPath, testcasesRel } = m
+  // ANCHORING directive — front-loaded so a planner can't miss it. Code repos: the planner WRITES
+  // the plan itself, so an absolute target makes placement cwd-independent. Test-suite repo:
+  // /plan-testcases + /plan-automate write to FIXED relative `agent_logs/...` paths, so the agent
+  // MUST cd into the repo first (the guard relocates if it doesn't). Either way: never the root.
+  const anchor = desc.kind === 'test-suite'
+    ? (repoRoot
+        ? ` ARTIFACT ANCHORING (mandatory): the ${r.repo} clone is at ${repoRoot}. /plan-testcases and /plan-automate write to FIXED relative \`agent_logs/...\` paths, so your VERY FIRST action must be \`cd ${repoRoot}\` and you must run every planning skill from there — so ${testcasesRel} and ${planRel} land under ${repoRoot}/agent_logs/, NEVER at the workspace-root agent_logs/ (that dir is for run-level summaries only).`
+        : ` ARTIFACT ANCHORING (mandatory): your VERY FIRST action must be \`cd ${repoDir}\` (the ${r.repo} clone, relative to the workspace root) and run every planning skill from there, so /plan-testcases + /plan-automate write their fixed \`agent_logs/...\` files UNDER the repo, NEVER at the workspace-root agent_logs/.`)
+    : (repoRoot
+        ? ` ARTIFACT ANCHORING (mandatory): the ${r.repo} clone is at ${repoRoot}. Write the implementation plan (and, if asked below, its HTML) with the Write tool to the ABSOLUTE path(s) given — NEVER a bare \`agent_logs/...\` relative to your cwd, and NEVER to the workspace-root agent_logs/ (that dir is for run-level summaries only).`
+        : ` ARTIFACT ANCHORING (mandatory): \`cd ${repoDir}\` (the ${r.repo} clone) before writing the plan, so its \`agent_logs/...\` path lands UNDER the repo, NEVER at the workspace-root agent_logs/.`)
   // PLAN_TO_HTML: after the plan markdown exists, render it to a shareable interactive HTML.
   // The markdown at planPath stays the SOURCE OF TRUTH this workflow reads at build — the HTML
-  // is human-only. When auto_approve is OFF, turn on the skill's plan-approval mode so the
-  // reviewer's in-page decisions flow back into THAT markdown (approve downloads it to replace planPath).
+  // is human-only. data-plan-md stays REPO-ROOT-RELATIVE (planRel) per the in-HTML convention;
+  // the on-disk file is the absolute planPath. When auto_approve is OFF, turn on plan-approval mode.
   const approvalClause = !AUTO_APPROVE_PLAN
-    ? ` Since planning.auto_approve is OFF, turn ON plan-approval mode in that HTML: set data-plan-approval="pending", data-plan-md="${planPath}" (the authoritative markdown this workflow reads at build — never replace it with the HTML), data-plan-cmd="/dev-cycle ${ticket} --approve-plan", and inline plan-approval.js. The human approves in the page; approving downloads the markdown to drop over ${planPath} before the re-run.`
+    ? ` Since planning.auto_approve is OFF, turn ON plan-approval mode in that HTML: set data-plan-approval="pending", data-plan-md="${planRel}" (the repo-root-relative path to the authoritative markdown this workflow reads at build — never replace it with the HTML), data-plan-cmd="/dev-cycle ${ticket} --approve-plan", and inline plan-approval.js. The human approves in the page; approving downloads the markdown to drop over the on-disk plan at ${planPath} before the re-run.`
     : ''
   const htmlClause = PLAN_TO_HTML
-    ? ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at ${planHtmlPath} (it must read as a human-facing plan write-up; the markdown at ${planPath} stays the source of truth a later phase executes), and set plan_html to that path in your structured result.${approvalClause}`
+    ? ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at ${planHtmlPath} (write it to that ${repoRoot ? 'ABSOLUTE ' : ''}path UNDER the repo, NEVER the workspace root; it must read as a human-facing plan write-up; the markdown at ${planPath} stays the source of truth a later phase executes), and set plan_html to that path in your structured result.${approvalClause}`
     : ''
   const prompt = desc.kind === 'test-suite'
-    ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo. Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
-    : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/). Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes) — the workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan.${htmlClause}`
+    ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo.${anchor} Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
+    : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/).${anchor} Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes) — the workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan with plan_path=${planPath}.${htmlClause}`
   return agent(prompt + FIGMA_DIRECTIVE, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
 }))).filter(Boolean)
-// carry the dependency edges from scope onto the plans
-plans.forEach((p) => { p.depends_on = (scoped.find((s) => s.repo === p.repo)?.depends_on) || [] })
+// Normalize the recorded paths to the ABSOLUTE, repo-anchored forms — consistently for every
+// repo, regardless of what the planner echoed back (a planner that returned a bare-relative or
+// workspace-rooted path is overwritten with the canonical one) — and carry the dependency edges.
+plans.forEach((p) => {
+  const m = planMeta[p.repo]
+  if (m) { p.plan_path = m.planPath; if (PLAN_TO_HTML) p.plan_html = m.planHtmlPath }
+  p.depends_on = (scoped.find((s) => s.repo === p.repo)?.depends_on) || []
+})
+
+// (3) POST-PLAN GUARD — anchoring is the first line of defense; this is the guarantee. One agent
+// asserts each expected artifact sits under its repo clone, relocates any a planner still misfiled
+// at the workspace root, and reports anything missing. It never touches the workspace-level run
+// summaries. A source-of-truth plan markdown that is missing everywhere is fatal (build can't run).
+const guardRepos = plans.map((p) => {
+  const m = planMeta[p.repo]
+  const files = [m.planRel]
+  if (PLAN_TO_HTML) files.push(m.planHtmlRel)
+  if (m.kind === 'test-suite') files.push(m.testcasesRel) // /plan-testcases output, read by build + the gate
+  return { repo: p.repo, repoDir: m.repoDir, files }
+})
+const guard = await safeAgent(
+  `${tag('all', 'plan-guard', 'kickoff')} Plan-artifact placement guard for ${ticket}. Each planner was told to write its artifacts UNDER its own repo clone's agent_logs/, but some agents misfile them at the workspace root instead. Your cwd is the workspace (org) root${haveAbs ? ` (${WORKSPACE_ROOT})` : ''} — do NOT cd. For each repo + repo-relative file path below, make sure the file lives under the repo, NOT at the workspace root:
+${guardRepos.map((g) => `- repo ${g.repo} — clone dir "${g.repoDir}/":\n${g.files.map((f) => `    • ${f}`).join('\n')}`).join('\n')}
+For each file <f> of clone dir <dir>:
+  1. If "<dir>/<f>" already exists → correctly placed; add to that repo's "ok".
+  2. Else if the bare workspace-root "<f>" exists (a misfile) → \`mkdir -p\` the target's parent under "<dir>", \`mv "<f>" "<dir>/<f>"\`, and add to "relocated".
+  3. Else → missing everywhere; add to "missing".
+Use plain shell only (test -f, mkdir -p, mv). Touch NO git, NO tracker, and NO file other than the relocations above. Do NOT move or alter the workspace-root run summaries (e.g. ${ticket}-DEV-CYCLE-SUMMARY.md) or anything not listed. Return the per-repo { repo, ok, relocated, missing } report.`,
+  { agentType: 'general-purpose', model: 'haiku', phase: 'Kickoff', label: `plan-guard:${ticket}`, schema: PLAN_GUARD_SCHEMA },
+)
+const relocatedAll = (guard?.repos || []).flatMap((g) => (g.relocated || []).map((f) => `${g.repo}:${f}`))
+const missingAll = (guard?.repos || []).flatMap((g) => (g.missing || []).map((f) => `${g.repo}:${f}`))
+if (relocatedAll.length) log(`⚠️ [plan-guard] relocated ${relocatedAll.length} misfiled plan artifact(s) from the workspace root into their repo: ${relocatedAll.join(', ')}.`)
+if (!guard) log(`⚠️ [plan-guard] guard did not converge — plan-artifact placement for ${ticket} is UNVERIFIED; the recorded paths are the canonical ones but were not asserted on disk.`)
+else if (missingAll.length) log(`⚠️ [plan-guard] expected plan artifact(s) found NOWHERE (neither repo nor workspace root): ${missingAll.join(', ')}.`)
+// A missing source-of-truth plan markdown is fatal: the build phase reads it. Fail loud + stop.
+const missingPlans = plans.filter((p) => {
+  const rep = (guard?.repos || []).find((g) => g.repo === p.repo)
+  return rep ? (rep.missing || []).includes(planMeta[p.repo].planRel) : false
+}).map((p) => p.repo)
+if (missingPlans.length) {
+  log(`⛔ [plan-guard] source-of-truth plan markdown missing for ${missingPlans.join(', ')} — these repos have no plan to build from; stopping for human attention.`)
+  const summary = await writeSummary('plan-missing', { ticket, repos: plans.map((p) => p.repo), plans, missingPlans, guard, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: 'plan-missing', missingPlans, plans, guard, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
+}
+
 const waveList = toWaves(plans)
 log(`Plan ${ticket}: ${plans.map((p) => `${p.repo}@${p.work_branch}→${p.base_branch}`).join(', ')}`)
+log(`Plan artifacts: ${plans.map((p) => `${p.repo}=${p.plan_path}`).join(', ')}`)
 if (PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)
 log(`Build: all ${plans.length} repo(s) in parallel · merge order: ${waveList.map((w) => `[${w.join(', ')}]`).join(' → ')}`)
 tick('kickoff')
