@@ -54,12 +54,14 @@ Handled by the provider CLI, not this adapter:
   the code: pass `--path` + `--line` so it lands inline at the exact spot, **and** quote
   the offending line or block as a fenced code snippet in `--body`. No vague,
   location-less review comments — this applies to the code reviewer (Daniel), the
-  guardian (Ethan), and the performance reviewer (Liam) alike. On GitLab, where the
-  inline position can't be set, the adapter still references `path:line` in the note, so
-  the quoted snippet in `--body` is what makes the comment self-contained there.
+  guardian (Ethan), and the performance reviewer (Liam) alike. Both providers anchor the
+  comment to the line; the quoted snippet in `--body` keeps it self-contained either way.
 - "PR" maps to a GitLab **merge request**; a PR `number` is the **MR IID**.
-- Inline-at-line comments are a true review comment on GitHub; on GitLab the adapter
-  posts an MR **note** that references `path:line` (positioned discussions are
-  glab-version-specific — kept robust on purpose).
+- Inline-at-line comments are a true review comment on both hosts: GitHub posts a PR
+  review comment, GitLab a **positioned MR discussion** on the new side of the diff
+  (using the MR's `diff_refs` + `old_path`/`new_path`/`new_line`). When the position
+  can't be set — the line isn't in the diff, or it's a removed/context line needing
+  `old_line` — the adapter falls back to a plain note that references `path:line`, so the
+  finding is never lost.
 - `glab` flags target a recent version (~1.40+); if yours differs, `gitlab.sh` is the
   one file to adjust.
