@@ -24,6 +24,11 @@
 # clobbered. Fill it in (https://aistudio.google.com/apikey) to turn image generation on; until
 # then the /prd-design preflight detects the gap and fails loud instead of shipping placeholder art.
 #
+# It also ENSURES the workspace lifecycle hooks — .superset/{setup,run,teardown}.sh — exist and
+# that .superset/config.json registers all three (via scripts/aiworks-superset.sh). The hooks loop
+# over every cloned repo, so the synced set is covered automatically; this creates the run hook
+# (.superset/run.sh → each repo's `scripts/dev.sh run`) on workspaces that predate it.
+#
 # Usage:
 #   aiworks sync [<product>|<repo>] [options]
 #
@@ -408,6 +413,16 @@ if [[ "$DRY" -ne 1 ]]; then
     step "Regenerate the dev-cycle.js CONFIG from workspace.config.yaml"
     "$GEN" || warn "could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand"
   fi
+fi
+
+# ── ensure the workspace lifecycle hooks (.superset/{setup,run,teardown}) cover the repo set ──
+# The hooks loop over every cloned repo, so the synced set is covered automatically — this just
+# makes sure the trio EXISTS and config.json registers all three (creating .superset/run.sh on
+# workspaces that predate the run hook). Idempotent; honoured in dry-run too.
+SUPGEN="$DIR/aiworks-superset.sh"
+if [[ -x "$SUPGEN" ]]; then   # prints its own "==> Ensure .superset lifecycle hooks…" header
+  if [[ "$DRY" -eq 1 ]]; then "$SUPGEN" -n || warn "could not preview .superset hooks"
+  else "$SUPGEN" || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"; fi
 fi
 
 # ── summary ──────────────────────────────────────────────────────────────────────
