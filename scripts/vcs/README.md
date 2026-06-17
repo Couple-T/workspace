@@ -13,9 +13,11 @@ remote** when unset. All commands run against the repo in the current directory.
 | `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` |
 | `pr-comment.sh`     | Comment on a PR/MR (inline at `--path`:`--line` where supported) — review comments must anchor + quote code (see Notes) |
 | `pr-comments.sh`    | Print a PR/MR's comments / review notes as plain text |
+| `pr-threads.sh`     | List a PR/MR's resolvable **review threads** with their thread ids + resolved state (so a fix can be tied back to a thread) |
+| `pr-resolve-thread.sh` | Check **"Resolve thread"** on a review thread once addressed (`--unresolve` to reopen) |
 | `merge-pr.sh`       | **Squash-merge server-side** so the web PR/MR shows *Merged*, then prints pr-view |
 
-`open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, and `merge-pr.sh` accept `--dry-run`.
+`open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, `pr-resolve-thread.sh`, and `merge-pr.sh` accept `--dry-run`.
 
 ## Layout
 
@@ -24,12 +26,14 @@ vcs/
 ├── lib.sh             # provider dispatch (+ git-based default-branch)
 ├── github.sh          # gh implementation
 ├── gitlab.sh          # glab implementation
-├── default-branch.sh  open-pr.sh  pr-view.sh  pr-comment.sh  merge-pr.sh
+├── default-branch.sh  open-pr.sh  pr-view.sh  pr-comment.sh  pr-comments.sh
+├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh
 └── .env.example       # optional VCS_PROVIDER override
 ```
 
 A provider impl defines: `vcs_require_config`, `vcs_open_pr`, `vcs_pr_view`,
-`vcs_pr_comment`, `vcs_pr_comments`, `vcs_merge_pr`, `vcs_upload_media`. **To add a host**
+`vcs_pr_comment`, `vcs_pr_comments`, `vcs_pr_threads`, `vcs_pr_resolve_thread`,
+`vcs_merge_pr`, `vcs_upload_media`. **To add a host**
 (e.g. Bitbucket), drop a new `<provider>.sh` implementing those — nothing else changes.
 Shared media helpers (`vcs_is_image`, `vcs_is_media`, `vcs_media_md`,
 `vcs_media_asset_name`) live in `lib.sh`.
@@ -56,6 +60,16 @@ Handled by the provider CLI, not this adapter:
   location-less review comments — this applies to the code reviewer (Daniel), the
   guardian (Ethan), and the performance reviewer (Liam) alike. Both providers anchor the
   comment to the line; the quoted snippet in `--body` keeps it self-contained either way.
+- **Resolving review threads.** Once the developer addresses a review comment (pushes the
+  fix + replies), they check **"Resolve thread"** on it so reviewers see what's been handled
+  and what's still open. `pr-threads.sh <number>` lists each resolvable thread with its
+  `thread=<id>` + `[resolved|unresolved]` + `file:line` (plain `pr-comments.sh` does **not**
+  expose the id) — match a thread to the comment you fixed by its `file:line`, then
+  `pr-resolve-thread.sh <number> <thread-id>` checks the box. A reviewer whose fix is
+  insufficient reopens it with `--unresolve`. Resolve **only** threads you actually
+  addressed — don't resolve to silence an open finding. On **GitLab** these are MR
+  *discussions* (`PUT …/discussions/:id?resolved=true`); on **GitHub** they're PR *review
+  threads*, resolvable only over GraphQL (`resolveReviewThread`), keyed by an opaque node id.
 - "PR" maps to a GitLab **merge request**; a PR `number` is the **MR IID**.
 - Inline-at-line comments are a true review comment on both hosts: GitHub posts a PR
   review comment, GitLab a **positioned MR discussion** on the new side of the diff

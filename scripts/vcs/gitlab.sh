@@ -109,6 +109,54 @@ vcs_pr_comments() {
     || die "could not read notes for MR !$num"
 }
 
+# vcs_pr_threads NUMBER -> list the MR's RESOLVABLE discussion threads, one block each:
+#   ● thread=<discussion_id>  [unresolved|resolved]  <path>:<line>  (<author>)
+#     <author>: <note body…>
+# The `thread=<id>` is what vcs_pr_resolve_thread needs — plain `vcs_pr_comments` prints
+# the same notes but WITHOUT the discussion id, so a fix can't be tied back to its thread.
+# Only resolvable threads (review discussions) are listed; plain notes have no checkbox.
+vcs_pr_threads() {
+  local num="$1" out
+  out="$(glab api "projects/:fullpath/merge_requests/$num/discussions?per_page=100" 2>/dev/null \
+    | jq -r '
+        .[]
+        | select(any(.notes[]; .resolvable == true))
+        | . as $d
+        | ($d.notes | map(select(.resolvable))) as $rn
+        | $rn[0] as $first
+        | ($first.position // {}) as $pos
+        | ($pos.new_path // $pos.old_path // "") as $path
+        | ($pos.new_line // $pos.old_line // "") as $line
+        | (if ($rn | all(.resolved)) then "resolved" else "unresolved" end) as $state
+        | "● thread=\($d.id)  [\($state)]  "
+          + (if $path != "" then $path + (if ($line|tostring) != "" then ":" + ($line|tostring) else "" end) else "(general)" end)
+          + "  (\($first.author.name))\n"
+          + ($d.notes | map("  " + .author.name + ": " + (.body | gsub("\n"; "\n  "))) | join("\n"))
+          + "\n"
+      ' 2>/dev/null)" || die "could not read threads for MR !$num"
+  if [[ -z "${out//[$'\n\t ']/}" ]]; then
+    printf 'No resolvable threads on MR !%s\n' "$num"
+  else
+    printf '%s\n' "$out"
+  fi
+}
+
+# vcs_pr_resolve_thread NUMBER THREAD_ID [RESOLVED=true] [DRY]
+# Checks "Resolve thread" on a MR discussion once the developer has addressed it (PUT
+# resolved=true on the whole discussion). RESOLVED=false reopens it. THREAD_ID is the
+# discussion id printed by vcs_pr_threads.
+vcs_pr_resolve_thread() {
+  local num="$1" tid="$2" resolved="${3:-true}" dry="${4:-0}"
+  local word; word="$([[ "$resolved" == false ]] && echo unresolved || echo resolved)"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — glab api --method PUT …/merge_requests/%s/discussions/%s?resolved=%s\n' "$num" "$tid" "$resolved"
+    return 0
+  fi
+  glab api --method PUT "projects/:fullpath/merge_requests/$num/discussions/$tid?resolved=$resolved" >/dev/null \
+    || die "could not mark thread $tid on MR !$num $word"
+  printf 'Thread %s on MR !%s marked %s\n' "$tid" "$num" "$word"
+}
+
 # vcs_close_pr NUMBER [DRY] -> close the MR without merging (branch kept), then pr-view.
 vcs_close_pr() {
   local num="$1" dry="${2:-0}"
