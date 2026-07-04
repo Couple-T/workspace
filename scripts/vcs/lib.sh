@@ -7,9 +7,12 @@
 #
 #   vcs_require_config                          — ensure the provider CLI is installed
 #   vcs_open_pr   BASE HEAD TITLE BODY [DRY]    — create (or reuse) a PR/MR; print URL + number=
+#   vcs_find_prs  KEY                           — print URLs of OPEN PRs/MRs whose title/branch contains KEY (read-only)
 #   vcs_pr_view   NUMBER                        — print state=<MERGED|OPEN|CLOSED> + merge_sha=
 #   vcs_pr_comment NUMBER PATH LINE BODY [DRY]  — comment (inline at PATH:LINE where supported)
 #   vcs_pr_comments NUMBER                      — print the PR/MR's comments as plain text
+#   vcs_pr_threads NUMBER                       — list resolvable review threads + their ids/state
+#   vcs_pr_resolve_thread NUMBER THREAD_ID [RESOLVED=true] [DRY] — check/uncheck "Resolve thread"
 #   vcs_merge_pr  NUMBER SUBJECT [DRY]          — server-side squash-merge, then print pr-view
 #   vcs_close_pr  NUMBER [DRY]                  — close without merging (branch kept), then pr-view
 #   vcs_upload_media KEY FILE [DRY]             — host one media file, print its embeddable markdown line

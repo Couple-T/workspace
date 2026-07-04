@@ -7,6 +7,12 @@
 #   • `scripts/aiworks sync` reads `products:` (the repo URLs) and sets EVERYTHING up —
 #     generates mani.d/<product>.yaml, clones each repo, builds the codegraph index,
 #     installs the skill packs, seeds hooks, scaffolds CLAUDE.md + scripts/dev.sh;
+#   • it ALSO generates a multi-root `<workspace-basename>.code-workspace` from `products:` —
+#     one folder root per repo (+ the meta-repo as the first root) — so VS Code / Cursor show
+#     EACH repo as its own Source Control panel (a gitignored clone is otherwise skipped by the
+#     folder-open git auto-detect). Open it with:  cursor <workspace>.code-workspace
+#     It is committed with the meta-repo (like mani.d/) and re-generated on every sync/add/remove;
+#     only its `folders` array is regenerated — any `settings` you add to it survive;
 #   • the adapters read their slice from scripts/{vcs,tracker}/.env;
 #   • the dev-cycle workflow keeps a mirrored CONFIG block at the top of
 #     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem at
@@ -52,7 +58,7 @@ notify:
 # ── Issue tracker ──────────────────────────────────────────────────────────────
 tracker:
   provider: notion                 # notion | jira
-  ticket_prefix: FM                # FM | OFB | …  → drives the ticket-id regex (e.g. FM-\d+)
+  ticket_prefix: FM                # FM | APP | …  → drives the ticket-id regex (e.g. FM-\d+)
   # Canonical workflow phase → the org's REAL status name (what the tracker shows / Jira
   # transitions to). Skills/agents/dev-cycle use these names when moving a ticket.
   # Declare WHATEVER your board uses — every key here is mirrored into the workflow. The
@@ -92,12 +98,12 @@ planning:
 # How the team works with Figma — see docs/agents/figma.md for the full convention.
 design:
   enabled: false                   # MASTER Figma switch (default OFF). false → NO agent calls Figma:
-                                   #   the /prd design phase is skipped (tickets carry build-ready specs,
+                                   #   the /prd-design design phase is skipped (tickets carry build-ready specs,
                                    #   no frames) and the dev/QA agents build from the spec instead of a
                                    #   Figma screenshot. true → the design pipeline runs (planner → assets
                                    #   → designer) and needs a connected Figma MCP. Turn this ON to design.
   figma_file_key: ""               # the org's ONE canonical design file — the key in
-                                   #   figma.com/design/<KEY>/…. Set → every /prd run builds its screens
+                                   #   figma.com/design/<KEY>/…. Set → every /prd-design run builds its screens
                                    #   as a NEW PAGE inside THIS file, reusing its variables/components
                                    #   (zero orphan files); tickets link node URLs within it. Empty → each
                                    #   run creates a NEW (orphan) file and the run WARNS how to configure

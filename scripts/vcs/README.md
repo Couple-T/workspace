@@ -9,13 +9,16 @@ remote** when unset. All commands run against the repo in the current directory.
 |---|---|
 | `default-branch.sh` | Print the repo's default/parent branch |
 | `open-pr.sh`        | Open (or reuse) a PR/MR for HEAD → BASE; prints the URL + `number=`. `--media <ref>` (repeatable) attaches visual results to the body |
+| `find-prs.sh`       | Print the URL of every OPEN PR/MR in the current repo whose **title or source branch contains the ticket key** — one per line (read-only; never pushes/creates) |
 | `upload-media.sh`   | Host media (image/video files, a dir of them, or http(s) URLs) and print an embeddable **## Visual results** markdown section |
 | `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` |
 | `pr-comment.sh`     | Comment on a PR/MR (inline at `--path`:`--line` where supported) — review comments must anchor + quote code (see Notes) |
 | `pr-comments.sh`    | Print a PR/MR's comments / review notes as plain text |
+| `pr-threads.sh`     | List a PR/MR's resolvable **review threads** with their thread ids + resolved state (so a fix can be tied back to a thread) |
+| `pr-resolve-thread.sh` | Check **"Resolve thread"** on a review thread once addressed (`--unresolve` to reopen) |
 | `merge-pr.sh`       | **Squash-merge server-side** so the web PR/MR shows *Merged*, then prints pr-view |
 
-`open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, and `merge-pr.sh` accept `--dry-run`.
+`open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, `pr-resolve-thread.sh`, and `merge-pr.sh` accept `--dry-run`.
 
 ## Layout
 
@@ -24,12 +27,14 @@ vcs/
 ├── lib.sh             # provider dispatch (+ git-based default-branch)
 ├── github.sh          # gh implementation
 ├── gitlab.sh          # glab implementation
-├── default-branch.sh  open-pr.sh  pr-view.sh  pr-comment.sh  merge-pr.sh
+├── default-branch.sh  open-pr.sh  pr-view.sh  pr-comment.sh  pr-comments.sh
+├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh
 └── .env.example       # optional VCS_PROVIDER override
 ```
 
 A provider impl defines: `vcs_require_config`, `vcs_open_pr`, `vcs_pr_view`,
-`vcs_pr_comment`, `vcs_pr_comments`, `vcs_merge_pr`, `vcs_upload_media`. **To add a host**
+`vcs_pr_comment`, `vcs_pr_comments`, `vcs_pr_threads`, `vcs_pr_resolve_thread`,
+`vcs_merge_pr`, `vcs_upload_media`. **To add a host**
 (e.g. Bitbucket), drop a new `<provider>.sh` implementing those — nothing else changes.
 Shared media helpers (`vcs_is_image`, `vcs_is_media`, `vcs_media_md`,
 `vcs_media_asset_name`) live in `lib.sh`.
@@ -54,12 +59,38 @@ Handled by the provider CLI, not this adapter:
   the code: pass `--path` + `--line` so it lands inline at the exact spot, **and** quote
   the offending line or block as a fenced code snippet in `--body`. No vague,
   location-less review comments — this applies to the code reviewer (Daniel), the
-  guardian (Ethan), and the performance reviewer (Liam) alike. On GitLab, where the
-  inline position can't be set, the adapter still references `path:line` in the note, so
-  the quoted snippet in `--body` is what makes the comment self-contained there.
+  guardian (Ethan), and the performance reviewer (Liam) alike. Both providers anchor the
+  comment to the line; the quoted snippet in `--body` keeps it self-contained either way.
+- **Resolving review threads.** Once the developer addresses a review comment (pushes the
+  fix + replies), they check **"Resolve thread"** on it so reviewers see what's been handled
+  and what's still open. `pr-threads.sh <number>` lists each resolvable thread with its
+  `thread=<id>` + `[resolved|unresolved]` + `file:line` (plain `pr-comments.sh` does **not**
+  expose the id) — match a thread to the comment you fixed by its `file:line`, then
+  `pr-resolve-thread.sh <number> <thread-id>` checks the box. A reviewer whose fix is
+  insufficient reopens it with `--unresolve`. Resolve **only** threads you actually
+  addressed — don't resolve to silence an open finding. On **GitLab** these are MR
+  *discussions* (`PUT …/discussions/:id?resolved=true`); on **GitHub** they're PR *review
+  threads*, resolvable only over GraphQL (`resolveReviewThread`), keyed by an opaque node id.
 - "PR" maps to a GitLab **merge request**; a PR `number` is the **MR IID**.
-- Inline-at-line comments are a true review comment on GitHub; on GitLab the adapter
-  posts an MR **note** that references `path:line` (positioned discussions are
-  glab-version-specific — kept robust on purpose).
+- Inline-at-line comments are a true review comment on both hosts: GitHub posts a PR
+  review comment, GitLab a **positioned MR discussion** on the new side of the diff
+  (using the MR's `diff_refs` + `old_path`/`new_path`/`new_line`). Inline anchoring
+  requires **both** `--path` **and** `--line`. For GitLab the adapter then classifies the
+  target line against the MR's own diff: an **added** line anchors with `new_line` alone;
+  an **unchanged/context** line needs **both** `new_line` **and** `old_line` (GitLab rejects
+  context lines that omit `old_line`). When the line isn't in the diff at all, the adapter
+  **WARNs to stderr** (with the host's actual error) and falls back to a plain note that
+  references `path:line`, so the finding is never lost. The fallback's stdout line says
+  **NON-inline** explicitly: the adapter no longer reports inline success when the comment
+  didn't anchor, so a caller/agent can never mistake a fallback note for an inline post.
+- **GitLab positions MUST be sent as multipart `--form`, never `--field`/`--raw-field`.**
+  glab's `-f`/`-F` encode params into a **JSON body**, where `position[new_line]` becomes a
+  flat top-level key GitLab doesn't understand — so the API accepts the note but **silently
+  drops the position**, landing the comment on the **Overview** instead of the diff line.
+  `--form` sends Rails-style bracketed fields that parse into the nested `position` object.
+  Because GitLab can still return 200 while dropping a bad position, `vcs_pr_comment` also
+  re-reads the created note's `.position` and only reports "Inline comment posted" when a
+  position is actually present (else it WARNs and reports NON-inline). This was the root
+  cause of reviewer comments landing on the overview; see `gitlab.sh` `vcs_pr_comment`.
 - `glab` flags target a recent version (~1.40+); if yours differs, `gitlab.sh` is the
   one file to adjust.

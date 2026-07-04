@@ -29,10 +29,14 @@ aiworks — multi-repo agent workspace CLI
 Usage:
   aiworks <command> [options]
 
+Output is QUIET by default for sync / setup / run / teardown — only warnings, errors, and
+the closing summary print. Pass -v/--verbose to any of them for the full step-by-step log.
+
 Commands:
   add        Onboard ONE repo: register it (workspace.config.yaml products[] + mani.d +
              mani.yaml), clone it, build the codegraph index, install the agent skill packs,
-             seed hooks/permissions, scaffold scripts/dev.sh, run the skill generator.
+             seed hooks/permissions, scaffold scripts/dev.sh, run the skill generator, and
+             ensure the .superset lifecycle hooks (setup/run/teardown) exist + cover the repo.
   sync       Onboard every repo DECLARED in workspace.config.yaml products[].repos[]
              (optionally narrowed to one product, or one repo via a repo-name positional
              or --repo <name>) by running the `add` toolchain for each — reading
@@ -40,14 +44,18 @@ Commands:
              repo's URL to the config, then `aiworks sync`. Idempotent: already-onboarded
              repos just SKIP. Use -n to preview. Also seeds the adapter .env files
              (scripts/{tracker,vcs}/.env) when missing — from .env.example, pre-filled with
-             the providers/keys from workspace.config.yaml (an existing .env is left as-is).
+             the providers/keys from workspace.config.yaml (an existing .env is left as-is) —
+             and ensures the .superset lifecycle hooks (setup/run/teardown) cover every repo.
   remove     Offboard a repo (or every repo, with --all): deregister it from
              workspace.config.yaml products[].repos[], mani.d/<product>.yaml, mani.yaml and
              the .gitignore, unlink the workspace adapters (optionally --purge the clone).
   config     Regenerate the dev-cycle workflow's CONFIG block (.claude/workflows/dev-cycle.js)
              FROM workspace.config.yaml — the workflow can't read the FS at runtime, so it keeps
-             an in-source mirror. add / remove / sync run this automatically; run it yourself
-             after hand-editing workspace.config.yaml (ticket_prefix, statuses, auto_merge, …).
+             an in-source mirror — AND the multi-root <workspace>.code-workspace `folders` array
+             (one root per repo + the meta-repo, so VS Code/Cursor show each repo as its own
+             Source Control panel; open it with `cursor <workspace>.code-workspace`). add /
+             remove / sync run this automatically; run it yourself after hand-editing
+             workspace.config.yaml (ticket_prefix, statuses, auto_merge, …).
   setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
              adapter .env, link adapters into each repo + git-exclude the links so they never
              dirty the product repo). Pass-through — forwards any extra args.
@@ -61,8 +69,8 @@ Examples:
   # fast path — declare repos under products: in workspace.config.yaml, then:
   aiworks sync                          # onboard every repo in the config
   aiworks sync your-product --dry-run   # preview just the your-product product
-  aiworks sync agent-db                 # onboard ONLY the agent-db repo (repo-name positional)
-  aiworks sync --repo agent-db,paotung-template   # …or several named repos
+  aiworks sync your-app                 # onboard ONLY the your-app repo (repo-name positional)
+  aiworks sync --repo your-app,your-tests   # …or several named repos
   # or onboard one repo imperatively (also writes it into the config):
   aiworks add --url git@github.com:your-org/your-api.git --product backend --lang go
   aiworks remove your-api --purge    # deregister + delete the clone (refuses if dirty/unpushed)
@@ -70,6 +78,8 @@ Examples:
   aiworks remove --all --purge --force  # …and delete every clone too (force past dirty/unpushed)
   # workspace lifecycle — pass straight through to the .superset hooks:
   aiworks setup                         # exec .superset/setup.sh
+  aiworks run                           # exec .superset/run.sh (scripts/dev.sh run per repo)
+  aiworks run your-app                  # …run only the named repo(s)
   aiworks teardown                      # exec .superset/teardown.sh
 EOF
 }

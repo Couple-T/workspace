@@ -4,7 +4,8 @@
 #
 # Runs the per-repo setup so the workspace agents (dev-cycle planner → developer →
 # QA → reviewers → guardian/perf) can work the repo: registers it with mani, clones
-# it, builds the codegraph index, installs the agent skill packs, seeds a hardcoded
+# it, installs codegraph (https://github.com/colbymchenry/codegraph) if it's missing —
+# machine-wide, once — then builds the codegraph index, installs the agent skill packs, seeds a hardcoded
 # (sonar-free) hook + permission baseline, and — best-effort, via Claude — scaffolds a
 # language-appropriate CLAUDE.md and scripts/dev.sh shaped by the repo's own anatomy.
 #
@@ -49,6 +50,8 @@
 #                          instead of the default --dangerously-skip-permissions.
 #   --force                Re-clone / re-seed hooks / regenerate dev.sh + CLAUDE.md if present.
 #   -y, --yes              Don't prompt; assume yes (and, for an existing CLAUDE.md, skip).
+#   -v, --verbose          Show the full step-by-step log. Output is QUIET by default — only
+#                          warnings and the closing onboarding summary print.
 #   -h, --help             Show this help.
 #
 set -uo pipefail   # NOT -e: this script is best-effort and summarizes failures itself.
@@ -58,17 +61,94 @@ c_step=$'\033[1;36m'; c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;3
 [[ -t 1 ]] || { c_step=; c_ok=; c_warn=; c_err=; c_dim=; c_off=; }
 DONE=(); SKIPPED=(); FOLLOWUP=(); SUMMARY_DONE=0
 TOK_IN=0; TOK_OUT=0; TOK_CR=0; TOK_CW=0; TOK_COST=0   # accumulated Claude usage across the run
-step()  { printf '\n%s==> %s%s\n' "$c_step" "$*" "$c_off"; }
-ok()    { printf '    %s✓ %s%s\n' "$c_ok" "$*" "$c_off"; DONE+=("$*"); }
+CLAUDE_RC=0; CLAUDE_UNDER_TIMEOUT=0                    # last claude_run's exit status + whether it ran under `timeout`
+# QUIET by default: step/ok/skip/glance print only with -v/--verbose (VERBOSE=1, set in arg
+# parsing below). They STILL record into DONE/SKIPPED so print_summary — which always prints —
+# carries the full picture. warn/die ALWAYS print. So a quiet run shows only warnings + the
+# closing onboarding summary (the conclusion); -v restores the full step-by-step log.
+VERBOSE=0
+step()  { [[ "$VERBOSE" -eq 1 ]] && printf '\n%s==> %s%s\n' "$c_step" "$*" "$c_off"; return 0; }
+ok()    { [[ "$VERBOSE" -eq 1 ]] && printf '    %s✓ %s%s\n' "$c_ok" "$*" "$c_off"; DONE+=("$*"); return 0; }
 warn()  { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
-skip()  { printf '    %s⤼ SKIP: %s%s\n' "$c_warn" "$*" "$c_off"; SKIPPED+=("$*"); }
-glance(){ printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; }
+skip()  { [[ "$VERBOSE" -eq 1 ]] && printf '    %s⤼ SKIP: %s%s\n' "$c_warn" "$*" "$c_off"; SKIPPED+=("$*"); return 0; }
+glance(){ [[ "$VERBOSE" -eq 1 ]] && printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; return 0; }
 die()   { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 have()  { command -v "$1" >/dev/null 2>&1; }
 # A repo is codegraph-"initialized" only when the graph DB exists — a bare .codegraph/ dir
 # (just its .gitignore, e.g. from an interrupted init) is NOT initialized and `codegraph sync`
 # rejects it. Both the init (step 4) and sync (step 10.6) steps gate on THIS, so they agree.
 cg_indexed() { local f; for f in "$1"/.codegraph/*.db; do [[ -e "$f" ]] && return 0; done; return 1; }
+
+# ── codegraph: install it once if missing ───────────────────────────────────────
+# codegraph (https://github.com/colbymchenry/codegraph) builds the per-repo index the
+# build/review agents grep through. It's a MACHINE-WIDE CLI — installed once, not per repo —
+# so this is a no-op whenever it's already on PATH (and after the first repo in a sync).
+# Prefer npm (any Node, all platforms); fall back to the bundled installer (curl … | sh —
+# vendored runtime, no Node needed), which drops the binary in ~/.local/bin WITHOUT editing
+# PATH, so we surface that dir on PATH for the in-session re-check + the init/sync steps that
+# follow. Best-effort: a failed install just leaves `have codegraph` false and the caller
+# SKIPs the index step. Prints nothing when codegraph is already present; otherwise emits its
+# glance/ok/skip lines nested under whatever step() called it (no header of its own). Sets
+# CG_INSTALL_TRIED so the two codegraph touchpoints (step 4 + 10.6) don't double-install.
+CG_INSTALL_TRIED=0
+ensure_codegraph() {
+  have codegraph && return 0
+  [[ "$CG_INSTALL_TRIED" -eq 1 ]] && return 1
+  CG_INSTALL_TRIED=1
+  if have npm; then
+    glance "codegraph not on PATH — installing (npm i -g @colbymchenry/codegraph)"
+    npm i -g @colbymchenry/codegraph >/dev/null 2>&1 || true
+  fi
+  if ! have codegraph && have curl; then
+    glance "codegraph not on PATH — installing (bundled installer: curl … | sh)"
+    curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh >/dev/null 2>&1 || true
+  fi
+  # The bundled installer symlinks the binary into ~/.local/bin (or $CODEGRAPH_BIN_DIR) but
+  # does NOT edit PATH — surface it for THIS process so the re-check + init/sync below find it.
+  local cg_bin="${CODEGRAPH_BIN_DIR:-$HOME/.local/bin}"
+  if [[ -x "$cg_bin/codegraph" ]]; then case ":$PATH:" in *":$cg_bin:"*) ;; *) export PATH="$cg_bin:$PATH" ;; esac; fi
+  if have codegraph; then ok "codegraph installed ($(command -v codegraph))"; return 0
+  else skip "could not install codegraph automatically (need npm or curl + network) — install it by hand: https://github.com/colbymchenry/codegraph"; return 1; fi
+}
+
+# ── classify a spawned child's exit status: a SIGNAL-kill ≠ a genuine failure ───
+# On some machines (memory pressure, an EDR/security agent) a freshly-spawned binary (node,
+# codegraph, npx, claude) is KILLED BY A SIGNAL on launch — SIGSEGV=139, SIGTRAP=133,
+# SIGABRT=134, i.e. ANY exit status >=128 (sig = status-128). That's a transient, machine-side
+# CRASH — NOT a config/auth/input problem on our side — so every spawn site reports it as a
+# crash via these helpers instead of a misleading SKIP/auth hint. `timeout` muddies this (it
+# wraps claude_run's child): it returns 124 on timeout and 128+sig (137 KILL / 143 TERM) when
+# its own grace-kill fires — so pass a 2nd arg of 1 for a child run under `timeout`, and those
+# count as a timeout, not a machine crash.
+classify_rc() {   # <rc> [under_timeout] → echoes: ok | timeout | signal | fail
+  local rc="$1" under_to="${2:-0}"
+  if   [[ "$rc" -eq 0   ]]; then echo ok
+  elif [[ "$rc" -eq 124 ]]; then echo timeout
+  elif [[ "$under_to" -eq 1 && ( "$rc" -eq 137 || "$rc" -eq 143 ) ]]; then echo timeout
+  elif [[ "$rc" -ge 128 ]]; then echo signal
+  else echo fail
+  fi
+}
+describe_rc() {   # <rc> [under_timeout] → a short human phrase for a SKIP/retry message
+  local rc="$1" under_to="${2:-0}"
+  case "$(classify_rc "$rc" "$under_to")" in
+    signal)  printf 'CRASHED (killed by signal %d — likely memory pressure or a security agent on this machine, not a config problem)' "$((rc - 128))" ;;
+    timeout) printf 'timed out' ;;
+    *)       printf 'failed (exit %d)' "$rc" ;;
+  esac
+}
+# claude-step specialization: a failed claude_run reads CLAUDE_RC / CLAUDE_UNDER_TIMEOUT (set
+# by the last claude_run) so callers stay one-liners. The optional arg is the hint shown only
+# for a GENUINE non-zero exit (1..127) — a signal-kill or timeout never implies auth/config.
+CLAUDE_AUTH_HINT="auth? run 'claude' once interactively to log in"
+claude_fail_hint() {   # [genuine-failure-hint]
+  local fail_hint="${1:-$CLAUDE_AUTH_HINT}"
+  case "$(classify_rc "${CLAUDE_RC:-1}" "${CLAUDE_UNDER_TIMEOUT:-0}")" in
+    signal)  printf 'CRASHED — killed by signal %d (likely memory pressure or a security agent on this machine, not an auth/config problem); re-run to retry' "$((CLAUDE_RC - 128))" ;;
+    timeout) printf 'timed out after %ss — re-run, or raise --claude-timeout' "${CLAUDE_TIMEOUT:-?}" ;;
+    *)       printf 'failed (exit %d) — %s' "${CLAUDE_RC:-1}" "$fail_hint" ;;
+  esac
+}
 
 # Ask on the CONTROLLING TERMINAL (/dev/tty), not stdin — so a prompt still works even when
 # stdin is a pipe or has been consumed by a child. Sets REPLY. Returns 0 if it asked, 1 if
@@ -100,6 +180,18 @@ trap on_interrupt INT TERM
 # the lack of set -e). Guarded so it prints at most once. Reads only top-level state.
 print_summary() {
   [[ "${SUMMARY_DONE:-0}" -eq 1 ]] && return; SUMMARY_DONE=1
+  # QUIET (default): a one-line conclusion + any follow-ups (the action items). The full Done/
+  # Skipped breakdown + token usage + Next pointer are detail, shown only with -v/--verbose.
+  if [[ "$VERBOSE" -ne 1 ]]; then
+    printf '\n%s✓ %s onboarded%s (product %s) — done %d, skipped %d%s\n' \
+      "$c_ok" "${REPO_NAME:-?}" "$c_off" "${PRODUCT:-?}" "${#DONE[@]}" "${#SKIPPED[@]}" \
+      "$([[ "${#FOLLOWUP[@]}" -gt 0 ]] && printf ', %d follow-up(s)' "${#FOLLOWUP[@]}")"
+    if [[ "${#FOLLOWUP[@]}" -gt 0 ]]; then
+      printf '%sFollow-ups:%s\n' "$c_warn" "$c_off"
+      for f in "${FOLLOWUP[@]}"; do printf '  • %s\n' "$f"; done
+    fi
+    return
+  fi
   printf '\n%s──────── onboarding summary: %s (product %s) ────────%s\n' "$c_step" "${REPO_NAME:-?}" "${PRODUCT:-?}" "$c_off"
   printf '%sDone (%d):%s\n' "$c_ok" "${#DONE[@]}" "$c_off"; for d in "${DONE[@]:-}"; do [[ -n "$d" ]] && printf '  ✓ %s\n' "$d"; done
   if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
@@ -164,16 +256,19 @@ render_glance() {
 claude_run() {
   local prompt="$1"; shift
   # `env` is a harmless no-op prefix so the array is never empty (set -u safe); swap in
-  # timeout/gtimeout when present and a positive CLAUDE_TIMEOUT is set.
+  # timeout/gtimeout when present and a positive CLAUDE_TIMEOUT is set. CLAUDE_UNDER_TIMEOUT
+  # records whether the child runs under `timeout` so the caller's classify_rc can tell a
+  # timeout grace-kill (124 / 137 / 143) apart from a real machine crash (other 128+sig).
   local -a TO=(env)
+  CLAUDE_UNDER_TIMEOUT=0
   if [[ "${CLAUDE_TIMEOUT:-0}" -gt 0 ]]; then
-    if   have timeout;  then TO=(timeout  -k 10 "$CLAUDE_TIMEOUT")
-    elif have gtimeout; then TO=(gtimeout -k 10 "$CLAUDE_TIMEOUT"); fi
+    if   have timeout;  then TO=(timeout  -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1
+    elif have gtimeout; then TO=(gtimeout -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1; fi
   fi
   # stdin ← /dev/null: a headless `claude -p` must never read the terminal, or it eats the
   # keystrokes meant for our own prompts (step 7) and muddies Ctrl+C handling.
   if ! have jq; then
-    "${TO[@]}" claude -p "$prompt" $PERM_FLAG "$@" </dev/null; return $?
+    "${TO[@]}" claude -p "$prompt" $PERM_FLAG "$@" </dev/null; CLAUDE_RC=$?; return "$CLAUDE_RC"
   fi
   local raw rc; raw="$(mktemp -t aiworks-claude.XXXXXX)"
   "${TO[@]}" claude -p "$prompt" --output-format stream-json --verbose $PERM_FLAG "$@" </dev/null 2>/dev/null \
@@ -210,6 +305,7 @@ claude_run() {
     TOK_COST="$(awk -v a="$TOK_COST" -v b="$cost" 'BEGIN{printf "%.4f", a+b}')"
   fi
   rm -f "$raw"
+  CLAUDE_RC="$rc"
   return "$rc"
 }
 
@@ -234,6 +330,7 @@ while [[ $# -gt 0 ]]; do
     --safe-perms)      PERM_FLAG="--permission-mode acceptEdits"; shift ;;
     --force)           FORCE=1; shift ;;
     -y|--yes)          YES=1; shift ;;
+    -v|--verbose)      VERBOSE=1; shift ;;
     -h|--help)         usage; exit 0 ;;
     *)                 die "unknown argument: $1   (see -h)" ;;
   esac
@@ -284,13 +381,16 @@ tags_yaml=""; for t in "${tags_list[@]}"; do tags_yaml+="${tags_yaml:+, }$t"; do
 # mapping lives in ONE place — scripts/aiworks-config.sh — applied when the dev-cycle.js CONFIG is
 # regenerated at the end of this run (step 2.6). Here we only note which archetype the kind selects.
 case "$KIND" in
-  test-suite)  printf '%s  kind "%s" → QA archetype (qa-runner builds the suite; no code review)%s\n' "$c_dim" "$KIND" "$c_off" ;;
+  test-suite)  glance "kind \"$KIND\" → QA archetype (qa-runner builds the suite; no code review)" ;;
   ''|generic)  ;;
-  *)           printf '%s  kind "%s" → code repo (plan→build→review + guard/perf); tune via green/guardian_focus%s\n' "$c_dim" "$KIND" "$c_off" ;;
+  *)           glance "kind \"$KIND\" → code repo (plan→build→review + guard/perf); tune via green/guardian_focus" ;;
 esac
 
-printf '%sOnboarding repo "%s" → product "%s"  (dir: %s/, lang: %s)%s\n' "$c_step" "$REPO_NAME" "$PRODUCT" "$PATH_REL" "${LANG:-auto}" "$c_off"
-printf '  url=%s  tags=[%s]\n  workspace root=%s\n' "$URL" "$tags_yaml" "$ROOT"
+# Intro banner — verbose-only chatter (the closing summary restates repo + product).
+if [[ "$VERBOSE" -eq 1 ]]; then
+  printf '%sOnboarding repo "%s" → product "%s"  (dir: %s/, lang: %s)%s\n' "$c_step" "$REPO_NAME" "$PRODUCT" "$PATH_REL" "${LANG:-auto}" "$c_off"
+  printf '  url=%s  tags=[%s]\n  workspace root=%s\n' "$URL" "$tags_yaml" "$ROOT"
+fi
 if [[ "$YES" -ne 1 && -t 0 ]]; then
   read -r -p "Proceed? [y/N] " a; [[ "$a" =~ ^[Yy]$ ]] || die "aborted"
 fi
@@ -391,6 +491,20 @@ if [[ -x "$GEN" ]]; then
   else skip "2.6. could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand. Detail: ${out}"; fi
 else
   skip "2.6. aiworks-config.sh not found next to aiworks-add.sh — mirror dev-cycle.js by hand"
+fi
+
+# ── 2.7. ensure the workspace lifecycle hooks (.superset/{setup,run,teardown}) cover this repo ─
+# The hooks are workspace-level and DYNAMIC — each loops over every cloned repo — so the new repo
+# is picked up with no per-repo edit. This just makes sure the trio EXISTS and config.json
+# registers all three (it creates .superset/run.sh on workspaces that predate the run hook). See
+# scripts/aiworks-superset.sh.
+step "2.7. Ensure .superset lifecycle hooks (setup/run/teardown) cover every repo"
+SUPGEN="$(cd "$(dirname "$0")" && pwd)/aiworks-superset.sh"
+if [[ -x "$SUPGEN" ]]; then
+  if out="$("$SUPGEN" -q 2>&1)"; then ok "lifecycle hooks present; config.json registers setup/run/teardown${out:+ — $out}"
+  else skip "2.7. could not ensure .superset hooks — run 'aiworks-superset.sh' by hand. Detail: ${out}"; fi
+else
+  skip "2.7. aiworks-superset.sh not found next to aiworks-add.sh — ensure .superset/{setup,run,teardown}.sh by hand"
 fi
 
 # ── 3. clone via mani + 3.1 gitignore ─────────────────────────────────────────
@@ -520,10 +634,15 @@ done
 
 # ── 4. codegraph index ────────────────────────────────────────────────────────
 step "4. Initialize the codegraph index (in $PATH_REL/)"
+ensure_codegraph || true   # install codegraph once if it's missing (no-op when already on PATH)
 if ! have codegraph; then skip "4. 'codegraph' not installed — run 'codegraph init' in $PATH_REL/ later"
 elif cg_indexed "$REPO_DIR" && [[ "$FORCE" -ne 1 ]]; then skip "4. .codegraph index already built"
-elif codegraph init "$REPO_DIR"; then ok "codegraph index built"   # recovers a bare/partial .codegraph/ too
-else skip "4. 'codegraph init' failed"; fi
+else
+  # quiet by default — swallow codegraph's own progress UI (keep stderr); -v shows it.
+  if [[ "$VERBOSE" -eq 1 ]]; then codegraph init "$REPO_DIR"; else codegraph init "$REPO_DIR" >/dev/null; fi; cg_rc=$?   # recovers a bare/partial .codegraph/ too
+  if [[ "$cg_rc" -eq 0 ]]; then ok "codegraph index built"
+  else skip "4. 'codegraph init' $(describe_rc "$cg_rc") — re-run 'codegraph init $PATH_REL' to retry"; fi
+fi
 
 # ── 5. karpathy skills plugin — INSTALL **and ENABLE** at project scope ─────────
 # `claude plugin install` only caches/registers the plugin; it does NOT write
@@ -560,14 +679,17 @@ if ! have npx; then
   skip "6. 'npx' (Node) not found — run later, one per skill: npx skills@latest add mattpocock/skills --skill <name> -y"
 else
   mkdir -p "$REPO_DIR/.claude"   # project marker so the CLI's scope auto-detect picks "project", not "global"
-  installed=(); already=(); failed=()
+  installed=(); already=(); failed=(); crashed=()
   for s in "${mp_skills[@]}"; do
     if [[ -d "$REPO_DIR/.claude/skills/$s" && "$FORCE" -ne 1 ]]; then already+=("$s"); continue; fi
-    if npx -y skills@latest add mattpocock/skills --skill "$s" --agent '*' -y >/dev/null 2>&1; then installed+=("$s")
+    npx -y skills@latest add mattpocock/skills --skill "$s" --agent '*' -y >/dev/null 2>&1; npx_rc=$?
+    if   [[ "$npx_rc" -eq 0 ]]; then installed+=("$s")
+    elif [[ "$(classify_rc "$npx_rc")" == signal ]]; then crashed+=("$s (signal $((npx_rc - 128)))")   # npx/node killed on launch, NOT an install failure
     else failed+=("$s"); fi
   done
   [[ "${#already[@]}"   -gt 0 ]] && skip "6. already present: ${already[*]}"
   [[ "${#installed[@]}" -gt 0 ]] && ok "installed mattpocock skills (project scope): ${installed[*]}"
+  [[ "${#crashed[@]}"   -gt 0 ]] && skip "6. npx CRASHED (killed by a signal — likely memory pressure or a security agent on this machine, not an install problem): ${crashed[*]} — re-run 'aiworks add' to retry"
   [[ "${#failed[@]}"    -gt 0 ]] && skip "6. failed to install: ${failed[*]} — retry: npx skills@latest add mattpocock/skills --skill <name> -y"
 fi
 
@@ -590,11 +712,11 @@ else
   case "$do_init" in
     skip)        skip "7. CLAUDE.md already present — kept (chose skip)" ;;
     fresh)       glance "generating CLAUDE.md from the repo anatomy ..."
-                 if claude_run "$init_prompt"; then ok "CLAUDE.md created"; else skip "7. /init failed (auth? run 'claude' once interactively to log in)"; fi ;;
+                 if claude_run "$init_prompt"; then ok "CLAUDE.md created"; else skip "7. /init $(claude_fail_hint)"; fi ;;
     regenerate)  glance "regenerating CLAUDE.md from scratch ..."
-                 if claude_run "$init_prompt Overwrite the existing CLAUDE.md."; then ok "CLAUDE.md regenerated"; else skip "7. regenerate failed"; fi ;;
+                 if claude_run "$init_prompt Overwrite the existing CLAUDE.md."; then ok "CLAUDE.md regenerated"; else skip "7. regenerate $(claude_fail_hint)"; fi ;;
     combine)     glance "merging into the existing CLAUDE.md ..."
-                 if claude_run "Update the existing CLAUDE.md IN PLACE: keep all still-accurate content, fill gaps, fix staleness — do NOT discard the author's notes. $md_guidance"; then ok "CLAUDE.md combined"; else skip "7. combine failed"; fi ;;
+                 if claude_run "Update the existing CLAUDE.md IN PLACE: keep all still-accurate content, fill gaps, fix staleness — do NOT discard the author's notes. $md_guidance"; then ok "CLAUDE.md combined"; else skip "7. combine $(claude_fail_hint)"; fi ;;
   esac
   # 60-line guard: if CLAUDE.md overflowed, nudge toward the .claude/rules/ split.
   if [[ -f "$REPO_DIR/CLAUDE.md" ]]; then
@@ -647,7 +769,7 @@ elif grep -qs '## Agent skills' "$REPO_DIR/CLAUDE.md" "$REPO_DIR/AGENTS.md" && [
 elif claude_run "$MP_PROMPT"; then
   if mp_artifact; then ok "/setup-matt-pocock-skills (non-interactive) scaffolded docs/agents/ + the '## Agent skills' block"
   else warn "8. /setup-matt-pocock-skills wrote no docs/agents/ or '## Agent skills' block — retries on the next sync (re-run with --force to retry now; was step 6 able to install it?)"; fi
-else skip "8. /setup-matt-pocock-skills failed (auth? was step 6 able to install it?)"; fi
+else skip "8. /setup-matt-pocock-skills $(claude_fail_hint 'auth? was step 6 able to install it?')"; fi
 
 # ── 9. hooks + permissions baseline (HARDCODED, sonar-free) ────────────────────
 # No reference repo: the hooks come from the workspace's own .claude/hooks (the dev-wrapper,
@@ -728,13 +850,13 @@ if ! have claude; then skip "10. 'claude' CLI not found — author scripts/dev.s
 elif [[ -f "$REPO_DIR/scripts/dev.sh" && "$FORCE" -ne 1 ]]; then skip "10. scripts/dev.sh already present"
 else
   mkdir -p "$REPO_DIR/scripts"
-  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | run | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. 'run' is the SINGLE SOURCE OF TRUTH for how to launch this repo: it builds if needed then launches/drives the app the repo's OWN way as a NON-INTERACTIVE agent path that proves it works and EXITS with a verdict (a server → start, poll a readiness/health check, report up/down, then tear down; a web app → build or start the dev server and confirm it serves; a CLI → a smoke invocation; a DB/migration repo → apply + verify; ANYTHING long-running MUST be backgrounded, polled for a ready marker, then stopped — never block forever), and it obeys the same verbose-log + one-line-summary rules as the others. After writing each run's log, prune the older logs for that command so only the most-recent N are kept (N from the DEV_LOG_KEEP env var, default 5; treat 0 or a non-numeric value as keep-all). POSIX bash, 'set -euo pipefail', a usage(), executable. Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
+  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | run | restart | stop | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. 'run' is the SINGLE SOURCE OF TRUTH for how to launch this repo: it builds if needed then launches/drives the app the repo's OWN way as a NON-INTERACTIVE agent path that proves it works and EXITS with a verdict (a server → start, poll a readiness/health check, report up/down, then tear down; a web app → build or start the dev server and confirm it serves; a CLI → a smoke invocation; a DB/migration repo → apply + verify; ANYTHING long-running MUST be backgrounded, polled for a ready marker, then stopped — never block forever), and it obeys the same verbose-log + one-line-summary rules as the others. When 'run' backgrounds a long-running instance it MUST record its PID (and port, if any) to a handle file under agent_logs/ (e.g. agent_logs/run.pid) so the instance can be found again. 'stop' reads that handle to tear down any instance 'run' left alive (kill the PID/process group, free the port, remove the handle), is idempotent, and reports stopped vs not-running. 'restart' = 'stop' then 'run' — a clean relaunch of the running instance — and obeys the same verbose-log + one-line-summary rules. After writing each run's log, prune the older logs for that command so only the most-recent N are kept (N from the DEV_LOG_KEEP env var, default 5; treat 0 or a non-numeric value as keep-all). POSIX bash, 'set -euo pipefail', a usage(), executable. Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
   glance "scaffolding scripts/dev.sh (${LANG:-language inferred}) ..."
   if claude_run "$gen_prompt"; then
     [[ -f "$REPO_DIR/scripts/dev.sh" ]] && chmod +x "$REPO_DIR/scripts/dev.sh" 2>/dev/null
     ok "scripts/dev.sh scaffolded (${LANG:-language inferred}) — REVIEW it before relying on it"
     FOLLOWUP+=("review + test $PATH_REL/scripts/dev.sh (Claude-generated)")
-  else skip "10. dev.sh generation failed"; fi
+  else skip "10. dev.sh generation $(claude_fail_hint)"; fi
 fi
 
 # ── 10.5 run the skill generator inside the repo ───────────────────────────────
@@ -758,7 +880,7 @@ This repo's scripts/dev.sh already has a 'run' subcommand that is the SINGLE SOU
   fi
   glance "running ${SKILL_CMD} ..."
   if claude_run "$skill_prompt"; then ok "$SKILL_CMD ran (delegates to scripts/dev.sh run)"; mark_done step10_5-skillgen
-  else skip "10.5. $SKILL_CMD failed (is the skill installed? override the name with --skill-cmd)"; fi
+  else skip "10.5. $SKILL_CMD $(claude_fail_hint 'is the skill installed? override the name with --skill-cmd')"; fi
 fi
 
 # ── 10.6 sync the codegraph index (before leaving the repo) ─────────────────────
@@ -767,7 +889,8 @@ fi
 step "10.6. Sync the codegraph index (in $PATH_REL/)"
 if ! have codegraph; then skip "10.6. 'codegraph' not installed — run 'codegraph sync $PATH_REL' later"
 elif ! cg_indexed "$REPO_DIR"; then skip "10.6. no .codegraph index to sync (step 4 didn't build one) — run 'codegraph init $PATH_REL' first"
-elif codegraph sync "$REPO_DIR"; then ok "codegraph index synced"
+# quiet by default — swallow codegraph's own progress UI (keep stderr); -v shows it.
+elif { [[ "$VERBOSE" -eq 1 ]] && codegraph sync "$REPO_DIR"; } || { [[ "$VERBOSE" -ne 1 ]] && codegraph sync "$REPO_DIR" >/dev/null; }; then ok "codegraph index synced"
 else skip "10.6. 'codegraph sync' failed"; fi
 
 # ── 11. back to the workspace root ─────────────────────────────────────────────

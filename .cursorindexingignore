@@ -1,3 +1,5 @@
 # Re-include repos the root .gitignore hides, so Cursor can index + search them.
+# `aiworks add` appends one `!<repo-dir>/` line per onboarded repo below this comment,
+# and `aiworks remove` drops it again — no hand-editing needed.
 !feeedme-app/
 !feeedme-appium/

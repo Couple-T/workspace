@@ -33,6 +33,21 @@ vcs_open_pr() {
   printf '%s\nnumber=%s\n' "$url" "$num"
 }
 
+# vcs_find_prs KEY -> print the url (one per line) of every OPEN PR whose TITLE or head
+# BRANCH contains KEY (case-insensitive). Read-only — never creates anything. Relies on
+# the team convention that a ticket's PR carries the ticket key in its Conventional-Commit
+# title (e.g. feat(FM-12): …) and/or branch (feature/FM-12).
+vcs_find_prs() {
+  local key="$1"
+  gh pr list --state open --limit 100 --json url,title,headRefName 2>/dev/null \
+    | jq -r --arg k "$key" '
+        ($k | ascii_downcase) as $kk
+        | .[]
+        | select(((.title // "")       | ascii_downcase | contains($kk))
+              or  ((.headRefName // "") | ascii_downcase | contains($kk)))
+        | .url' 2>/dev/null || true
+}
+
 # vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
 vcs_pr_view() {
   local num="$1" json state sha
@@ -45,8 +60,10 @@ vcs_pr_view() {
 }
 
 # vcs_pr_comment NUMBER PATH LINE BODY [DRY]
-# Posts an inline review comment at PATH:LINE when both are given (falls back to a
-# normal PR comment that references PATH:LINE if the inline API call fails).
+# Posts an inline review comment at PATH:LINE when both are given. On ANY failure we DO NOT
+# silently drop the anchor — we surface the reason on stderr (with GitHub's actual error)
+# and fall back to a normal PR comment that references PATH:LINE, so the content is never
+# lost AND the caller is never told "posted inline" when it didn't anchor to the diff.
 vcs_pr_comment() {
   local num="$1" path="$2" line="$3" body="$4" dry="${5:-0}"
   local full="$body"
@@ -55,20 +72,78 @@ vcs_pr_comment() {
     printf 'DRY RUN — comment on PR #%s: %s\n' "$num" "$full"; return 0
   fi
   if [[ -n "$path" && -n "$line" ]]; then
-    local sha
+    local sha err
     sha="$(gh pr view "$num" --json headRefOid -q .headRefOid 2>/dev/null || true)"
-    if [[ -n "$sha" ]] && gh api "repos/{owner}/{repo}/pulls/$num/comments" \
-        -f body="$body" -f commit_id="$sha" -f path="$path" -F line="$line" -f side=RIGHT >/dev/null 2>&1; then
+    if [[ -z "$sha" ]]; then
+      printf 'WARN: could not read head SHA for PR #%s — posting %s:%s as a NON-inline comment\n' "$num" "$path" "$line" >&2
+    elif err="$(gh api "repos/{owner}/{repo}/pulls/$num/comments" \
+        -f body="$body" -f commit_id="$sha" -f path="$path" -F line="$line" -f side=RIGHT 2>&1)"; then
       printf 'Inline comment posted on PR #%s at %s:%s\n' "$num" "$path" "$line"; return 0
+    else
+      printf 'WARN: inline anchor failed for %s:%s on PR #%s — falling back to a NON-inline comment.\n  GitHub said: %s\n' \
+        "$path" "$line" "$num" "$(printf '%s' "$err" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-300)" >&2
     fi
   fi
-  gh pr comment "$num" --body "$full" >/dev/null
-  printf 'Comment posted on PR #%s\n' "$num"
+  gh pr comment "$num" --body "$full" >/dev/null || die "failed to post comment on PR #$num"
+  if [[ -n "$path" && -n "$line" ]]; then
+    printf 'Comment posted on PR #%s (NON-inline comment — see WARN above for why %s:%s did not anchor)\n' "$num" "$path" "$line"
+  else
+    printf 'Comment posted on PR #%s\n' "$num"
+  fi
 }
 
 # vcs_pr_comments NUMBER -> prints the PR's comments/review notes as plain text.
 vcs_pr_comments() {
   gh pr view "$1" --comments 2>/dev/null || die "could not read comments for PR #$1"
+}
+
+# vcs_pr_threads NUMBER -> list the PR's review threads, one block each:
+#   ● thread=<node_id>  [unresolved|resolved]  <path>:<line>  (<author>)
+#     <comment body…>
+# GitHub review threads are resolvable only over GraphQL, keyed by an opaque node id —
+# `vcs_pr_comments` (REST) doesn't expose it, so this is the companion read that lets a
+# fix be tied back to the exact thread for vcs_pr_resolve_thread.
+vcs_pr_threads() {
+  local num="$1" nwo owner repo out
+  nwo="$(_gh_nwo)"; owner="${nwo%%/*}"; repo="${nwo##*/}"
+  out="$(gh api graphql \
+      -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved path line comments(first:1){nodes{body author{login}}}}}}}}' \
+      -F o="$owner" -F r="$repo" -F n="$num" 2>/dev/null \
+    | jq -r '
+        .data.repository.pullRequest.reviewThreads.nodes[]
+        | . as $t
+        | ($t.comments.nodes[0] // {}) as $c
+        | (if $t.isResolved then "resolved" else "unresolved" end) as $state
+        | "● thread=\($t.id)  [\($state)]  "
+          + (if ($t.path // "") != "" then $t.path + (if ($t.line != null) then ":" + ($t.line|tostring) else "" end) else "(general)" end)
+          + "  (\($c.author.login // "?"))\n"
+          + "  " + (($c.body // "") | gsub("\n"; "\n  "))
+          + "\n"
+      ' 2>/dev/null)" || die "could not read threads for PR #$num"
+  if [[ -z "${out//[$'\n\t ']/}" ]]; then
+    printf 'No review threads on PR #%s\n' "$num"
+  else
+    printf '%s\n' "$out"
+  fi
+}
+
+# vcs_pr_resolve_thread NUMBER THREAD_ID [RESOLVED=true] [DRY]
+# Marks a PR review thread resolved (the "Resolve conversation" button) once the developer
+# has addressed it. RESOLVED=false reopens it. THREAD_ID is the GraphQL node id printed by
+# vcs_pr_threads. NUMBER is only used for the message — the node id is globally unique.
+vcs_pr_resolve_thread() {
+  local num="$1" tid="$2" resolved="${3:-true}" dry="${4:-0}"
+  local mutation word
+  if [[ "$resolved" == false ]]; then mutation=unresolveReviewThread; word=unresolved
+  else mutation=resolveReviewThread; word=resolved; fi
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — gh api graphql %s(threadId:%s)\n' "$mutation" "$tid"; return 0
+  fi
+  gh api graphql \
+      -f query="mutation(\$id:ID!){$mutation(input:{threadId:\$id}){thread{isResolved}}}" \
+      -f id="$tid" >/dev/null \
+    || die "could not mark thread $tid on PR #$num $word"
+  printf 'Thread %s on PR #%s marked %s\n' "$tid" "$num" "$word"
 }
 
 # vcs_close_pr NUMBER [DRY] -> close the PR without merging (branch kept), then pr-view.
