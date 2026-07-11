@@ -78,6 +78,9 @@ branch_model:
 quality_gate:
   provider: sonarqube              # sonarqube | none
 
+review:
+  level: thorough                    # strict | thorough  (default: strict)
+
 # ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
 planning:
   auto_approve: true               # auto-approve-plan. true → execution proceeds straight from the
