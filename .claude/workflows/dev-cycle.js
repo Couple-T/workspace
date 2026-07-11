@@ -75,7 +75,7 @@ const NOTIFY_PROVIDER = 'slack' // from workspace.config.yaml notify.provider (s
 const NOTIFY_CHANNEL = '#feeed-me-reviews'  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
 const DESIGN_ENABLED = true     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
 const QUALITY_GATE = 'sonarqube'     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
-const REVIEW_LEVEL = 'strict'     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
+const REVIEW_LEVEL = 'thorough'     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
 const STATUS = {
   not_started: 'Not started',
   in_progress: 'In progress',
