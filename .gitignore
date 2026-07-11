@@ -18,8 +18,9 @@ workspace.config.yaml
 mani.d/
 *.code-workspace
 
-# python bytecode caches
+# python bytecode caches (e.g. from skill scripts) — never committed (any depth)
 __pycache__/
+*.py[cod]
 
 # .superset runtime state (pidfiles + service logs from run.sh)
 .superset/run/
