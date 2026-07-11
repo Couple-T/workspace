@@ -6,6 +6,12 @@
     "postgres",
     "redis"
   ],
+  "permissions": {
+    "allow": [
+      "Bash(scripts/vcs/merge-pr.sh:*)",
+      "Bash(../scripts/vcs/merge-pr.sh:*)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
