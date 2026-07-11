@@ -12,7 +12,7 @@
     "**/coverage": true,
     "**/target": true,
     "**/.expo": true,
-    "**/.env": true,
+    "**/.env": false,
     "feeedme-app/build": true,
     "feeedme-app/.dart_tool": true,
     "feeedme-app/ios/Pods": true,
