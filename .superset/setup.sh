@@ -22,8 +22,9 @@
 #    search re-inclusion, scripts/dev.sh, lifecycle hooks); -y skips its prompt.
 # 2. Copies the REAL local state from the root workspace into this worktree — a fresh
 #    worktree carries none of its own: every .env / .env.* (every repo + adapter +
-#    .superset/.env) recursively, AND every repo's seeded db-data Postgres cluster. Runs
-#    before the MCP services so they come up on real config + a seeded DB.
+#    .superset/.env) recursively, every repo's seeded db-data Postgres cluster, AND any
+#    Android release-signing secrets (key.properties + the keystore). Runs before the
+#    MCP services so they come up on real config + a seeded DB.
 # 3. Installs Node dependencies in every repo that has a package.json
 #    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this).
 # 4. Starts the shared MCP service containers, then reports which repos still
@@ -85,6 +86,11 @@ scripts/aiworks sync "${sync_args[@]}"
 #     workspace is provisioned. SUPERSET_DB_DATA (default symlink — instant, no big copy,
 #     no sudo) → symlink the root's, =copy for an isolated per-worktree copy, or =skip to
 #     manage it yourself.
+#   • Android release-signing secrets — <repo>/android/key.properties + the keystore it
+#     references (git-ignored, so a fresh worktree has none; then android/app/build.gradle.kts
+#     silently DEBUG-signs the release build). Provisioned from the root like the above.
+#     SUPERSET_SIGNING (default symlink) → symlink the root's, =copy for a per-worktree
+#     snapshot, or =skip. No <repo>/android/key.properties at the root → nothing to do.
 # Runs BEFORE the MCP services start so they come up on real config + a seeded DB, not defaults.
 # SUPERSET_ROOT_PATH is set by Superset to the root workspace path; the root stays the source of
 # truth (an existing file/link at the destination is replaced to match it).
@@ -195,6 +201,51 @@ if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; 
         fi
       fi
     done
+  fi
+
+  # Android release-signing secrets — <repo>/android/key.properties + the keystore it
+  # references live ONLY on the local clone (git-ignored: key.properties + **/*.jks), so a
+  # fresh worktree carries none and android/app/build.gradle.kts silently falls back to DEBUG
+  # signing. Provision them from the root workspace like .env / db-data above: for every
+  # <repo>/android/key.properties present at the root, link that file plus any keystore
+  # (*.jks / *.keystore) beside it or under app/. Provisioning mode → SUPERSET_SIGNING
+  # (default: symlink — one source of truth for the keystore; edit once, every worktree sees
+  # it). =copy for a per-worktree snapshot, =skip to manage them yourself. No key.properties
+  # at the root → silent no-op (non-Flutter workspaces, or a root that never set signing up).
+  sign_mode="${SUPERSET_SIGNING:-symlink}"
+  if [[ "$sign_mode" == skip ]]; then
+    log "signing secrets: SUPERSET_SIGNING=skip — leaving them as-is."
+  else
+    # Link (or copy) one root-relative file into this worktree; return 1 if the root lacks it.
+    provision_signing_file() {
+      local rel="$1" src="$root_ws/$1"
+      [[ -f "$src" ]] || return 1
+      mkdir -p "$(dirname "$rel")"
+      if [[ "$sign_mode" == copy ]]; then
+        [[ -L "$rel" ]] && rm -f "$rel"                          # was a symlink → drop before copy
+        if cp "$src" "$rel" 2>/dev/null; then echo "    copied $rel"; return 0; fi
+        warn "could not copy $rel"; return 1
+      fi
+      if [[ -L "$rel" && "$(readlink "$rel")" == "$src" ]]; then return 0; fi   # already linked
+      rm -f "$rel" 2>/dev/null                                    # replace stale link / copied file
+      if ln -s "$src" "$rel" 2>/dev/null; then echo "    linked $rel"; return 0; fi
+      warn "could not symlink $rel"; return 1
+    }
+    sign_count=0
+    for kp_src in "$root_ws"/*/android/key.properties; do
+      [[ -f "$kp_src" ]] || continue                             # literal pattern when unmatched
+      android_dir="$(dirname "${kp_src#"$root_ws"/}")"           # e.g. feeedme-app/android
+      if provision_signing_file "$android_dir/key.properties"; then sign_count=$((sign_count + 1)); fi
+      for ks_src in "$root_ws/$android_dir"/*.jks     "$root_ws/$android_dir"/*.keystore \
+                    "$root_ws/$android_dir"/app/*.jks "$root_ws/$android_dir"/app/*.keystore; do
+        [[ -f "$ks_src" ]] || continue
+        if provision_signing_file "${ks_src#"$root_ws"/}"; then sign_count=$((sign_count + 1)); fi
+      done
+    done
+    if [[ "$sign_count" -gt 0 ]]; then
+      sign_verb="linked"; [[ "$sign_mode" == copy ]] && sign_verb="copied"
+      log "$sign_verb $sign_count Android signing secret(s) from the root workspace."
+    fi
   fi
 else
   # No separate root to copy from: this IS the root/main worktree (so the git-ignored state is
