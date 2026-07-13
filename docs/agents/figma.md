@@ -5,6 +5,10 @@ both the design pipeline that *authors* frames (`ux-ui-planner` → `graphic-des
 → `ux-ui-designer`) and the dev/QA roles that *read* a design screen
 (`development-planner`, `developer`, `qa-planner`, `qa-runner`, `documentor`).
 
+> **The visual *language* (mood, color, type, copy — the *what it looks like*) lives in
+> the sibling doc `docs/agents/design-system.md`** (FeeedMe mood: **cozy** — warm palette,
+> font Mitr, light mode only for now, Thai-first). THIS file governs Figma *mechanics* only.
+
 It is governed by two fields under `design:` in `workspace.config.yaml` (see
 `workspace.config.example.yaml`). The `scripts/aiworks config`/`sync` step mirrors
 them into the workflow CONFIG blocks (`dev-cycle.js`, `prd.js`), because workflow
