@@ -67,7 +67,7 @@ export const meta = {
 //   folded into the PR, Improvement tickets filed). See STRICT / levelDirective below.
 // ──────────────────────────────────────────────────────────────────────────
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
-const TICKET_PREFIX = 'FM'
+const TICKET_PREFIX = 'FMA'
 const AUTO_MERGE = true        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
 const AUTO_APPROVE_PLAN = true // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
 const PLAN_TO_HTML = false     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
@@ -78,9 +78,11 @@ const DESIGN_ENABLED = true     // from workspace.config.yaml design.enabled; fa
 const QUALITY_GATE = 'sonarqube'     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const REVIEW_LEVEL = 'thorough'     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
 const STATUS = {
-  not_started: 'Not started',
-  in_progress: 'In progress',
-  ready_to_test: 'Ready to test',
+  not_started: 'Backlog',
+  todo: 'To Do',
+  in_progress: 'In Progress',
+  code_review: 'In Review',
+  ready_to_test: 'Ready To Test',
   testing: 'Testing',
   done: 'Done',
 }

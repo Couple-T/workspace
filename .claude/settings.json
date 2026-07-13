@@ -3,7 +3,8 @@
   "enabledMcpjsonServers": [
     "mcp-image",
     "sonarqube",
-    "postgres",
+    "postgres_main",
+    "postgres_secondary",
     "redis"
   ],
   "permissions": {

@@ -1,23 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# workspace.config.yaml — the ONE file each organization fills in.
-#
-# Copy this to `workspace.config.yaml` and edit. It is the human-readable source of
-# truth for the whole orchestration:
-#   • skills + agents read it (and docs/agents/issue-tracker.md) at runtime;
-#   • `scripts/aiworks sync` reads `products:` (the repo URLs) and sets EVERYTHING up —
-#     generates mani.d/<product>.yaml, clones each repo, builds the codegraph index,
-#     installs the skill packs, seeds hooks, scaffolds CLAUDE.md + scripts/dev.sh;
-#   • the adapters read their slice from scripts/{vcs,tracker}/.env;
-#   • the dev-cycle workflow keeps a mirrored CONFIG block at the top of
-#     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem at
-#     runtime). `scripts/aiworks sync` — and every `add` / `remove` — REGENERATES that
-#     block from THIS file automatically (`scripts/aiworks config` is the standalone step),
-#     so the mirror always tracks this file. You never hand-edit dev-cycle.js.
-#
-# The fast path to onboard repos:  add their URLs under `products:` below, then run
-#   scripts/aiworks sync          # clone + onboard every declared repo (idempotent)
-# ─────────────────────────────────────────────────────────────────────────────
-
 org:
   name: Couple-T                       # shown in agent copy / summaries
   product: "feeed-me"   # the domain agents ground research/copy in
@@ -32,17 +12,6 @@ vcs:
                                    #   merged or distributed). Override for a single repo with repos[].auto_merge.
 
 # ── Notifications ──────────────────────────────────────────────────────────────
-# AFTER the run finishes its pre-merge work (every repo built + reviewed and the cross-repo
-# test-suite gate green) the dev-cycle can post a "please review" digest to chat. This phase
-# runs LAST (after Summary) and ONLY when BOTH hold:
-#   • notify.enabled: true        (this block), AND
-#   • vcs.auto_merge:  false      (auto-merge ON ⇒ the run merges + distributes itself, so there
-#                                  is nothing left for a human to review — the notification is skipped).
-# The message is the open PR/MR per repo for the ticket:
-#     Please review, FM-12 Add the vet-visit reminder.
-#     - feeedme-app: https://github.com/your-org/feeedme-app/pull/42
-#     - feeedme-appium: https://github.com/your-org/feeedme-appium/pull/7
-# Posting goes through the notify adapter (scripts/notify/), provider-agnostic like vcs/tracker.
 notify:
   enabled: false                   # true → post the review-request when auto_merge is off (see above)
   provider: slack                  # slack (the only provider today)
@@ -51,21 +20,15 @@ notify:
 
 # ── Issue tracker ──────────────────────────────────────────────────────────────
 tracker:
-  provider: notion                 # notion | jira | linear
-  ticket_prefix: FM                # FM | OFB | …  → drives the ticket-id regex (e.g. FM-\d+)
-  # Canonical workflow phase → the org's REAL status name (what the tracker shows / Jira
-  # transitions to). Skills/agents/dev-cycle use these names when moving a ticket.
-  # Declare WHATEVER your board uses — every key here is mirrored into the workflow. The
-  # dev-cycle drives the ticket FORWARD ONLY, at aggregate milestones (it owns the status;
-  # the per-repo agents don't), and at each milestone it uses the best status you've
-  # declared: e.g. after review it prefers `ready_to_merge`, else `ready_to_test`. Extra
-  # keys (e.g. `to_do`, `code_review`, `ready_to_merge`) are optional and fully supported.
+  provider: linear                 # notion | jira | linear
+  ticket_prefix: FMA
   statuses:
-    not_started:   "Not started"
-    in_progress:   "In progress"
-    # code_review:   "Code review"     # optional — richer boards can add intermediate states
+    not_started:   "Backlog"
+    todo:          "To Do"
+    in_progress:   "In Progress"
+    code_review:   "In Review"     # optional — richer boards can add intermediate states
     # ready_to_merge: "Ready to merge"
-    ready_to_test: "Ready to test"
+    ready_to_test: "Ready To Test"
     testing:       "Testing"
     done:          "Done"
 
@@ -126,29 +89,6 @@ image_generation:
                                    #   request (keeps Gemini spend bounded). Raise only when needed.
 
 # ── Products & repos — THE PART EACH ORG CONFIGURES ────────────────────────────
-# A product groups the repos that ship together. Each product is ONE
-# mani.d/<id>.yaml file (GENERATED from this block by `aiworks` — don't hand-edit
-# mani.d). For each repo you only need a `url` (+ `kind`); aiworks derives the rest:
-#
-#   id / path  ← the repo NAME from the URL (last path segment, minus .git).  Override
-#                the clone dir with `path:`.
-#   desc       → a one-line repo responsibility — what this repo IS and owns, so the team (and
-#                the agents) can read the workspace's anatomy BEFORE anything is cloned. Optional
-#                but recommended. Flows verbatim into the generated mani.d/<product>.yaml `desc:`
-#                (what `mani list projects` shows). Omitted → defaults to "The <repo-name> repo.".
-#                (`description:` is accepted as an alias.)
-#   kind       → a FREE-FORM, tech-agnostic dev-context LABEL (frontend, backend, web-app,
-#                service, migration, generic, …) — the tech goes in `lang`, NOT the kind.
-#                It selects one of two role/gate ARCHETYPES:
-#                  test-suite   → qa-runner builds the test suite (E2E / API / load), no code
-#                                 review, provides the cross-repo test-suite (QA) gate. The ONE
-#                                 special kind name.
-#                  <any other>  → a code repo: developer builds (TDD), code-reviewer reviews,
-#                                 guard+perf gates on (tune per repo via green / guardian_focus)
-#
-# After editing this block run `scripts/aiworks sync` to clone + onboard. That (like `add` /
-# `remove`) also REGENERATES the dev-cycle.js CONFIG `REPOS` block from this file — the workflow
-# can't read the FS at runtime, so `scripts/aiworks config` keeps its mirror in sync for you.
 products:
   - id: feeed-me                          # → mani.d/<product-id>.yaml
     repos:
