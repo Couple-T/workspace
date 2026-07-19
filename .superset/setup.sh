@@ -140,6 +140,13 @@ scripts/aiworks sync "${sync_args[@]}"
 #     silently DEBUG-signs the release build). Provisioned from the root like the above.
 #     SUPERSET_SIGNING (default symlink) → symlink the root's, =copy for a per-worktree
 #     snapshot, or =skip. No <repo>/android/key.properties at the root → nothing to do.
+#   • .superset/products/*.sh — the REAL per-product definition(s) (git-ignored: .gitignore
+#     tracks only products/example.sh), which is what default_product() in lib.sh resolves
+#     for setup/run/teardown when no product is named explicitly. Without this, a fresh
+#     worktree has ONLY example.sh and every lifecycle hook called without an explicit
+#     product (notably Superset's own teardown-before-worktree-removal call) fails with
+#     "no product defined". SUPERSET_PRODUCTS (default symlink) → symlink the root's,
+#     =copy for a per-worktree snapshot, =skip to manage it yourself.
 # (Your personal workspace.config.local.yaml + .claude/settings.local.json are provisioned
 # FIRST in step 1 above — before host tooling / sync — not here.)
 # Runs BEFORE the MCP services start so they come up on real config + a seeded DB, not defaults.
@@ -173,6 +180,39 @@ if [[ "$has_root" == 1 ]]; then
         -o -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -print0)
     env_verb="linked"; [[ "$env_mode" == copy ]] && env_verb="copied"
     log "$env_verb $env_count env file(s) from the root workspace."
+  fi
+
+  # .superset/products/*.sh — the real product definition(s) (git-ignored; only example.sh
+  # ships with a clone). Provisioning mode → SUPERSET_PRODUCTS (default: symlink). See the
+  # step-4 header above for why a fresh worktree needs this at all.
+  products_mode="${SUPERSET_PRODUCTS:-symlink}"
+  if [[ "$products_mode" == skip ]]; then
+    log "product files: SUPERSET_PRODUCTS=skip — leaving .superset/products/ as-is."
+  else
+    products_count=0
+    for p_src in "$root_ws"/.superset/products/*.sh; do
+      [[ -f "$p_src" ]] || continue
+      p_base="$(basename "$p_src")"
+      [[ "$p_base" == example.sh ]] && continue
+      p_dst=".superset/products/$p_base"
+      mkdir -p .superset/products
+      if [[ "$products_mode" == symlink ]]; then
+        if [[ -L "$p_dst" && "$(readlink "$p_dst")" == "$p_src" ]]; then products_count=$((products_count + 1)); continue; fi
+        rm -f "$p_dst" 2>/dev/null   # replace any stale link / copied file with the link
+        if ln -s "$p_src" "$p_dst" 2>/dev/null; then echo "    linked $p_dst"; products_count=$((products_count + 1))
+        else warn "could not symlink $p_dst"; fi
+      else
+        [[ -L "$p_dst" ]] && rm -f "$p_dst"   # was a symlink → drop it before copying the file in
+        if cp "$p_src" "$p_dst" 2>/dev/null; then echo "    copied $p_dst"; products_count=$((products_count + 1))
+        else warn "could not copy $p_dst"; fi
+      fi
+    done
+    if [[ "$products_count" -gt 0 ]]; then
+      products_verb="linked"; [[ "$products_mode" == copy ]] && products_verb="copied"
+      log "$products_verb $products_count product definition file(s) from the root workspace."
+    else
+      warn "no real .superset/products/*.sh at the root workspace ($root_ws) — setup/run/teardown will fail to resolve a default product unless one is passed explicitly."
+    fi
   fi
 
   # <repo>/db-data — seeded local Postgres clusters (git-ignored). A DB repo's containers
