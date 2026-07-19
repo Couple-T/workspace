@@ -22,16 +22,33 @@ gitignored clones and only the meta-repo shows.
 ## Configuration (read these first)
 
 - `workspace.config.yaml` — the org's providers, ticket prefix, status lifecycle,
-  branch model, auto-merge policy, planning policy (`planning.auto_approve` /
+  branch model, output-language policy (`language` — `en` default | `th`), auto-merge
+  policy, planning policy (`planning.auto_approve` /
   `planning.to_html`), notification policy (`notify.enabled` / `notify.channel`), design
   policy (`design.enabled` — the workspace-wide Figma switch, default OFF —
   `design.figma_file_key` / `design.page_naming`), image-generation policy
   (`image_generation.enabled` — default OFF — `image_generation.quality` /
   `image_generation.max_per_request`), and the `products[].repos[]` registry
   (repo URLs). The source of truth for this workspace; `scripts/aiworks sync` sets
-  everything up from it.
+  everything up from it. Personal, non-shared overrides go in the git-ignored
+  `workspace.config.local.yaml` (analogue of `.claude/settings.local.json`; see
+  `workspace.config.local.example.yaml`) — it overrides this file for everything read at
+  runtime (chat, agents, interactive skills); the committed workflow mirror stays shared-only.
+- `CONTEXT.md` — the workspace glossary (ubiquitous language: orchestration, providers, repos,
+  language, config). One place to look up a term; each entry links to its fuller home.
+- `docs/adr/` — architecture decision records: why the workspace is shaped as it is
+  (`0001` config mirror, `0002` output localization, `0003` personal runtime overrides).
+- `docs/agents/language.md` — the output-language convention: `language: th` ⇒ **English
+  spine, Thai prose** (prose in Thai; titles/headings/labels, all code + commits + branch
+  names, and technical/domain terms stay English; code, checked-in repo docs, and **any `.md`
+  file** never Thai — only `.html` renders/tickets/chat/Slack localize).
+  Default `en` = unchanged. See the `## Language` section below.
 - `docs/agents/issue-tracker.md` — how to read/write tickets (the tracker adapter,
   status names, id format).
+- `docs/agents/human-review.md` — the `Human:` convention: a human reviewer's required
+  changes, left as `Human:`-prefixed PR/MR review-thread comments, are blocking, top-priority
+  directives the agents auto-route (code→developer, test→qa, scope→planner) and resolve. The
+  `apply-human-review` skill drives them on demand ("take my review", no prefix needed).
 - `docs/agents/image-generation.md` — how the graphic-designer generates assets
   (the `mcp-image` server + `GEMINI_API_KEY`), gated by `image_generation.enabled`
   (default OFF); the design/PRD phase fails loud when it's not set up rather than
@@ -50,6 +67,29 @@ gitignored clones and only the meta-repo shows.
 - **Test environment:** automated runs target **local** by default; staging is an
   explicit, QA-reserved opt-in (`CYPRESS_ENV=staging`). Defer to each repo's default —
   never hardcode an environment in agents/skills/workflow.
+
+## Language
+Output language follows `language` — from `workspace.config.local.yaml` if that personal
+override exists, else `workspace.config.yaml` (full policy: `docs/agents/language.md`).
+**This is resolved mechanically, not from memory:** a hook
+(`.claude/hooks/resolve-language.sh`, wired in `.claude/settings.json`) reads
+`workspace.config.local.yaml` if present (it's git-ignored and personal — see
+`docs/adr/0003`), else falls back to `workspace.config.yaml`, and injects the resolved
+language into context at `SessionStart` (full policy, once) AND on every
+`UserPromptSubmit` (a compact reminder, every turn) — for every teammate, since both the
+hook and its wiring are committed. A prose reminder to "check the file" was tried first
+and was missed twice, since it depended on the model remembering to act; a SessionStart-only
+injection was tried next and was still missed over a long tool-heavy session (the one-time
+injection gets crowded out) — the per-turn reinjection closes that gap. If the hook's
+injected context is ever missing (e.g. a stripped session), fall back to reading the file
+directly before your first output. When the resolved language is **`th`**, write **English spine,
+Thai prose** — prose in Thai (this CLI chat, tickets, PR/MR discussion, code review, Slack,
+and the `.html` interactive render of a plan) while the English **spine** stays English: titles +
+every section heading + labels/enum values, ALL code + code comments + git commit messages + branch
+names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). **Any
+`.md` file you author is English — always** (plans, testcases, PRD/BRD/summary Markdown in
+`agent_logs/`, and every checked-in repo doc — `docs/`, `README`, ADRs, committed PRD/BRD files):
+the `th` prose rule never touches `.md`. Default **`en`** ⇒ everything English, no change.
 
 ## Product Overview
 {{PRODUCT_DESCRIPTION}}

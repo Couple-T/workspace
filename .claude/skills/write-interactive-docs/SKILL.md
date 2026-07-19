@@ -19,11 +19,17 @@ description: >-
   "add a section" — editing just the requested part instead of rebuilding. Prefer
   this over a plain Markdown reply whenever the user wants something polished,
   visual, or shareable.
-model: sonnet[1m]
+model: sonnet
 effort: low 
 ---
 
 # Write Interactive Docs
+
+## Output language — resolve BEFORE writing (do this FIRST)
+
+**A `LANGUAGE_DIRECTIVE` / `OUTPUT LANGUAGE = …` line already in your prompt is AUTHORITATIVE — obey it verbatim, do NOT re-resolve over it.** Otherwise, as your FIRST action, resolve it: read `workspace.config.local.yaml` (git-ignored personal override) if it exists and has a `language:` line, else `workspace.config.yaml` — never from memory — and state the resolved value + source in one line before producing output.
+
+When the resolved language is **`th`**, write the prose you author in **Thai prose with an English spine** — but note the `.md` deliverable itself (the plan/testcases Markdown in `agent_logs/`) stays **English regardless**; only an `.html` render (via `/write-interactive-docs`) is localized to Thai — titles + every section heading + labels/enum values, ALL code + identifiers + commit messages + branch names, and technical / transliterated / domain terms + proper nouns stay English (Arabic numerals always); the sentences themselves are Thai. **Code, checked-in repo docs** (`docs/`, `README`, ADRs, committed PRD/BRD files), **and ANY file you author with a `.md` extension** (plans, testcases, PRD/summary Markdown in `agent_logs/`) are **never** Thai — the `th` prose rule applies to chat, tickets, PR/MR discussion, Slack, and `.html` docs only. Default **`en`** = unchanged; this block is a no-op. (This governs the page's AUTHORED prose. The optional EN／ไทย display toggle and English-only export in `references/localization.md` are a separate, orthogonal feature — do not conflate them.) Full policy: `docs/agents/language.md`.
 
 Produce **one self-contained `.html` file** that explains something clearly: plain
 words, the right visual per idea, a look that matches the project, and one-click
