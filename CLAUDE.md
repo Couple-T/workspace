@@ -22,7 +22,11 @@ files generated from it by `scripts/aiworks`. `mani list projects` for the full 
 `<workspace-basename>.code-workspace` from `products[].repos[]` (one folder root per repo +
 the meta-repo root). Open the **file** (`cursor <workspace>.code-workspace`), not the folder,
 so each product repo gets its own Source Control panel — opening the folder makes Git skip the
-gitignored clones and only the meta-repo shows.
+gitignored clones and only the meta-repo shows. ⚠️ **Cursor**: the `.code-workspace` gives you the
+Source Control panels but does NOT configure the agent — Cursor reads no configuration from
+subdirectories, so from the workspace root (folder *or* `.code-workspace`) an agent gets none of a
+repo's rules, skills, or `AGENTS.md`. Measured both ways. To work a repo with Cursor, open that
+repo: `cd <repo> && cursor .`. See `docs/agents/cursor.md`.
 
 **Cross-repo (`mani`):** `sync` (clone missing) · `list projects` ·
 `exec --all '<cmd>'` · `run <task>`
@@ -47,7 +51,14 @@ gitignored clones and only the meta-repo shows.
 - `CONTEXT.md` — the workspace glossary (ubiquitous language: orchestration, providers, repos,
   language, config). One place to look up a term; each entry links to its fuller home.
 - `docs/adr/` — architecture decision records: why the workspace is shaped as it is
-  (`0001` config mirror, `0002` output localization, `0003` personal runtime overrides).
+  (`0001` config mirror, `0002` output localization, `0003` personal runtime overrides,
+  `0004` the Cursor mirror).
+- `docs/agents/cursor.md` — how this workspace runs under **Cursor**. Everything (project
+  instruction, rules, skills, subagents, hooks, permissions, MCP, adapters) works there via a
+  GENERATED mirror — `aiworks cursor` — built from symlinks back to the `.claude/` files, so
+  there is one copy of each and no drift. Author on the Claude side, never hand-edit `.cursor/`.
+  Two rules to remember: rule frontmatter must carry **both** `paths:` (Claude) and `globs:`
+  (Cursor), and **workflows do not cross** — `dev-cycle`/`prd`/`brd` are Claude Code only.
 - `docs/agents/language.md` — the output-language convention: `language: th` ⇒ **English
   spine, Thai prose** (prose in Thai; titles/headings/labels, all code + commits + branch
   names, and technical/domain terms stay English; code, checked-in repo docs, and **any `.md`
