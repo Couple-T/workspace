@@ -158,9 +158,26 @@ case "$cmd" in
       printf 'chattiness        %s %s(ack + closing line only · aiworks voice audition to compare)%s\n' \
         "$chat" "$c_dim" "$c_off"
     elif voice_cfg_bool voice.autoplay.narrate true; then
-      src="$(voice_narrate_source)"; [[ "$src" == "facts" ]] && src=fact
-      printf 'chattiness        %s %s(ack + closing line + one %s line per step, every %ss, %s max/turn)%s\n' \
-        "$chat" "$c_dim" "$src" "$(voice_narrate_gap)" "$(voice_narrate_cap)" "$c_off"
+      # The shape depends on the SOURCE, and the two differ in what a line is ABOUT, not just how
+      # often one arrives — which is the whole point of the setting and so belongs in the row.
+      src="$(voice_narrate_source)"
+      case "$src" in
+        insight) shape="a conclusion each time something is worked out" ;;
+        prose)   shape="the assistant's own sentence from before each step" ;;
+        *)       if voice_cfg_bool voice.autoplay.narrate_intent true; then
+                   shape="every step twice — one fact line before it, one after"
+                 else
+                   shape="one fact line per step, after it only (narrate_intent is off)"
+                 fi ;;
+      esac
+      # The two throttles are 0 = off as shipped, and a `0s apart, 0 max/turn` row read as broken.
+      # Named only when a number is actually set — where they matter, since either one silently
+      # drops part of what this level promises to say.
+      g="$(voice_narrate_gap)"; ncap="$(voice_narrate_cap)"; thr=""
+      (( g > 0 ))    && thr="$thr · ≥${g}s apart"
+      (( ncap > 0 )) && thr="$thr · ≤$ncap lines/turn"
+      printf 'chattiness        %s %s(ack + closing line + %s%s)%s\n' \
+        "$chat" "$c_dim" "$shape" "$thr" "$c_off"
     else
       printf 'chattiness        %s %s← narrate is off, so nothing speaks mid-turn — the running\n' \
         "$chat" "$c_warn"

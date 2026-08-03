@@ -36,6 +36,9 @@ printf '%s\n' "$1" >> "${VOICE_CACHE_HOME}/played"
 STUB
 chmod +x "$T/bin/afplay"
 export PATH="$T/bin:$PATH"
+# narrate_gap: 0 and a small cap are the SHIPPED shape (0 = no floor) plus a cap low enough to be
+# provable in a handful of calls. The two throttles are switched on and off per case by setgap/setcap
+# below, because "off by default" and "still works when set" are both regressions worth catching.
 cat > "$T/workspace.config.yaml" <<'YAML'
 language: th
 voice:
@@ -43,26 +46,44 @@ voice:
   autoplay:
     enabled: true
     chattiness: max
-    narrate_gap: 4
+    narrate_source: facts
+    narrate_intent: true
+    narrate_gap: 0
     narrate_max_per_turn: 3
     long_turn_seconds: 300
 YAML
+# `narrate_source: facts` is set EXPLICITLY, and is no longer the shipped default (`insight` is):
+# most cases below exercise the step sources — the thresholds, the floors, the char caps, the mute —
+# and they are cheaper and more deterministic to assert than a summarizer call. The insight section
+# flips the key for its own cases, and one case asserts what the default resolves to when the key is
+# absent entirely, which is the thing a wrong default would otherwise hide.
+cfgset() { # cfgset <key> <value> — the throwaway config is the only way to reach a config-only dial
+  sed -i.bak "s/^\( *\)$1: .*/\1$1: $2/" "$T/workspace.config.yaml"
+}
 # Stub speak.sh: prove the handoff, the kind, the cue and the exact line — and spend nothing.
+# It writes the line TWICE, to stdout and to a log: most cases call narrate.sh directly and read
+# stdout, but the hook cases fork a DETACHED narrate.sh whose stdout goes nowhere, so those need a
+# file to watch instead.
 cat > "$T/scripts/voice/speak.sh" <<'STUB'
 #!/usr/bin/env bash
 kind=""; cue=""
 while [[ $# -gt 0 ]]; do
   case "$1" in --kind) kind="$2"; shift 2 ;; --cue) cue="$2"; shift 2 ;; -*) shift ;; *) break ;; esac
 done
-printf 'SPOKE[%s%s]: %s\n' "$kind" "${cue:+/$cue}" "$*"
+printf 'SPOKE[%s%s]: %s\n' "$kind" "${cue:+/$cue}" "$*" \
+  | tee -a "${VOICE_SPOKE_LOG:-${VOICE_CACHE_HOME}/spoke.log}"
 STUB
 chmod +x "$T/scripts/voice/speak.sh"
 # Stub the summarizer as well. narrate.sh never calls it (a fact line is a template, and prose is
 # the transcript's own sentence) — but the ack-cue case below runs the REAL UserPromptSubmit hook,
 # which forks ack.sh, and that one does. Without this the suite would make a paid LLM call.
+# It also LOGS every call, which is how "no summarizer call was made" becomes a file test rather
+# than an assumption — the insight source's cheap length gate exists precisely to avoid paying for a
+# block that cannot contain a conclusion, and an assertion on the spoken line alone cannot see that.
 cat > "$T/scripts/voice/summarize.sh" <<'STUB'
 #!/usr/bin/env bash
-printf 'กำลังไปดูให้ค่ะ\n'
+printf '%s\n' "$*" >> "${VOICE_CACHE_HOME}/summarized.log"
+printf '%s\n' "${VOICE_TEST_SUMMARY:-กำลังไปดูให้ค่ะ}"
 STUB
 chmod +x "$T/scripts/voice/summarize.sh"
 N="$T/scripts/voice/narrate.sh"
@@ -103,6 +124,9 @@ pay "$T/p-green.json" Bash '{"command":"cargo test --lib"}' '"test result: ok. 4
 pay "$T/p-red.json"   Bash '{"command":"cargo test --lib"}' '"error: could not compile"' PostToolUseFailure
 pay "$T/p-skip.json"  TodoWrite '{}' '"ok"'
 pay "$T/p-grep.json"  Grep '{"pattern":"voice_cfg"}' '"a\nb\nc\nd"'
+# The BEFORE half of a step: a PreToolUse payload has no tool_response at all.
+pay "$T/p-pre-read.json" Read '{"file_path":"/a/b/queue.sh"}'  null PreToolUse
+pay "$T/p-pre-bash.json" Bash '{"command":"cargo test --lib"}' null PreToolUse
 
 pass=0; fail=0
 ck() { # ck <label> <expect-substring|EMPTY> <actual>
@@ -162,9 +186,93 @@ ck "the identical line is not spoken twice" EMPTY "$(run "$(_s d1)" "$T/p-read.j
 why="$(cp "$T/p-read.json" "$T/live.json"; "$N" -v --session "$(_s d1)" --payload "$T/live.json" 2>&1 >/dev/null | tail -1)"
 ck "…and says why with -v" "narrate:" "$why"
 
-echo "== rate floor: a DIFFERENT line, too soon =="
+echo "== the DEFAULT source is insight: a conclusion per block, not a line per step =="
+# What the shipped config resolves to, with the key absent. A wrong default here is invisible to
+# every other case in this file, because they all set the key.
+cp "$T/workspace.config.yaml" "$T/cfg.keep"
+sed -i.sed '/narrate_source:/d' "$T/workspace.config.yaml"
+ck "no key at all ⇒ insight" "insight" \
+   "$( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_narrate_source )"
+ck "…and an unknown value falls back to it too" "insight" \
+   "$( . "$T/scripts/voice/lib.sh" 2>/dev/null; VOICE_NARRATE_SOURCE=steps voice_narrate_source )"
+cp "$T/cfg.keep" "$T/workspace.config.yaml"
+CONC='เจอแล้ว ต้นเหตุคือ queue.sh supersede narration เหลือ job ใหม่สุดต่อ session อันเดียว burst ห้า step
+เลยพูดแค่ครั้งเดียว ไม่ใช่ rate floor อย่างที่คิดตอนแรก จะเปลี่ยนเป็น backlog ลึกสามแล้วทิ้งเก่าสุดก่อน'
+mk "$T/t-conclusion.jsonl" "$(txt "$CONC")" "$(tool Read /a/b/queue.sh)"
+mk "$T/t-step.jsonl"       "$(txt 'อ่าน `queue.sh` ก่อน')" "$(tool Read /a/b/queue.sh)"
+cfgset narrate_source insight
+: > "$T/cache/summarized.log"
+IS="$(_s n1)"
+ck "a block with a conclusion in it speaks" "SPOKE[narration]: กำลังไปดูให้ค่ะ" \
+   "$(run "$IS" "$T/p-read.json" "$T/t-conclusion.jsonl")"
+# Deduped on the BLOCK, not the spoken line: five tool calls follow one block, each spawning its own
+# narrate.sh, and without this the same block is summarized — and PAID FOR — five times.
+ck "the same block does not speak again for the next step" EMPTY \
+   "$(run "$IS" "$T/p-grep.json" "$T/t-conclusion.jsonl")"
+ck "…and it was summarized exactly once" 1 "$(wc -l < "$T/cache/summarized.log" | tr -d ' ')"
+# The particle is pinned to the VOICE's gender, and `voice_tts_gender` lives in the PROVIDER file
+# rather than in lib.sh — so a caller that forgets voice_load_tts_provider gets an empty gender, the
+# default particle, and a male voice saying ค่ะ. Silent, and it was written that way on the first
+# pass here. Asserted on the arguments the summarizer was actually handed.
+ck "the summarizer is given a particle, not left to guess" "--particle" \
+   "$(cat "$T/cache/summarized.log")"
+ck "…and it is a real Thai particle" "ค" "$(cat "$T/cache/summarized.log")"
+# The cheap gate: a short block cannot hold a conclusion, so it must not reach the summarizer at all.
+: > "$T/cache/summarized.log"
+ck "a block that only announces a step is silent" EMPTY \
+   "$(run "$(_s n2)" "$T/p-read.json" "$T/t-step.jsonl")"
+ck "…and cost nothing — no summarizer call" 0 "$(wc -l < "$T/cache/summarized.log" | tr -d ' ')"
+# The model's own refusal. Most blocks are a step, so NONE is the common answer and it must be
+# silence rather than a spoken "NONE".
+ck "NONE from the summarizer is silence, not a spoken word" EMPTY \
+   "$(VOICE_TEST_SUMMARY=NONE run "$(_s n3)" "$T/p-read.json" "$T/t-conclusion.jsonl")"
+# insight NEVER falls back to the step sources: that would put "รัน cd" back one silence at a time.
+ck "a refused block does not fall through to the step fact" EMPTY \
+   "$(VOICE_TEST_SUMMARY=NONE run "$(_s n4)" "$T/p-green.json" "$T/t-conclusion.jsonl")"
+ck "a VOICE-tagged block is still never narrated mid-turn" EMPTY \
+   "$(run "$(_s n5)" "$T/p-read.json" "$T/t-tag.jsonl")"
+cfgset narrate_source facts
+
+echo "== the pair: every step says what it is about to do, then how it went =="
+# This is what `max` promises, and the two halves must both land on the SAME session with nothing
+# between them — no rate floor, no dedupe collision, no threshold hijacking the first line.
+PS="$(_s i1)"
+ck "the step announces itself before running" "SPOKE[narration]: รัน cargo test" \
+   "$(run "$PS" "$T/p-pre-bash.json" - --event PreToolUse)"
+ck "…and the same step reports its figure right after" "SPOKE[narration]: cargo test ผ่าน 42" \
+   "$(run "$PS" "$T/p-green.json")"
+# A PreToolUse payload must never reach the RESULT templates: they would measure a response that
+# does not exist and say "อ่านแล้ว 0 บรรทัด" — past tense, about nothing, before the work happened.
+ck "the before-half speaks the file it is about to read" "SPOKE[narration]: อ่าน queue.sh" \
+   "$(run "$(_s i2)" "$T/p-pre-read.json" - --event PreToolUse)"
+# A threshold is a statement about what HAS happened, so it may not ride on the before-half: were it
+# to fire, the line would come back as SPOKE[milestone/attention]: ผ่านมา … instead.
+LI="$(_s i3)"
+( . "$T/scripts/voice/lib.sh" 2>/dev/null
+  voice_turn_start "$LI"
+  f="$(voice_turn_file "$LI")"; jq '.turn = (.turn - 700)' "$f" > "$f.t" && mv "$f.t" "$f" ) >/dev/null 2>&1
+ck "a long turn does not turn the before-half into a threshold" "SPOKE[narration]: อ่าน queue.sh" \
+   "$(run "$LI" "$T/p-pre-read.json" - --event PreToolUse)"
+
+echo "== narrate_intent: false = results only, the way this level used to work =="
+cfgset narrate_intent false
+ck "the before-half is silenced" EMPTY \
+   "$(run "$(_s i4)" "$T/p-pre-read.json" - --event PreToolUse)"
+ck "…and the result half still speaks" "queue.sh อ่านแล้ว 3 บรรทัด" \
+   "$(run "$(_s i5)" "$T/p-read.json")"
+cfgset narrate_intent true
+
+echo "== no rate floor by default: consecutive steps all speak =="
+RS="$(_s r0)"
+ck "first speaks" "SPOKE[narration]" "$(run "$RS" "$T/p-read.json")"
+ck "the very next line speaks too, with no wait" "voice_cfg เจอ 4 แห่ง" \
+   "$(run "$RS" "$T/p-grep.json")"
+
+echo "== …and a rate floor still throttles when someone sets a number =="
+cfgset narrate_gap 4
 ck "first speaks" "SPOKE[narration]" "$(run "$(_s r1)" "$T/p-read.json")"
 ck "a different line inside the floor is dropped" EMPTY "$(run "$(_s r1)" "$T/p-grep.json")"
+cfgset narrate_gap 0
 
 echo "== the per-turn cap (3 in this suite's config) =="
 CAPS="$(_s c1)"
@@ -179,6 +287,19 @@ for i in 1 2 3 4 5; do
   [[ -n "${out//[[:space:]]/}" ]] && spoke=$((spoke+1))
 done
 ck "stops at the cap and no further" "3" "$spoke"
+
+echo "== …but the cap is 0 (off) as shipped, so a long turn keeps talking =="
+cfgset narrate_max_per_turn 0
+CAPZ="$(_s c2)"
+( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_turn_start "$CAPZ" ) >/dev/null 2>&1
+spoke=0
+for i in 1 2 3 4 5 6; do
+  pay "$T/p-loop.json" Read "{\"file_path\":\"/a/z$i.sh\"}" '"x\ny"'
+  out="$(run "$CAPZ" "$T/p-loop.json")"
+  [[ -n "${out//[[:space:]]/}" ]] && spoke=$((spoke+1))
+done
+ck "six steps in one turn, six lines — no ceiling in the way" 6 "$spoke"
+cfgset narrate_max_per_turn 3
 
 echo "== the long-turn threshold: single-shot, and only on a real step =="
 LS="$(_s l1)"
@@ -291,6 +412,12 @@ ck "a gate speaks at terse too, unlike narration" "ขออนุญาตร�
    "$(VOICE_CHATTINESS=terse grun "$(_s gt12)" PermissionRequest)"
 
 echo "== mute: EVERY output is off, and nothing is spent =="
+# WHY THE STUB'S LOG IS PER-CASE (VOICE_SPOKE_LOG): the ack case below runs the real hook, which forks
+# ack.sh in the background, and that straggler lands in the log SECONDS later. A hook case that
+# truncated one shared log and then waited for "any line" read the previous case's ack instead of its
+# own narration — flaky, and it failed in the convincing direction (2 of 6 runs, with the ack's text
+# right there in the diff).
+#
 # The stub speak.sh is the proxy for spend: it is what a real run would pay an LLM and a TTS call
 # for, so silence here means the producer exited before either one.
 : > "$T/cache/mute"
@@ -341,6 +468,59 @@ hookrun 1
 hookrun 0
 [[ -f "$T/cache/played" ]] && { echo "  ok   unmuted: the cue still lands"; pass=$((pass+1)); } \
                           || { echo "  FAIL the cue stopped landing when unmuted"; fail=$((fail+1)); }
+
+echo "== the REAL hook, on the event that sits in front of the tool =="
+# The one link no other case covers: which EVENT reaches narrate.sh is decided by the hook, so a
+# PreToolUse wiring that dropped the event name would leave every case above green and the feature
+# silent — or worse, feed a response-less payload to the result templates.
+nhook="$SRC/.claude/hooks/voice-narrate.sh"
+HK="$T/hk.log"     # this block's own log — see VOICE_SPOKE_LOG above
+hnar() { # hnar <session> <event> <tool_name> <tool_input-json> — fires the real hook, does not wait
+  printf '{"session_id":"%s","hook_event_name":"%s","tool_name":"%s","tool_input":%s}' \
+    "$1" "$2" "$3" "$4" \
+    | VOICE_SPOKE_LOG="$HK" CLAUDE_PROJECT_DIR="$T" bash "$nhook" > "$T/hook.out" 2>&1
+}
+hkwait() { # hkwait <substring> — until the forked narrator's line lands, or 3 s
+  local i=0; while ! grep -qF -- "$1" "$HK" 2>/dev/null && (( i < 60 )); do sleep 0.05; i=$((i+1)); done
+}
+: > "$HK"
+hnar "$(_s hk1)" PreToolUse Bash '{"command":"cargo build --release"}'
+hkwait "cargo build"
+ck "the hook narrates what the step is about to do" "SPOKE[narration]: รัน cargo build" \
+   "$(cat "$HK" 2>/dev/null)"
+# A PreToolUse hook's stdout can reach the MODEL. A narration echoed back would become part of the
+# conversation it describes — and a non-empty stdout on this event is one step from steering the run.
+ck "…and prints nothing at all on stdout" EMPTY "$(cat "$T/hook.out" 2>/dev/null)"
+# Silence is proved by a SENTINEL, not by sleeping: fire the quiet tool, then a tool that must speak,
+# and wait for the sentinel's line. A `sleep 1` here would be both slower and a coin flip on a loaded
+# machine, which is how the case above was flaky in the first place.
+: > "$HK"
+hnar "$(_s hk2)" PreToolUse TodoWrite '{}'
+hnar "$(_s hk3)" PreToolUse Bash '{"command":"git status"}'
+hkwait "git status"
+ck "a bookkeeping tool is silent before the call too" 1 "$(wc -l < "$HK" | tr -d ' ')"
+ck "…and the line that DID land is the other tool's" "รัน git status" "$(cat "$HK" 2>/dev/null)"
+
+echo "== the queue keeps a BACKLOG of narrations, and drops the OLDEST first =="
+# The rule that actually made `max` skip actions: narration used to be superseded down to the NEWEST
+# job per session, so a burst of five steps queued five lines and played one. Jobs are written
+# straight into the spool because `enqueue` drains immediately and so can never build a backlog to
+# prune — this is the drain-time policy under test, not the producer's.
+Q="$T/scripts/voice/queue.sh"
+SPOOL="$T/cache/spool"; mkdir -p "$SPOOL"
+rm -f "$T/cache/played" "$T/cache/last-spoken.json" "$SPOOL"/*.json
+NOWQ="$(date +%s)"
+for i in 1 2 3 4 5; do
+  printf 'audio%s' "$i" > "$T/cache/n$i.mp3"
+  jq -n --argjson ts "$((NOWQ - 5 + i))" --arg a "$T/cache/n$i.mp3" \
+     '{ts:$ts, kind:"narration", session:"qsess", audio:$a, prefix:"", text:"x"}' \
+     > "$SPOOL/$((NOWQ - 5 + i))-0$i-narration.json"
+done
+"$Q" drain >/dev/null 2>&1
+ck "three of five survive — the depth, not one" 3 "$(wc -l < "$T/cache/played" | tr -d ' ')"
+ck "…and the newest is among them" "n5.mp3" "$(cat "$T/cache/played" 2>/dev/null)"
+ck "the OLDEST is the one dropped" 0 "$(grep -c 'n1.mp3' "$T/cache/played" 2>/dev/null || true)"
+rm -f "$T/cache/played"
 
 echo "== tool-fact.py fixtures =="
 if python3 "$SRC/scripts/voice/tool-fact.py" --selftest >/dev/null 2>&1; then

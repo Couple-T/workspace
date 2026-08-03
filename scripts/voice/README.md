@@ -10,7 +10,7 @@ something lands, and push-to-talk dictation. Same shape as the other adapters �
 directly by a skill or agent that could just as well go through the entry script.
 
 **Status: complete and in use.** The core, cues, the per-prompt acknowledgement, the closing
-line, the per-step narration, Slack voice notes and push-to-talk dictation are all built.
+line, the mid-turn narration, Slack voice notes and push-to-talk dictation are all built.
 Dictation still needs four **manual** steps before it works — `aiworks voice ptt install`
 prints them, and `aiworks voice ptt doctor` says which one is missing.
 
@@ -508,9 +508,10 @@ an odd, disembodied interruption, and the reason is structural rather than a mat
 fires whether or not anything happened, so it narrates a 3-second step never and a 90-second step
 twice, and it can only name whichever tool it happens to catch — never why that tool.
 
-Mid-turn speech is now the **step narrator** (below): `chattiness: max` only, one short line per step,
-spoken because the WORK moved — plus the **thresholds** (a step failed, it failed again, the turn is
-long) and the **gate voice** (something is waiting for you), which are events for the same reason. At
+Mid-turn speech is now the **conclusion narrator** (below): `chattiness: max` only, one line each time
+something is WORKED OUT, spoken because the work moved forward rather than because time passed — plus
+the **thresholds** (a step failed, it failed again, the turn is long) and the **gate voice**
+(something is waiting for you), which are events for the same reason. At
 every other level nothing is spoken between the ack and the closing line except a gate, which is
 level-independent because "this is waiting for you" is not a matter of talkativeness.
 
@@ -602,7 +603,7 @@ overridable per call with `VOICE_CHATTINESS` or `summarize.sh --chattiness`.
 
 **Scope: how much, never whether.** "Whether" has four switches already; a fifth that could also
 produce silence would give "why is it quiet?" five answers. `terse`…`chatty` reach the **ack +
-closing line** only; `max` also turns on the **step narrator** (`narrate.sh`), which is the only
+closing line** only; `max` also turns on the **mid-turn narrator** (`narrate.sh`), which is the only
 mid-turn voice the feature has. The Slack voice note stays one canonical sentence at every level,
 because its repetition is what makes it free.
 
@@ -611,7 +612,7 @@ because its repetition is what makes it free.
 | `terse` | 1 | 90 | 120 | none — facts only. **The shipped prompt, byte for byte** |
 | `balanced` | ≤2 | 140 | 200 | + softener (`ให้นะคะ`) + 1–2 word reaction (`ได้ค่ะ`) + 2nd fact |
 | `chatty` | ≤3 | 200 | 280 | + 3rd fact + follow-through (what will be reported / what waits) |
-| `max` | ≤4 | 260 | 360 | + **step narration** — the order of the work, one status per step — + a spoken line per step *during* the turn |
+| `max` | ≤4 | 260 | 360 | + **step order** in the ack — + a **conclusion spoken during the turn** each time something is worked out: the finding, its cause, the next move |
 
 **The ladder above `terse` is the ROOT checkout's alone.** `voice_chattiness` clamps a linked worktree
 to `terse` whatever the config resolves to, off the same `VOICE_MAIN_CLONE` (`--git-common-dir`) test
@@ -620,7 +621,7 @@ layer 2 of the config chain uses — and it has to, because that layer *delibera
 back to the shared `terse`. The worktree session is usually the unwatched one (a background
 `dev-cycle`, a slack-dispatch job) and `max` is the level that speaks per STEP; both checkouts share
 one spool and one pair of speakers, so two `max` sessions queue rather than take turns. Since
-`narrate.sh` gates on `== max`, the step narrator switches off in a worktree as a consequence rather
+`narrate.sh` gates on `== max`, the mid-turn narrator switches off in a worktree as a consequence rather
 than as a second rule to keep in sync. `VOICE_CHATTINESS` is **not** clamped — a human typing one
 audition or one test is per-invocation intent, not a machine preference. `aiworks voice status` prints
 the configured level and the owning checkout when the two disagree. Owner:
@@ -678,26 +679,56 @@ level specified as "unchanged" really is. The word `single` in *"the single most
 is likewise kept only at `terse` — at three sentences there is room for two figures and pinning it to
 one would throw the second away.
 
-### The step narrator (`narrate.sh`) — `max` only
+### The mid-turn narrator (`narrate.sh`) — `max` only
 
-`PostToolUse` and `PostToolUseFailure` → `narrate.sh`, detached, one temp file carrying the hook
-payload (the response can be a whole file's contents, so argv is not an option and the reader deletes
-the file — including before an `exec`, which the `EXIT` trap never sees).
+`PreToolUse`, `PostToolUse` and `PostToolUseFailure` → `narrate.sh`, detached, one temp file carrying
+the hook payload (the response can be a whole file's contents, so argv is not an option and the reader
+deletes the file — including before an `exec`, which the `EXIT` trap never sees). The `PreToolUse` side
+sits between the model and its tool, so what makes it safe there is the shape of the hook: it exits 0
+on every path, prints nothing on stdout, and forks. See the header of
+`.claude/hooks/voice-narrate.sh` — the objection is written down next to what answers it.
 
-**`narrate_source: facts` (default)** builds the line from the tool's own response via
-`tool-fact.py` — subject, state, figure:
+**`narrate_source: insight` (default)** speaks one line per thing WORKED OUT, from the assistant's own
+reasoning block, via `summarize.sh --kind insight`:
 
-| step | spoken |
-|---|---|
-| `Read queue.sh` | `queue.sh อ่านแล้ว 260 บรรทัด` |
-| `Bash cargo test` green / red | `cargo test ผ่าน 42` / `cargo test ตก 3 ผ่าน 39` |
-| `Grep voice_cfg` | `voice_cfg เจอ 14 แห่ง` |
-| `Edit narrate.sh` | `narrate.sh แก้แล้ว 12 บรรทัด` |
-| `Glob **/*.sh` | `เจอ 42 ไฟล์` |
-| `Agent Explore` | `agent Explore ตอบแล้ว` |
-| `WebFetch` | `ดึง code.claude.com แล้ว` |
-| `mcp__pg_triage__execute_sql` | `pg triage execute sql ตอบ 5 แถว` |
-| `TodoWrite`, `ToolSearch`, `TaskList`, … | *nothing* — `SKIP_TOOLS`, because a line per bookkeeping call is a metronome |
+> *root cause คือ submodule pointer ค้างที่ APP-631 เพราะ teardown.sql พัง จะ bump แล้วรัน scoped test ใหม่ค่ะ*
+
+The unit is a **conclusion**, not a tool call. Three gates, and the first two are what make it usable:
+
+| gate | rejects | cost |
+|---|---|---|
+| `MIN_BLOCK` = 100 chars | a preamble (*"อ่าน queue.sh ก่อน"*) cannot hold a finding | free |
+| the model answering `NONE` | a long block that is still only mechanics | one cheap-model call |
+| the BLOCK's hash (`iblk`) | the same block, re-seen by every following tool call | free — the one dedupe that saves money, not just noise |
+
+`NONE` is a **token to emit**, not an instruction to be quiet: told to "reply with nothing", the model
+answered a mechanical block with an invented completion *and* an invented review request. The refusal
+also has to be the **first** line of the prompt — the persona, ceiling, particle and closing "output
+the sentence only" all push toward producing a sentence, so a refusal in the middle loses. Measured
+after both fixes: 3/3 refusals on two mechanical blocks, 3/3 conclusions on a real finding. It
+**never falls back** to the step sources, or *รัน cd* returns one silence at a time.
+
+**`narrate_source: facts`** builds both of a step's lines from the call's own payload via
+`tool-fact.py` — verb-first before, then subject/state/figure after. This was the default until the
+person it was built for said *not every command you will run and every result for every command*:
+
+| step | before (`PreToolUse`) | after (`PostToolUse`) |
+|---|---|---|
+| `Read queue.sh` | `อ่าน queue.sh` | `queue.sh อ่านแล้ว 260 บรรทัด` |
+| `Bash cargo test` green / red | `รัน cargo test` | `cargo test ผ่าน 42` / `cargo test ตก 3 ผ่าน 39` |
+| `Grep voice_cfg` | `ค้น voice_cfg` | `voice_cfg เจอ 14 แห่ง` |
+| `Edit narrate.sh` | `แก้ narrate.sh` | `narrate.sh แก้แล้ว 12 บรรทัด` |
+| `Glob **/*.sh` | `หาไฟล์ .sh` | `เจอ 42 ไฟล์` |
+| `Agent Explore` | `เรียก agent Explore` | `agent Explore ตอบแล้ว` |
+| `WebFetch` | `ดึง code.claude.com` | `ดึง code.claude.com แล้ว` |
+| `mcp__pg_triage__execute_sql` | `ถาม pg triage execute sql` | `pg triage execute sql ตอบ 5 แถว` |
+| `TodoWrite`, `ToolSearch`, `TaskList`, … | *nothing* | *nothing* — `SKIP_TOOLS`, because a line per bookkeeping call is a metronome |
+
+Neither a glob nor a regex is read aloud on the before-side (`หาไฟล์ .sh`, not `**/*.sh`): punctuation
+spoken by a TTS engine is noise, and the extension is the only speakable part of a pattern. An intent
+is **always `info`** — a call that has not run cannot have failed — and `fact()` dispatches on the
+event itself, so a `PreToolUse` payload cannot reach the result templates and come back saying
+`อ่านแล้ว 0 บรรทัด`. Own switch: `narrate_intent`, `true` by default.
 
 Test figures are read out of the runner's OWN summary line — cargo (`test result: ok. 42 passed`),
 jest (`Tests: 3 failed, 42 passed`), mocha/cypress (`42 passing`), pytest — so a figure is spoken only
@@ -705,20 +736,23 @@ when a runner printed it. A failure is decided **before** the success templates 
 `{"is_error": true}` says `gone.txt อ่านไม่ได้` rather than counting the error envelope as one line of
 content (measured: it did, once).
 
-**`narrate_source: prose`** is the earlier mechanism, now the fallback in both directions: the
+**`narrate_source: prose`** is the earliest mechanism, and the fallback for the two step sources: the
 assistant's own line from before the call ("อ่าน `queue.sh` ก่อน แล้วค่อยแก้ cadence"). Text and
 `tool_use` never share one assistant message — measured, 0 of 2 534 in a real session — so "the last
-text block in the file" is exactly the line that introduced the step that just ran. It is free and
-true, but it is an **intention**, and only ~1 call in 5 has one in front of it.
+text block in the file" is exactly the line that introduced the step that just ran. Free and true, but
+only ~1 call in 5 has one in front of it, and it says the mechanical ones too — which is the whole
+difference between it and `insight`, since both read the same block.
 
 | rule | value | why |
 |---|---|---|
+| content gates | `insight` only | length, then `NONE`, then the block hash. The rule that does the work now: the channel is quiet because there is nothing to conclude, not because a clock says so |
 | dedupe by hash | — | never the same line twice in a row. With `prose` one block introduces several calls (314 blocks / 1 523 calls ≈ 1 per 5, measured); with `facts` it catches three Reads of one file |
-| producer rate floor | `narrate_gap`, 4 s | tool calls fire several per second; a fact line takes 2–3 s to speak. Was 9 s, which let a ten-call burst say two things |
+| queue staleness | 12 s | a line about work that finished three steps ago describes the wrong moment |
+| queue depth | 3 per session, oldest dropped | the load-shedding that matters, and it belongs on the playback side — only there is it knowable how far behind the voice is. Was **1** (supersede-to-newest), which is what made a burst of five steps speak once. Matters under `facts`; a conclusion rarely queues |
+| producer rate floor | `narrate_gap`, **0 = off** | 9 → 4 → 0. Under `facts` any floor drops one half of every pair (the two arrive ~1 s apart); under `insight` there is nothing left to throttle |
 | queue rate floor | the same key | counts utterances from other kinds and other worktrees, which the producer cannot see. Two floors, ONE number — when they disagreed (7 vs 9) the shorter was dead code |
-| per-turn cap | `narrate_max_per_turn`, 25 | the cost ceiling. Logged when it bites (`-v`), never silent |
-| queue staleness | 12 s | a fact about a step that finished three steps ago describes the wrong moment |
-| char cap | 60 facts / 90 prose / 110 threshold | ~4 s of Thai speech for a step; a threshold line prefixes the fact and its tail is the informative half |
+| per-turn cap | `narrate_max_per_turn`, **0 = off** | a cliff, not a throttle: past line N the turn goes silent. Set a number to bound spend; logged when it bites (`-v`), never silent |
+| char cap | 170 insight / 34 intent / 60 facts / 90 prose / 110 threshold | a conclusion needs room for a because-clause and the next move (the summarizer caps itself at 160); a step pair has to fit inside the step it describes |
 
 ### Thresholds and the gate voice
 
@@ -752,9 +786,12 @@ line is the worse failure, since a long one is merely cut while a thin one says 
 It stays quiet once the turn has **ended** (the closing line owns the end), on a `VOICE[...]` tag
 block (same reason), and at every level except `max`.
 
-Regression suite: `scripts/voice/narrate-selftest.sh` — **40 cases** over the narrator, both sources,
-the thresholds and the gate voice, in a throwaway tree with its own config and a stubbed `speak.sh`, so
-it costs nothing; it also runs `tool-fact.py --selftest` (22 fixtures). Session ids are **run-scoped**
+Regression suite: `scripts/voice/narrate-selftest.sh` — **83 cases** over the narrator, all three
+sources, the insight gates (including *no summarizer call was made*, which is a file test on the stub's
+own log), the before/after pair, both throttles (off by default *and* still working when set), the
+queue's own drop rules, the real `PreToolUse` hook, the thresholds and the gate voice, in a throwaway
+tree with its own config and a stubbed `speak.sh`, so it costs nothing; it also runs
+`tool-fact.py --selftest` (36 fixtures). Session ids are **run-scoped**
 on purpose: narration state is machine-global and keyed by session, so fixed ids leaked the previous
 run's dedupe state into the next one, which is how the suite first went red on its own second run.
 
@@ -982,15 +1019,16 @@ the identity prefix most. Block style only — the reader does not parse flow st
 | `voice.autoplay.enabled` | `false` | master switch for local speech |
 | `voice.autoplay.ack` | `true` | the per-prompt acknowledgement |
 | `voice.autoplay.milestones` | `true` | the closing line on a finished turn |
-| `voice.autoplay.narrate` | `true` | the `max` step narrator: one short line per tool call. Inert at every other level |
-| `voice.autoplay.narrate_source` | `facts` | `facts` (the tool's own response — a subject and a figure) \| `prose` (the assistant's sentence before the call — an intention). Each is the other's fallback |
-| `voice.autoplay.narrate_gap` | `4` | seconds between narrated lines (1–60) — the frequency dial, used by BOTH the producer and the queue |
-| `voice.autoplay.narrate_max_per_turn` | `25` | lines per turn (1–200) — the cost ceiling |
+| `voice.autoplay.narrate` | `true` | the `max` mid-turn narrator: a spoken CONCLUSION each time something is worked out. Inert at every other level |
+| `voice.autoplay.narrate_intent` | `true` | the BEFORE half of that pair. `false` = results only, which leaves every wait unexplained |
+| `voice.autoplay.narrate_source` | `insight` | `insight` (a CONCLUSION from the assistant's own reasoning block — mostly silent, since a block that only announces a step is refused) \| `facts` (the step metronome: the command it is about to run, then the figure it returned; zero tokens, and too much to listen to) \| `prose` (the assistant's sentence before the call, verbatim). `facts` and `prose` fall back to each other; `insight` never falls back |
+| `voice.autoplay.narrate_gap` | `0` | seconds between narrated lines (0–60), **0 = no floor**. A number drops one half of every pair. Used by BOTH the producer and the queue |
+| `voice.autoplay.narrate_max_per_turn` | `0` | lines per turn (0–500), **0 = no ceiling**. A number bounds a turn's spend, at the cost of the turn going silent past it |
 | `voice.autoplay.thresholds` | `true` | speak unbidden on a failed step (red, bypasses the floor), a repeat failure, and a long turn |
 | `voice.autoplay.long_turn_seconds` | `300` | when a still-running turn is worth saying once (30–3600), and once more at 3× |
 | `voice.autoplay.gates` | `true` | speak when something is BLOCKED on you: permission prompt, plan approval, auto-mode denial. Never plain idle — that is not a gate. Independent of `chattiness` |
 | `voice.autoplay.milestone_every_turn` | `true` | false ⇒ only an explicit `VOICE:` tag speaks (was `milestone_backstop`, still read in its `false` position) |
-| `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also turns on the step narrator + thresholds and is the only level that narrates the process; its ack/closing line are SHORTER than `chatty`'s on purpose. **ROOT CHECKOUT ONLY** — a linked worktree is clamped to `terse` (it inherits this key from the root's local config, shares one spool, and is usually the session nobody is watching) |
+| `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also turns on the mid-turn narrator + thresholds and is the only level that narrates mid-turn; its ack/closing line are SHORTER than `chatty`'s on purpose. **ROOT CHECKOUT ONLY** — a linked worktree is clamped to `terse` (it inherits this key from the root's local config, shares one spool, and is usually the session nobody is watching) |
 | `voice.notify_voice.enabled` | `false` | a voice note on the Slack post — the ONLY switch for it; neither mute (by hand or by the OS) reaches it |
 | `voice.push_to_talk.enabled` | `false` | hold-to-dictate |
 | `voice.push_to_talk.hotkey` | `right_cmd+right_alt` | the chord; baked into the Lua by `ptt install` |
