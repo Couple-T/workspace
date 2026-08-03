@@ -119,9 +119,14 @@ voice_cfg_bool voice.autoplay.narrate true || { vlog "narrate skipped: voice.aut
 [[ "$(voice_chattiness)" == "max" ]] || { vlog "narrate skipped: chattiness is $(voice_chattiness), not max"; exit 0; }
 SOURCE="$(voice_narrate_source)"
 # The BEFORE half of a STEP pair — `narrate_source: facts` only, since that is the only source with
-# steps in it. Under `insight` the PreToolUse event is not an intent line at all: it is the earliest
-# moment the assistant's newest reasoning block can be seen, so a conclusion is spoken as the work
-# starts instead of after the first step of it finishes.
+# steps in it. Under `say`/`insight` the PreToolUse event is not an intent line at all — it is simply
+# another chance to notice a named line.
+#
+# AND IT IS USUALLY THE POST EVENT THAT NOTICES, which is worth knowing before optimising for the
+# other one: measured, the block containing a tag is NOT yet in the transcript when PreToolUse fires
+# for the tool call right after it, so the claim lands on that call's PostToolUse instead. A named
+# line therefore arrives when the first step after it FINISHES, not as it starts. Both events are
+# wired because either can be the one that sees it, and `iblk` makes the second a no-op.
 INTENT=0
 if [[ "$EVENT" == "PreToolUse" ]]; then
   if [[ "$SOURCE" == "facts" ]]; then
@@ -231,12 +236,51 @@ MIN_BLOCK=45
 # one. The assistant does know. So the tag is the primary path and the summarizer is the fallback:
 # no tag ⇒ a stricter judgement that errs toward silence.
 _say_group() { printf '%s' "$1"; }
+# The last FEW blocks, newest first — not just the last one. A hook fires between tool calls, and the
+# assistant writes prose between them too, so a tag can stop being "the last block" before any hook
+# gets a transcript with it flushed in: measured live, a tagged block was overtaken by four later
+# plain blocks and never spoken, while the same tag one turn earlier worked. Scanning back a few
+# blocks costs one jq call and the `iblk` dedupe already stops a tag being spoken twice, so the only
+# thing this changes is whether a named line can be LOST.
+SAY_LOOKBACK=5
+# BOUNDED TO THIS TURN, which the first version was not, and the live run caught that at once: a `SAY`
+# tag in the FINAL block of a reply is never spoken during its own turn (no tool call follows it, and
+# the closing line owns the end of a turn), so the lookback found it on the NEXT turn's first tool call
+# and spoke it there. Measured: iblk came back holding the hash of the previous turn's closing tag
+# before this turn had named anything. A line about work the user has already been told about,
+# delivered just after they typed something else, is the "monologue about the past" this channel exists
+# to avoid.
+#
+# Transcript records carry an ISO timestamp, so the bound is exact rather than a guess at depth.
+# Fractional seconds are stripped (fromdateiso8601 rejects them) and the conversion is wrapped in
+# try/catch, so one malformed record cannot silence the channel.
+_recent_prose() {
+  jq -rs --argjson n "$SAY_LOOKBACK" --argjson t0 "${TURN:-0}" '
+    [.[] | select(.type=="assistant")
+         | select(((((.timestamp // "") | sub("\\.[0-9]+Z$"; "Z")) | (try fromdateiso8601 catch 0)) // 0) >= $t0)
+         | .message.content[]? | select(.type=="text") | .text]
+    | .[-$n:] | reverse | .[]
+    | gsub("\n"; "")' "$TRANSCRIPT" 2>/dev/null || printf ''
+}
+
 _try_say() {
   [[ -n "$TRANSCRIPT" && -f "$TRANSCRIPT" ]] || return 1
   local block line hash
-  block="$(_last_prose)"
-  [[ -n "$block" ]] || return 1
-  line="$(printf '%s\n' "$block" | grep -m1 -E '(^|[[:space:]>*_`-])SAY(\[[a-z-]+\])?:[[:space:]]*.' || true)"
+  # Newest block first, so the most recent unclaimed tag wins.
+  line=""
+  while IFS= read -r block; do
+    [[ -n "$block" ]] || continue
+    # FENCED CODE IS NOT PROSE, and skipping this was a real bug: quoting a voice log or a test's
+    # output in a reply — which is how this channel gets discussed at all — put a `SAY[...]:` string
+    # inside a code block, and the scanner grepped it out and SPOKE it. Measured: iblk came back
+    # holding the hash of "ไม่หายแล้วครับ n ขยับหนึ่งขั้น…   ← เข้าถึงได้", which is a fragment of this
+    # script's own probe output pasted into a fence, not a line anyone named. A tag is something the
+    # assistant WRITES as prose; a tag inside a fence is something it is TALKING ABOUT.
+    line="$(printf '%s\n' "${block//$'\001'/$'\n'}" \
+            | awk '/^[[:space:]]*```/ { f = !f; next } !f' \
+            | grep -m1 -E '(^|[[:space:]>*_`-])SAY(\[[a-z-]+\])?:[[:space:]]*.' || true)"
+    [[ -n "$line" ]] && break
+  done < <(_recent_prose)
   [[ -n "$line" ]] || return 1
   local text
   text="$(printf '%s' "$line" | sed -E 's/^.*SAY(\[[a-z-]+\])?:[[:space:]]*//')"
