@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "./.cursor/hooks/hook-shim.sh 'command -v sonar >/dev/null 2>&1 || exit 0; sonar hook claude-pre-tool-use'",
+        "timeout": 60,
+        "matcher": "Read"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh 'command -v rtk >/dev/null 2>&1 || exit 0; rtk hook claude'",
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh'",
+        "timeout": 30,
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-cd-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-git-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-submodule-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-notify-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-codegraph-guard.sh'",
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-adapter-pipe-guard.sh'",
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh'",
+        "timeout": 10,
+        "matcher": "Read"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-plan-path-guard.sh'",
+        "timeout": 10,
+        "matcher": "Write|Edit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-config-comment-guard.sh'",
+        "timeout": 10,
+        "matcher": "Write|Edit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-submodule-guard.sh'",
+        "timeout": 10,
+        "matcher": "Write|Edit|NotebookEdit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-repo-context.sh'",
+        "timeout": 10,
+        "matcher": "Read|Write|Edit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-agent-brief-guard.sh'",
+        "timeout": 10,
+        "matcher": "Task"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-agent-context.sh'",
+        "timeout": 10,
+        "matcher": "Task"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-gate.sh'",
+        "timeout": 10,
+        "matcher": "ExitPlanMode"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh'",
+        "timeout": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-output-warden.sh'",
+        "timeout": 30,
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-repo-context.sh'",
+        "timeout": 10,
+        "matcher": "Read|Write|Edit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-codegraph-sync.sh'",
+        "matcher": "Write|Edit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-workflow-compile.sh'",
+        "matcher": "Write|Edit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stagehand-show.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh'",
+        "timeout": 10
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "./.cursor/hooks/hook-shim.sh 'command -v sonar >/dev/null 2>&1 || exit 0; sonar hook claude-prompt-submit'",
+        "timeout": 60
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/resolve-language.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/repo-health-check.sh'",
+        "timeout": 15
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-ack.sh'",
+        "timeout": 10
+      }
+    ],
+    "sessionStart": [
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '.superset/mcp-services.sh up'"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/resolve-language.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/repo-health-check.sh'",
+        "timeout": 15
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/redis-triage-tunnel-reap.sh'",
+        "timeout": 15
+      }
+    ],
+    "stop": [
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/slack-postback.sh'",
+        "timeout": 30
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-milestone.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stagehand-follow.sh'",
+        "timeout": 10
+      }
+    ]
+  }
+}
