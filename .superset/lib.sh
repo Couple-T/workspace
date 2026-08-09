@@ -428,6 +428,104 @@ ensure_pnpm() {
   return 0
 }
 
+# Ensure the `dap` CLI is installed. `dap` is a Debug Adapter Protocol client the debugging-code
+# skill drives to attach to / step a running program over DAP. Best-effort + idempotent: present →
+# no-op; otherwise install. NEVER fatal to setup — only the debugging-code skill needs it, and
+# that skill degrades on its own if dap is absent. macOS bash 3.2 safe. Install prefers the
+# Homebrew tap (mac + Linuxbrew: `AlmogBaku/tap/dap`) → the official cross-platform install script.
+ensure_dap() {
+  if command -v dap >/dev/null 2>&1; then
+    log "dap already installed ($(dap --version 2>/dev/null | head -1))."
+    return 0
+  fi
+  log "dap not found — installing…"
+  # Homebrew's tap is dap's canonical install on BOTH macOS and Linuxbrew (brew is already
+  # assumed — setup needs `mani` via brew). Fall back to the official install script otherwise.
+  if command -v brew >/dev/null 2>&1; then
+    run_glance "dap: brew install" brew install AlmogBaku/tap/dap \
+      || { warn "brew install AlmogBaku/tap/dap failed — falling back to the official install script."; install_dap_script; }
+  else
+    warn "Homebrew not found — falling back to the official dap install script."
+    install_dap_script
+  fi
+  if command -v dap >/dev/null 2>&1; then
+    log "dap installed ($(dap --version 2>/dev/null | head -1))."
+  else
+    warn "dap still not on PATH after install — the debugging-code skill needs it. Install it by hand (brew install AlmogBaku/tap/dap); if the install script ran, open a new shell so its PATH edit takes effect."
+  fi
+  return 0
+}
+
+# Ensure every plugin this workspace declares in .claude/settings.json `enabledPlugins` is
+# actually INSTALLED, at USER scope. Best-effort + idempotent. macOS bash 3.2 safe.
+#
+# Why this exists: declaring a plugin in a committed settings.json is NOT installing it —
+# measured, and it is the kind of thing that reads as working. With `enabledPlugins` +
+# `extraKnownMarketplaces` present in a repo's settings.json, a session opened in that repo
+# still answered NOT-FOUND for `caveman:caveman`, while the workspace root (where the plugin
+# was genuinely installed) answered AVAILABLE. Same probe, so the difference is the install.
+#
+# USER scope, not project: one install then covers the workspace root AND every repo clone
+# AND any other project — a repo-only session is a first-class way to work here (see
+# docs/agents/submodules.md and the Cursor doc's "open one repo at a time"), and caveman is
+# supposed to hold no matter where a session starts. Project scope would mean one install per clone
+# that drift apart.
+#
+# This matters most for caveman: it is the workspace's output-compression baseline, preloaded
+# by all 16 agent definitions. Without the install those 16 preloads resolve to nothing.
+ensure_claude_plugins() {
+  command -v claude >/dev/null 2>&1 || { log "claude CLI not found — skipping plugin install."; return 0; }
+  command -v jq >/dev/null 2>&1     || { warn "jq unavailable — cannot read enabledPlugins; install workspace plugins by hand (claude plugin install <plugin>@<marketplace> -s user)."; return 0; }
+  # setup.sh cd's to the workspace root before anything runs (`cd "$(dirname "$0")/.."`), and
+  # the rest of lib.sh anchors on $PWD for the same reason. Not SUPERSET_ROOT_PATH — that is a
+  # DIFFERENT thing (the source worktree a fresh one copies its local state from).
+  local settings="$PWD/.claude/settings.json"
+  [[ -f "$settings" ]] || { log "no .claude/settings.json — no plugins declared."; return 0; }
+
+  local reg="$HOME/.claude/plugins/installed_plugins.json" key mp src
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    # The registry's schema has already changed once under us (a flat map became
+    # {version, plugins:{…}}), so read both shapes rather than the current one.
+    if [[ -f "$reg" ]] && jq -e --arg k "$key" \
+         '(((.plugins // .)[$k]) // []) | any(.scope == "user")' "$reg" >/dev/null 2>&1; then
+      log "plugin $key already installed (user scope)."
+      continue
+    fi
+    mp="${key#*@}"
+    # A marketplace the workspace declares may be unknown to this machine. Add it from
+    # extraKnownMarketplaces before installing, or the install has nowhere to resolve from.
+    if ! claude plugin marketplace list 2>/dev/null | grep -q "$mp"; then
+      src="$(jq -r --arg m "$mp" '(.extraKnownMarketplaces[$m].source.repo) // empty' "$settings" 2>/dev/null)"
+      if [[ -n "$src" ]]; then
+        run_glance "plugin: marketplace add $mp" claude plugin marketplace add "$src" \
+          || warn "could not add marketplace $mp ($src) — $key will not install."
+      else
+        warn "marketplace $mp is unknown and .claude/settings.json declares no source for it — $key will not install."
+      fi
+    fi
+    run_glance "plugin: install $key" claude plugin install "$key" -s user \
+      || warn "claude plugin install $key -s user failed — install it by hand, or agents that preload it get nothing."
+  done < <(jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value == true) | .key' "$settings" 2>/dev/null)
+  return 0
+}
+
+# Install dap via the official cross-platform (macOS + Linux) install script — the no-Homebrew
+# and brew-install-failed fallback. The script self-detects os/arch and drops the binary onto
+# PATH (we surface the common user-local bin dirs afterward so ensure_dap's check sees it in
+# THIS shell). Returns non-zero on any failure so ensure_dap's final PATH check warns.
+install_dap_script() {
+  command -v curl >/dev/null 2>&1 || { warn "dap: curl unavailable — install by hand: brew install AlmogBaku/tap/dap"; return 1; }
+  run_glance "dap: official install script" \
+    sh -c 'curl -fsSL https://raw.githubusercontent.com/AlmogBaku/debug-skill/master/skills/debugging-code/scripts/install-dap.sh | bash' \
+    || { warn "dap: install script failed — install by hand: brew install AlmogBaku/tap/dap"; return 1; }
+  local d
+  for d in "$HOME/.local/bin" "$HOME/bin"; do
+    if [[ -x "$d/dap" && ":$PATH:" != *":$d:"* ]]; then export PATH="$d:$PATH"; fi
+  done
+  return 0
+}
+
 # Runtime state for background (non-docker) apps, per product.
 # Set by run.sh/teardown.sh before sourcing a product file.
 runtime_dirs() {  # <product>

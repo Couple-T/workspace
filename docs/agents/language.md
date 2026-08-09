@@ -113,7 +113,28 @@ artifact the next-phase agent reads); the same content posted into a ticket body
   the long role description above it). Still not fully deterministic on its own: a couple of roles
   occasionally skip the Read and mis-resolve to `en`. Treat this as a strong reinforcement, not a
   guarantee, for any role invoked directly (e.g. via `/review`) outside a workflow; the workflow
-  path below is the deterministic one.
+  path below is the deterministic one. **Superseded as the primary channel for a direct spawn by
+  the `Agent` hook below** — it stays as the fallback for a session with no hooks (a stripped
+  environment, or Cursor, where the rewrite is ignored).
+- **`.claude/hooks/dev-wrapper/pretool-agent-context.sh`** (`PreToolUse(Agent)`, added
+  2026-07-26) resolves the language itself — local file first — and APPENDS the same
+  `LANGUAGE_DIRECTIVE` text the workflows use to the spawn brief, rewriting `tool_input.prompt`
+  via `hookSpecificOutput.updatedInput`. This makes a DIRECT `Agent` spawn as deterministic as a
+  workflow one, closing the last hole: the imperative block above still let two of five probe
+  agents announce `Language resolved: en (workspace.config.yaml)` on a workspace resolved to `th`,
+  having read the shared file and never the personal override. The hook emits the WHOLE
+  `tool_input` with only `prompt` replaced (dropping `subagent_type` would silently spawn a
+  different agent), skips injection when the prompt already carries a `LANGUAGE_DIRECTIVE` (so a
+  workflow's value is never doubled or overridden), and injects nothing when the resolved language
+  is `en`. **Verified live, from the subagent's own transcript rather than its self-report:** the
+  directive was present in the spawned agent's prompt — and worth knowing, that same agent
+  answered "no directive token" while correctly reporting the injected language, so a subagent's
+  account of its own instructions is not evidence.
+  Same hook also carries `CAVEMAN_DIRECTIVE` for a definition-less agent type
+  (`general-purpose`, `Explore`, `Plan`), which has no frontmatter to preload it from.
+  **Not effective in Cursor:** the shim translates `updatedInput` to `updated_input` correctly
+  (asserted offline) but Cursor ignores it on `Task` — measured, so a Cursor session falls back to
+  the agent-file block plus `AGENTS.md`.
 - **Prose-producing skills** (`.claude/skills/*/SKILL.md`) that compose a user-facing artifact
   themselves ALSO lead their body — right under the title — with the same `## Output language`
   block: ticket bodies & comments (`clarifying-ticket`, `to-prd`, `update-ticket`,
@@ -130,7 +151,9 @@ artifact the next-phase agent reads); the same content posted into a ticket body
   block. Built-in commands (`/code-review`, `/security-review`) have no editable `SKILL.md`, so they
   rely on the agent-file block only.
 - **`dev-cycle.js` / `prd.js` / `brd.js`** (headless) each run a small dedicated resolver
-  sub-agent (`documentor`, label `resolve-language`) as their FIRST step — its only job is to
+  sub-agent (`documentor`, labelled `resolve-runtime-config` in `dev-cycle.js` — it resolves
+  `planning.to_html` in the same Read — and `resolve-language` in `prd.js` / `brd.js`, which need
+  language only) as their FIRST step — its only job is to
   Read `workspace.config.local.yaml` else `workspace.config.yaml` and return the resolved value.
   This is deterministic where the per-agent pointer above is not: a single-purpose check is far
   more reliable than asking every busy prose-writing agent to remember its own. The result feeds

@@ -14,7 +14,12 @@
 #   JIRA_SPRINT_FIELD     optional custom-field id for --sprint (the Agile "Sprint" field).
 #                     Read as the current/last sprint's id+name; written as a bare sprint id
 #                     (an integer, not the array GET returns) — e.g. copy an original ticket's
-#                     sprint onto a freshly split-off piece.
+#                     sprint onto a freshly split-off piece. --sprint takes ONLY that raw id,
+#                     never a name/number — resolve "Sprint 72" -> id with
+#                     jira/discover-sprints.sh 72 (Agile API; never hand-roll a curl against
+#                     it — see docs/agents/issue-tracker.md and the workspace .env guard).
+#   JIRA_BOARD_ID     optional Agile board id for discover-sprints.sh, to skip its board
+#                     auto-discovery (only needed with more than one board per project).
 #                     find the ids with jira/discover-fields.sh; when one is unset the
 #                     matching flag is WARNed + listed under "Skipped:" (not dropped silently).
 #   JIRA_SUBTASK_ISSUETYPE optional sub-task issue type NAME for --subtask (e.g. "Sub-task").
@@ -115,7 +120,7 @@ tracker_get_details() {
   key="$(jira_key "$1")"
   # Append the configured point/effort field ids so the estimate is visible (e.g. for
   # /estimate-ticket re-estimation) — the endpoint returns only the fields requested.
-  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent,issuelinks"
+  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent,issuelinks,attachment"
   for f in "$JIRA_DEV_POINTS_FIELD" "$JIRA_QA_POINTS_FIELD" "$JIRA_EFFORT_FIELD" "$JIRA_SPRINT_FIELD"; do
     [[ -n "$f" ]] && fields_q="$fields_q,$f"
   done
@@ -231,15 +236,17 @@ tracker_upsert() {
   # carried from the previous description is re-appended so images survive the rewrite.
   jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" --arg ef "$JIRA_EFFORT_FIELD" \
     --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg sf "$JIRA_SPRINT_FIELD" --arg body "$body_md" \
+    --arg base "$JIRA_BASE_URL" --arg prefix "$JIRA_PROJECT_KEY" \
     --argjson media "$existing_media" '
     include "jira";
-    {}
+    ({base:$base, prefix:$prefix}) as $ctx
+    | {}
     + (if .title    then {summary: .title} else {} end)
     + (if .priority then {priority: {name: .priority}} else {} end)
     + (if .parent   then {parent: {key: .parent}} else {} end)
     + (if (.labels // [] | length) > 0 then {labels: .labels} else {} end)
-    + ( if ($body | length) > 0 then {description: ($body | md_to_adf | adf_append_media($media))}
-        elif .description       then {description: (.description | text_to_adf)}
+    + ( if ($body | length) > 0 then {description: ($body | md_to_adf($ctx) | adf_append_media($media))}
+        elif .description       then {description: (.description | text_to_adf($ctx))}
         else {} end )
     + (if (.effort     and ($ef  | length > 0)) then {($ef):  .effort}                else {} end)
     + (if (.dev_points and ($dpf | length > 0)) then {($dpf): (.dev_points | tonumber)} else {} end)
@@ -315,15 +322,16 @@ jira_create() {
   jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" \
     --arg proj "$JIRA_PROJECT_KEY" --arg itype "$itype" --arg ef "$JIRA_EFFORT_FIELD" \
     --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg sf "$JIRA_SPRINT_FIELD" --arg body "$body_md" \
-    --arg parent "$parent" --argjson comps "$comp_fields" '
+    --arg parent "$parent" --argjson comps "$comp_fields" --arg base "$JIRA_BASE_URL" '
     include "jira";
-    { project: {key: $proj}, issuetype: {name: $itype}, summary: .title }
+    ({base:$base, prefix:$proj}) as $ctx
+    | { project: {key: $proj}, issuetype: {name: $itype}, summary: .title }
     + (if ($parent | length) > 0 then {parent: {key: $parent}} else {} end)
     + (if ($comps  | length) > 0 then {components: $comps}     else {} end)
     + (if (.labels // [] | length) > 0 then {labels: .labels}  else {} end)
     + (if .priority then {priority: {name: .priority}} else {} end)
-    + ( if ($body | length) > 0 then {description: ($body | md_to_adf)}
-        elif .description       then {description: (.description | text_to_adf)}
+    + ( if ($body | length) > 0 then {description: ($body | md_to_adf($ctx))}
+        elif .description       then {description: (.description | text_to_adf($ctx))}
         else {} end )
     + (if (.effort     and ($ef  | length > 0)) then {($ef):  .effort}                else {} end)
     + (if (.dev_points and ($dpf | length > 0)) then {($dpf): (.dev_points | tonumber)} else {} end)
@@ -492,7 +500,8 @@ tracker_add_comment() {
   key="$(jira_key "$ticket")"
   # Render the Markdown to ADF (headings, lists, tables, code, inline marks) — a Jira
   # comment body is a full ADF doc, so it renders natively like the issue description.
-  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" 'include "jira"; {body: ($t | md_to_adf)}')"
+  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" --arg base "$JIRA_BASE_URL" --arg prefix "$JIRA_PROJECT_KEY" \
+    'include "jira"; {body: ($t | md_to_adf({base:$base, prefix:$prefix}))}')"
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — POST /rest/api/3/issue/%s/comment\n%s\n' "$key" "$(printf '%s' "$body" | jq .)"
     return 0
@@ -509,7 +518,8 @@ tracker_add_comment() {
 tracker_edit_comment() {
   local ticket="$1" comment_id="$2" dry="$3" text="$4" key body
   key="$(jira_key "$ticket")"
-  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" 'include "jira"; {body: ($t | md_to_adf)}')"
+  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" --arg base "$JIRA_BASE_URL" --arg prefix "$JIRA_PROJECT_KEY" \
+    'include "jira"; {body: ($t | md_to_adf({base:$base, prefix:$prefix}))}')"
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — PUT /rest/api/3/issue/%s/comment/%s\n%s\n' "$key" "$comment_id" "$(printf '%s' "$body" | jq .)"
     return 0
@@ -521,8 +531,30 @@ tracker_edit_comment() {
 # Upload a local file as an issue attachment. Jira's attachments endpoint takes
 # multipart/form-data (not JSON), so this bypasses jira_api and curls directly;
 # "X-Atlassian-Token: no-check" is required to skip Jira's XSRF check on this endpoint.
+# An upload yields TWO different handles, and using the wrong one fails in a way that
+# reads like a bug in the renderer:
+#
+#   the numeric attachment id (e.g. 59572) — Jira's own handle. What get/remove/download
+#     take, and what the REST response returns.
+#   the MEDIA UUID (e.g. 6f1c4a64-…)       — Atlassian's media-services handle. The ONLY
+#     thing an ADF media node accepts. Posting a comment whose media node carries the
+#     numeric id is rejected with a flat `ATTACHMENT_VALIDATION_ERROR` (measured, not
+#     assumed), which names nothing and suggests nothing.
+#
+# The response carries only the first. The second is recoverable because the content
+# endpoint 302s to `https://api.media.atlassian.com/file/<uuid>/binary`, so resolve it
+# here — at the one place that already knows a file was just uploaded — rather than
+# leaving every caller to discover the distinction the hard way.
+jira_attachment_media_uuid() {
+  local att_id="$1" loc
+  loc="$(curl -sS -o /dev/null -D - -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+          "$JIRA_BASE_URL/rest/api/3/attachment/content/$att_id" 2>/dev/null \
+        | tr -d '\r' | awk 'tolower($1)=="location:"{print $2; exit}')"
+  printf '%s' "$loc" | sed -n 's#.*/file/\([0-9a-fA-F-]\{36\}\)/.*#\1#p'
+}
+
 tracker_add_attachment() {
-  local ticket="$1" dry="$2" file="$3" key tmp err http filename
+  local ticket="$1" dry="$2" file="$3" id_only="${4:-0}" embed_only="${5:-0}" key tmp err http filename att_id media_id
   [[ -f "$file" ]] || die "no such file: $file"
   key="$(jira_key "$ticket")"
   filename="$(basename "$file")"
@@ -546,8 +578,122 @@ tracker_add_attachment() {
     jq -r '(.errorMessages // [])[]? , ((.errors // {}) | to_entries[]? | "\(.key): \(.value)")' "$tmp" >&2 2>/dev/null || cat "$tmp" >&2
     rm -f "$tmp"; exit 1
   fi
-  printf 'Attached %s to %s\n' "$filename" "$key"
+  att_id="$(jq -r '(if type == "array" then .[0] else . end).id // empty' "$tmp" 2>/dev/null || true)"
   rm -f "$tmp"
+  [[ -n "$att_id" ]] || die "attachment uploaded to $key but the response carried no id"
+  media_id="$(jira_attachment_media_uuid "$att_id")"
+
+  if [[ "$id_only" -eq 1 ]]; then printf '%s\n' "$att_id"; return 0; fi
+  if [[ "$embed_only" -eq 1 ]]; then
+    [[ -n "$media_id" ]] || die "attached $filename to $key (id $att_id) but could not resolve its media uuid — it cannot be embedded; use the Attachments panel"
+    printf '%s\n' "$media_id"; return 0
+  fi
+  if [[ -n "$media_id" ]]; then
+    printf 'Attached %s to %s  [id %s · embed with ![%s](attachment:%s)]\n' \
+           "$filename" "$key" "$att_id" "$filename" "$media_id"
+  else
+    printf 'Attached %s to %s  [id %s · media uuid unresolved — cannot be embedded inline]\n' \
+           "$filename" "$key" "$att_id"
+  fi
+}
+
+# List a ticket's attachments (filename, id, size, mime type) — the ground truth for
+# what a consumer (e.g. the CPO in /prd) must fetch and view before treating a ticket
+# as understood. This is the top-level `attachment` field (separate downloadable
+# files), NOT the inline `[image/attachment]` markers adf_to_text prints for images
+# pasted into the description body (those are covered by tracker_get_details' own
+# "embedded image" warning) — a ticket can carry either or both.
+tracker_get_attachments() {
+  local key issue
+  key="$(jira_key "$1")"
+  issue="$(jira_api GET "/rest/api/3/issue/$key?fields=attachment")"
+  printf '%s' "$issue" | jq -r '
+    (.fields.attachment // []) as $a
+    | if ($a | length) == 0 then "No attachments on this issue."
+      else "Attachments (\($a | length)):\n"
+        + ( $a | map("  " + .filename + "  [id " + (.id|tostring) + ", " + (.mimeType // "?") + ", " + ((.size // 0)|tostring) + " bytes]") | join("\n") )
+        + "\n\nDownload one with: download-ticket-attachment.sh '"$key"' <filename-or-id> <local-path>"
+      end'
+}
+
+# Download one attachment's binary content to a local path — REF is the attachment's
+# filename or id (as printed by tracker_get_attachments). Needed because Jira attachment
+# URLs require the same auth as the API; a bare WebFetch/curl on the URL 401s.
+# DESTRUCTIVE. Delete one attachment. Jira keeps no trash for these: once the DELETE
+# lands the bytes are gone, and any comment or description that embedded it by id is
+# left pointing at nothing. Resolve the ref to a real id first so a typo cannot delete
+# the wrong file, and report the name that actually went.
+tracker_remove_attachment() {
+  local ticket="$1" dry="$2" ref="$3" key issue att_id att_name tmp err http
+  key="$(jira_key "$ticket")"
+  issue="$(jira_api GET "/rest/api/3/issue/$key?fields=attachment")"
+  att_id="$(printf '%s' "$issue" | jq -r --arg ref "$ref" '
+    (.fields.attachment // []) | map(select(.filename == $ref or (.id|tostring) == $ref)) | (.[0].id // "")')"
+  [[ -n "$att_id" ]] || die "no attachment matching '$ref' on $key — run get-ticket-attachments.sh $key to list them"
+  att_name="$(printf '%s' "$issue" | jq -r --arg id "$att_id" '(.fields.attachment // []) | map(select((.id|tostring) == $id)) | .[0].filename // "attachment"')"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — DELETE /rest/api/3/attachment/%s  (%s on %s)\n' "$att_id" "$att_name" "$key"
+    return 0
+  fi
+  tmp="$(mktemp)"; err="$(mktemp)"
+  http="$(curl -sS -X DELETE -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H "Accept: application/json" \
+    -o "$tmp" -w '%{http_code}' "$JIRA_BASE_URL/rest/api/3/attachment/$att_id" 2>"$err")" || {
+      rm -f "$tmp"; die "attachment delete on $key failed: $(cat "$err")"; }
+  rm -f "$err"
+  if [[ "$http" -ge 400 ]]; then
+    echo "error: Jira API DELETE /rest/api/3/attachment/$att_id -> HTTP $http" >&2
+    jq -r '(.errorMessages // [])[]? , ((.errors // {}) | to_entries[]? | "\(.key): \(.value)")' "$tmp" >&2 2>/dev/null || cat "$tmp" >&2
+    rm -f "$tmp"; exit 1
+  fi
+  rm -f "$tmp"
+  printf 'Deleted attachment %s (id %s) from %s\n' "$att_name" "$att_id" "$key"
+}
+
+# DESTRUCTIVE, and the most destructive verb in this adapter. A deleted Jira issue does
+# not go to a trash can — its comments, attachments and history go with it and the key is
+# never reused, so a mistyped key is unrecoverable. The wrapper demands --yes for this
+# reason; here we still resolve and PRINT the summary before deleting, so an operator
+# reading the output can see which issue actually went.
+tracker_delete_ticket() {
+  local ticket="$1" dry="$2" subtasks="${3:-0}" key summary tmp err http q
+  key="$(jira_key "$ticket")"
+  summary="$(jira_api GET "/rest/api/3/issue/$key?fields=summary" | jq -r '.fields.summary // "(no summary)"')"
+  q="deleteSubtasks=$([[ "$subtasks" -eq 1 ]] && echo true || echo false)"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — DELETE /rest/api/3/issue/%s?%s  (%s)\n' "$key" "$q" "$summary"
+    return 0
+  fi
+  tmp="$(mktemp)"; err="$(mktemp)"
+  http="$(curl -sS -X DELETE -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H "Accept: application/json" \
+    -o "$tmp" -w '%{http_code}' "$JIRA_BASE_URL/rest/api/3/issue/$key?$q" 2>"$err")" || {
+      rm -f "$tmp"; die "issue delete of $key failed: $(cat "$err")"; }
+  rm -f "$err"
+  if [[ "$http" -ge 400 ]]; then
+    echo "error: Jira API DELETE /rest/api/3/issue/$key -> HTTP $http" >&2
+    jq -r '(.errorMessages // [])[]? , ((.errors // {}) | to_entries[]? | "\(.key): \(.value)")' "$tmp" >&2 2>/dev/null || cat "$tmp" >&2
+    echo "hint: deleting an issue needs the 'Delete Issues' project permission — a 403 means this token's account lacks it." >&2
+    rm -f "$tmp"; exit 1
+  fi
+  rm -f "$tmp"
+  printf 'Deleted issue %s (%s)\n' "$key" "$summary"
+}
+
+tracker_download_attachment() {
+  local ticket="$1" ref="$2" dest="$3" key issue att_id att_name err http
+  key="$(jira_key "$ticket")"
+  issue="$(jira_api GET "/rest/api/3/issue/$key?fields=attachment")"
+  att_id="$(printf '%s' "$issue" | jq -r --arg ref "$ref" '
+    (.fields.attachment // []) | map(select(.filename == $ref or (.id|tostring) == $ref)) | (.[0].id // "")')"
+  [[ -n "$att_id" ]] || die "no attachment matching '$ref' on $key — run get-ticket-attachments.sh $key to list them"
+  att_name="$(printf '%s' "$issue" | jq -r --arg id "$att_id" '(.fields.attachment // []) | map(select((.id|tostring) == $id)) | .[0].filename // "attachment"')"
+  err="$(mktemp)"
+  http="$(curl -sS -L -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -o "$dest" -w '%{http_code}' \
+    "$JIRA_BASE_URL/rest/api/3/attachment/content/$att_id" 2>"$err")" || {
+      die "download of $att_name ($att_id) failed: $(cat "$err")"; rm -f "$err"
+    }
+  rm -f "$err"
+  [[ "${http:-000}" -lt 400 ]] || die "Jira API GET /rest/api/3/attachment/content/$att_id -> HTTP $http"
+  printf 'Downloaded %s (id %s) -> %s\n' "$att_name" "$att_id" "$dest"
 }
 
 # tracker_find OPTS_JSON — OPTS = {query, open, limit, as_json, types:[...]}.
@@ -659,4 +805,28 @@ tracker_find() {
     | "\($k) | \($st) | \($tt) | \($title)\($est)"
       + (if (($desc | gsub("\\s"; "")) | length) > 0 then "  ::  " + $desc else "" end)
   '
+}
+
+# DESTRUCTIVE. Delete one comment. Jira keeps no trash for comments either — this is
+# the counterpart to edit-ticket-comment.sh for the case where the comment should not
+# exist at all (a probe, a duplicate, a wrong-ticket post).
+tracker_delete_comment() {
+  local ticket="$1" dry="$2" comment_id="$3" key tmp err http
+  key="$(jira_key "$ticket")"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — DELETE /rest/api/3/issue/%s/comment/%s\n' "$key" "$comment_id"
+    return 0
+  fi
+  tmp="$(mktemp)"; err="$(mktemp)"
+  http="$(curl -sS -X DELETE -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H "Accept: application/json" \
+    -o "$tmp" -w '%{http_code}' "$JIRA_BASE_URL/rest/api/3/issue/$key/comment/$comment_id" 2>"$err")" || {
+      rm -f "$tmp"; die "comment delete on $key failed: $(cat "$err")"; }
+  rm -f "$err"
+  if [[ "$http" -ge 400 ]]; then
+    echo "error: Jira API DELETE /rest/api/3/issue/$key/comment/$comment_id -> HTTP $http" >&2
+    jq -r '(.errorMessages // [])[]? , ((.errors // {}) | to_entries[]? | "\(.key): \(.value)")' "$tmp" >&2 2>/dev/null || cat "$tmp" >&2
+    rm -f "$tmp"; exit 1
+  fi
+  rm -f "$tmp"
+  printf 'Deleted comment %s from %s\n' "$comment_id" "$key"
 }

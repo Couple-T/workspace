@@ -131,6 +131,11 @@ classify_rc() {   # <rc> [under_timeout] → echoes: ok | timeout | signal | fai
   else echo fail
   fi
 }
+yaml_dq() {       # <text> → a YAML double-quoted scalar, safe for ':', '#', quotes, backslashes
+  local s=${1//\\/\\\\}       # backslashes first, so the next escape isn't re-escaped
+  s=${s//\"/\\\"}
+  printf '"%s"' "$s"
+}
 describe_rc() {   # <rc> [under_timeout] → a short human phrase for a SKIP/retry message
   local rc="$1" under_to="${2:-0}"
   case "$(classify_rc "$rc" "$under_to")" in
@@ -279,15 +284,35 @@ render_glance() {
 # Accumulates TOK_*. Returns claude's (or timeout's) rc.
 claude_run() {
   local prompt="$1"; shift
-  # `env` is a harmless no-op prefix so the array is never empty (set -u safe); swap in
-  # timeout/gtimeout when present and a positive CLAUDE_TIMEOUT is set. CLAUDE_UNDER_TIMEOUT
-  # records whether the child runs under `timeout` so the caller's classify_rc can tell a
-  # timeout grace-kill (124 / 137 / 143) apart from a real machine crash (other 128+sig).
-  local -a TO=(env)
+  # rtk's own PreToolUse hook (see rtk RTK.md / this repo's .claude/settings.json) rewrites
+  # plain commands it recognizes (ls, find, grep, git, gh, ...) into `rtk <cmd>` but never sets
+  # "permissionDecision":"allow" in its hook output — so Claude Code always demands a fresh
+  # interactive approval for the rewritten command, ignoring permissions.allow AND
+  # --dangerously-skip-permissions/--permission-mode. Headless has no one to approve it, so the
+  # run hangs on the first ls/find it makes. Confirmed via isolated repro: identical `ls -la`
+  # call denied with rtk on PATH, allowed instantly with rtk off PATH. Shadow rtk with a no-op
+  # stub (prepended ahead of the real one on PATH) for just this subprocess, so its hook's own
+  # `command -v rtk || exit 0` guard finds a binary but the hook body does nothing — real
+  # rtk-adjacent tools (timeout, gtimeout, ...) stay reachable since we only shadow the one
+  # name, not the whole directory. Interactive sessions (real rtk first on PATH there) are
+  # unaffected.
+  local run_path="$PATH"
+  if have rtk; then
+    local shim_dir; shim_dir="$(mktemp -d -t aiworks-rtk-shim.XXXXXX)"
+    printf '#!/bin/sh\nexit 0\n' > "$shim_dir/rtk"
+    chmod +x "$shim_dir/rtk"
+    run_path="$shim_dir:$PATH"
+  fi
+  # `env` carries PATH plus is a harmless no-op prefix so the array is never empty (set -u
+  # safe); swap in timeout/gtimeout when present and a positive CLAUDE_TIMEOUT is set.
+  # CLAUDE_UNDER_TIMEOUT records whether the child runs under `timeout` so the caller's
+  # classify_rc can tell a timeout grace-kill (124 / 137 / 143) apart from a real crash (other
+  # 128+sig).
+  local -a TO=(env "PATH=$run_path")
   CLAUDE_UNDER_TIMEOUT=0
   if [[ "${CLAUDE_TIMEOUT:-0}" -gt 0 ]]; then
-    if   have timeout;  then TO=(timeout  -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1
-    elif have gtimeout; then TO=(gtimeout -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1; fi
+    if   have timeout;  then TO=(env "PATH=$run_path" timeout  -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1
+    elif have gtimeout; then TO=(env "PATH=$run_path" gtimeout -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1; fi
   fi
   # stdin ← /dev/null: a headless `claude -p` must never read the terminal, or it eats the
   # keystrokes meant for our own prompts (step 7) and muddies Ctrl+C handling.
@@ -370,6 +395,12 @@ REPO_NAME="${URL%.git}"; REPO_NAME="${REPO_NAME##*/}"; REPO_NAME="${REPO_NAME##*
 [[ -n "$PATH_REL" ]] || PATH_REL="$REPO_NAME"          # clone DIR = repo name (override with --path)
 if [[ -n "$DESC" ]]; then DESC_GIVEN=1                  # an explicit --desc is written back to the config
 else DESC="The $REPO_NAME repo."; DESC_GIVEN=0; fi      # default desc = repo-name short description (mani only)
+# A desc is free prose, so it can hold ':', '#', quotes — all of which break an unquoted YAML
+# scalar. Emit it double-quoted and escaped. A ': ' left unquoted made mani.d/<product>.yaml an
+# invalid mapping, which took down EVERY mani command workspace-wide while `aiworks add` still
+# reported success (the clone, which runs through mani, silently did not happen).
+# aiworks-sync.sh's parse_repos() reads this value back and unescapes it, so it round-trips.
+DESC_YAML="$(yaml_dq "$DESC")"
 
 # ── locate the workspace root (where mani.yaml lives) ──────────────────────────
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -429,7 +460,7 @@ trap print_summary EXIT
 step "1. Register project '$REPO_NAME' in mani.d/$PRODUCT.yaml"
 mkdir -p "$ROOT/mani.d"
 printf -v mani_entry '  %s:\n    desc: %s\n    url: %s\n    path: ../%s\n    tags: [%s]\n' \
-  "$REPO_NAME" "$DESC" "$URL" "$PATH_REL" "$tags_yaml"
+  "$REPO_NAME" "$DESC_YAML" "$URL" "$PATH_REL" "$tags_yaml"
 if [[ -f "$MANI_FILE" ]] && grep -qE "^[[:space:]][[:space:]]$REPO_NAME:[[:space:]]*$" "$MANI_FILE"; then
   skip "1. mani.d/$PRODUCT.yaml already lists project '$REPO_NAME'"
 elif [[ -f "$MANI_FILE" ]] && grep -qE '^projects:' "$MANI_FILE"; then
@@ -464,16 +495,25 @@ fi
 step "2.5. Register the repo in workspace.config.yaml (products[$PRODUCT].repos[])"
 if [[ ! -f "$WC" ]]; then
   if [[ -f "$ROOT/workspace.config.example.yaml" ]]; then
-    cp "$ROOT/workspace.config.example.yaml" "$WC" && ok "created workspace.config.yaml from workspace.config.example.yaml"
-    FOLLOWUP+=("fill in workspace.config.yaml (org/product, vcs/tracker providers, ticket_prefix, statuses) — it was seeded from the example; the placeholder product block can be deleted")
+    # Seeded from the template, but WITHOUT its comments: the live config is data and the
+    # template is the documentation (docs/adr/0006-config-carries-no-comments.md). A plain `cp`
+    # used to hand a new org a config that violated the rule from its very first line, and the
+    # explanation it copied along was already one file away in the template.
+    if [[ -f "$ROOT/scripts/lib/yaml_comments.py" ]] && command -v python3 >/dev/null 2>&1 \
+       && python3 "$ROOT/scripts/lib/yaml_comments.py" --strip "$ROOT/workspace.config.example.yaml" > "$WC"; then
+      ok "created workspace.config.yaml from workspace.config.example.yaml (comments stripped)"
+    else
+      cp "$ROOT/workspace.config.example.yaml" "$WC" && ok "created workspace.config.yaml from workspace.config.example.yaml"
+    fi
+    FOLLOWUP+=("fill in workspace.config.yaml (org/product, vcs/tracker providers, ticket_prefix, statuses) — it was seeded from the example (comments stripped: it is data, the example is the documentation); the placeholder product block can be deleted")
   else
-    printf '# workspace.config.yaml — the source of truth for this workspace.\nproducts:\n' > "$WC" && ok "created a minimal workspace.config.yaml (products: only)"
+    printf 'products:\n' > "$WC" && ok "created a minimal workspace.config.yaml (products: only)"
     FOLLOWUP+=("flesh out workspace.config.yaml (org/product, vcs/tracker providers, ticket_prefix, statuses) — only a products: block was created")
   fi
 fi
 # Build the minimal repo block (6/8-space indented). Optional fields only when meaningful.
 repo_block="      - url: $URL"$'\n'"        kind: $KIND"$'\n'
-[[ "$DESC_GIVEN" -eq 1 ]]                     && repo_block+="        desc: $DESC"$'\n'
+[[ "$DESC_GIVEN" -eq 1 ]]                     && repo_block+="        desc: $DESC_YAML"$'\n'
 [[ -n "$LANG" ]]                              && repo_block+="        lang: $LANG"$'\n'
 [[ -n "$APP_ID" ]]                            && repo_block+="        app_id: $APP_ID"$'\n'
 [[ -n "$DISTRIBUTE" && "$DISTRIBUTE" != none ]] && repo_block+="        distribute: $DISTRIBUTE"$'\n'
@@ -541,9 +581,14 @@ else
   if mani sync; then ok "mani sync done"; else skip "3. 'mani sync' failed — check the URL / your SSH access"; fi
 fi
 
-step "3.1. Ignore $PATH_REL/ in the workspace .gitignore"
-if ensure_line "$ROOT/.gitignore" "$PATH_REL/"; then ok "added $PATH_REL/ to the workspace .gitignore"
-else skip "3.1. workspace .gitignore already ignores $PATH_REL/"; fi
+# ANCHORED (`/<repo>/`, not `<repo>/`): a bare directory pattern matches at every
+# depth, so `game/` would also hide `.cursor/rules/repos/game/` — the generated
+# per-repo rules a Cursor session at the workspace root reads — and Cursor will not
+# read a rule file that git ignores. The clone this line exists for is at the root,
+# so anchoring loses nothing.
+step "3.1. Ignore /$PATH_REL/ in the workspace .gitignore"
+if ensure_line "$ROOT/.gitignore" "/$PATH_REL/"; then ok "added /$PATH_REL/ to the workspace .gitignore"
+else skip "3.1. workspace .gitignore already ignores /$PATH_REL/"; fi
 
 # ── 3.1.1. Cursor IDE indexing — re-include $PATH_REL/ so Cursor can search it ─────
 #   The clone is gitignored at the workspace root (step 3.1) so it never dirties the
@@ -622,12 +667,22 @@ fi
 # ── 3.2. repo .gitignore — ignore agent_logs/ (agent plans / run summaries / bug logs,
 #         incl. the dev.sh verbose logs in agent_logs/executed_verbose/) + .aiworks/ (this
 #         tool's per-repo idempotency sentinels) + the codegraph daemon runtime files
-#         (.codegraph/daemon.pid + .codegraph/codegraph.lock — machine-local, never committed) ──────────
-step "3.2. Ignore agent_logs/ + .aiworks/ + codegraph runtime in $PATH_REL/.gitignore"
+#         (.codegraph/daemon.pid + .codegraph/codegraph.lock — machine-local, never committed)
+#         + .DS_Store (macOS Finder metadata — every mac in the team grows one per directory
+#         it opens, in every repo; a bare `.DS_Store` with no slash matches at ANY depth, so
+#         one line covers nested dirs too and `**/.DS_Store` is redundant) ──────────
+step "3.2. Ignore agent_logs/ + .aiworks/ + codegraph runtime + .DS_Store in $PATH_REL/.gitignore"
 if ensure_line "$REPO_DIR/.gitignore" "agent_logs/"; then ok "added agent_logs/ to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores agent_logs/"; fi
 if ensure_line "$REPO_DIR/.gitignore" ".aiworks/"; then ok "added .aiworks/ to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores .aiworks/"; fi
+# .DS_Store may already be covered by an equivalent pattern the repo wrote itself
+# (`**/.DS_Store`, `*.DS_Store`, `.DS_Store?`) — ensure_line only matches its own exact line,
+# so check for any of them before appending a second, redundant rule.
+if grep -Eqs '^\*?\*?/?\.DS_Store\??$' "$REPO_DIR/.gitignore"; then
+  skip "3.2. $PATH_REL/.gitignore already ignores .DS_Store"
+elif ensure_line "$REPO_DIR/.gitignore" ".DS_Store"; then ok "added .DS_Store to $PATH_REL/.gitignore"
+else skip "3.2. $PATH_REL/.gitignore already ignores .DS_Store"; fi
 ensure_line "$REPO_DIR/.gitignore" "# codegraph" || true   # group header for the two runtime files below
 if ensure_line "$REPO_DIR/.gitignore" ".codegraph/daemon.pid"; then ok "added .codegraph/daemon.pid to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores .codegraph/daemon.pid"; fi
@@ -699,9 +754,16 @@ fi
 # today, but the "<skill>|<source>" form keeps multi-source support. Already-present skills are
 # skipped. Project scope is guaranteed by being inside the repo with a .claude/ marker + -y (no
 # --global).
-# NOTE: caveman is intentionally NOT installed per-repo. It's the user-scope `caveman@caveman`
-# plugin (enabledPlugins in the meta repo's .claude/settings.json), and the meta-repo agents
-# invoke the `caveman:caveman` skill themselves, so a per-repo copy would be redundant.
+# NOTE: caveman is deliberately absent from THIS list. For Claude Code it is the user-scope
+# `caveman@caveman` plugin (enabledPlugins in the meta repo's .claude/settings.json) and the agents
+# invoke `caveman:caveman` themselves, so installing it through the `skills` CLI as well would be
+# redundant.
+# It does NOT follow that a repo carries no caveman file — read on before deleting one. Every repo
+# DOES hold a vendored `.claude/skills/caveman/SKILL.md`, committed and content-synced by
+# `aiworks-cursor.sh` (`VENDOR_REPO`), because Cursor cannot see a Claude Code plugin and a symlink
+# to $HOME cannot be committed. Two channels, two consumers: this step serves Claude Code, that one
+# serves Cursor and any clone without the plugin. An earlier version of this NOTE said only the
+# first half and read as "the per-repo copies are strays", which nearly got all 22 of them deleted.
 step "6. Install third-party skills — project scope (one per skill)"
 # "<skill>|<source>" — <source> is the `skills` CLI repo spec that ships that one skill.
 ext_skills=(
@@ -709,7 +771,7 @@ ext_skills=(
   "grill-with-docs|mattpocock/skills"
   "grilling|mattpocock/skills"
   "domain-modeling|mattpocock/skills"
-  "diagnose|mattpocock/skills"
+  "diagnosing-bugs|mattpocock/skills"   # upstream renamed from "diagnose" — old name 404s
   "setup-matt-pocock-skills|mattpocock/skills"
 )
 if ! have npx; then
@@ -843,13 +905,39 @@ else skip "8. /setup-matt-pocock-skills $(claude_fail_hint 'auth? was step 6 abl
 # steps 5/6 is preserved (never clobbered).
 step "9. Seed Claude hooks + settings (hardcoded baseline, sonar-free)"
 mkdir -p "$REPO_DIR/.claude"
-# 9a. hooks/ — copy the workspace's hardcoded hooks (dev-wrapper).
-if [[ -d "$REPO_DIR/.claude/hooks/dev-wrapper" && "$FORCE" -ne 1 ]]; then
-  skip "9. .claude/hooks already present"
-elif [[ -d "$ROOT/.claude/hooks" ]]; then
-  cp -R "$ROOT/.claude/hooks" "$REPO_DIR/.claude/" \
-    && find "$REPO_DIR/.claude/hooks" -name '*.sh' -exec chmod +x {} + 2>/dev/null
-  ok "seeded .claude/hooks/ (dev-wrapper) from the workspace baseline"
+# 9a. hooks/ — sync the hooks BASE_SETTINGS below actually wires, by CONTENT.
+#
+# Only the wired ones: the workspace root's dev-wrapper also holds guards that are
+# meta-repo-specific (plan-path / notify / agent-brief / codegraph / git), and those
+# reason about `<root>/<repo>/...` layout that does not exist inside a standalone
+# clone. Copying the whole directory would put hooks in the repo that nothing runs.
+#
+# By CONTENT, and not "skip if the directory exists", because the old test made
+# propagation a one-shot: a repo onboarded before a guard was written kept its
+# original snapshot forever, and fixing a guard at the root left 21 stale copies
+# with nothing to report the drift. `aiworks sync` delegates here for every declared
+# repo, so a content check turns sync into the thing that heals it.
+#
+# A COPY, not a symlink: each repo is an independent clone, so a link up to the
+# workspace root dangles for anyone who clones the repo on its own. Same call as
+# the Cursor hook-shim (see scripts/cursor/hook-shim.template.sh).
+WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh)
+if [[ -d "$ROOT/.claude/hooks/dev-wrapper" ]]; then
+  mkdir -p "$REPO_DIR/.claude/hooks/dev-wrapper"
+  hooks_new=(); hooks_upd=()
+  for h in "${WIRED_HOOKS[@]}"; do
+    src="$ROOT/.claude/hooks/dev-wrapper/$h"; dst="$REPO_DIR/.claude/hooks/dev-wrapper/$h"
+    [[ -f "$src" ]] || continue
+    if [[ ! -f "$dst" ]]; then hooks_new+=("$h")
+    elif cmp -s "$src" "$dst"; then continue
+    else hooks_upd+=("$h"); fi
+    cp "$src" "$dst" && chmod +x "$dst"
+  done
+  if [[ ${#hooks_new[@]} -eq 0 && ${#hooks_upd[@]} -eq 0 ]]; then
+    skip "9. .claude/hooks/dev-wrapper already matches the workspace baseline"
+  else
+    ok "synced .claude/hooks/dev-wrapper${hooks_new:+ (new: ${hooks_new[*]})}${hooks_upd:+ (updated: ${hooks_upd[*]})}"
+  fi
 else
   skip "9. no $ROOT/.claude/hooks to seed from — copy your hook scripts into $PATH_REL/.claude/hooks/ by hand"
 fi
@@ -863,8 +951,8 @@ read -r -d '' BASE_SETTINGS <<'JSON'
   "permissions": {
     "defaultMode": "acceptEdits",
     "allow": [
-      "Read", "Grep", "Glob", "WebSearch", "WebFetch",
-      "Bash(git *)", "Bash(scripts/dev.sh *)", "Bash(mkdir *)"
+      "Read", "Grep", "Glob", "WebSearch", "WebFetch", "Write", "Edit",
+      "Bash(git *)", "Bash(scripts/dev.sh *)", "Bash(mkdir *)", "Bash(rtk *)"
     ],
     "deny": [
       "Bash(rm -rf *)", "Bash(rm -fr *)",
@@ -873,14 +961,24 @@ read -r -d '' BASE_SETTINGS <<'JSON'
       "Bash(sudo *)", "Bash(curl * | sh)", "Bash(curl * | bash)"
     ]
   },
+  "enabledPlugins": {
+    "caveman@caveman": true
+  },
+  "extraKnownMarketplaces": {
+    "caveman": {
+      "source": { "source": "github", "repo": "JuliusBrussee/caveman" }
+    }
+  },
   "hooks": {
     "PreToolUse": [
       { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
       { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
       { "matcher": "Bash",  "hooks": [
           { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk hook claude" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh", "timeout": 30 }
-      ] }
+      ] },
+      { "matcher": "Read",  "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 } ] }
     ],
     "PostToolUse": [
       { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
@@ -890,15 +988,48 @@ read -r -d '' BASE_SETTINGS <<'JSON'
   }
 }
 JSON
-if [[ -f "$SETTINGS_FILE" ]] && grep -q 'posttool-output-warden' "$SETTINGS_FILE" && [[ "$FORCE" -ne 1 ]]; then
-  skip "9. .claude/settings.json already has the workspace hooks"
-elif have jq; then
-  # Merge base over existing (existing * base): base wins on hooks/permissions/env, while
-  # any existing enabledPlugins (from steps 5/6) is preserved.
+if have jq; then
+  # Merge base over existing (existing * base): base wins on the keys it carries, and
+  # since `*` is a DEEP merge on objects, a plugin the repo enabled itself (steps 5/6)
+  # survives alongside the baseline's.
+  #
+  # The merge result decides whether to write, replacing an old
+  # `grep -q posttool-output-warden && skip` gate. That gate asked "did ANY
+  # version of the baseline land here", which was true for every repo the day a
+  # NEW hook was added to the baseline — so the addition reached new repos only,
+  # and the existing ones reported "already has the workspace hooks" while
+  # missing it. Comparing the merge makes a no-op a genuine no-op and an added
+  # hook propagate on the next `aiworks sync`.
+  # On an EXISTING settings.json the baseline asserts only the keys that are meant to
+  # CONVERGE workspace-wide. It used to assert everything, which made the first
+  # content-aware sync also push the baseline's `permissions` into every onboarded repo — quietly
+  # granting Write/Edit and Bash(rtk *) wherever a repo had chosen a narrower set. Hooks
+  # are the shared safety net and SHOULD converge; permissions are that repo's own call.
+  #
+  # `enabledPlugins` + `extraKnownMarketplaces` converge for the same reason as hooks: a
+  # repo-only session is a first-class way to work here, and caveman (output compression) is
+  # supposed to hold in one. These two keys DECLARE and enable the plugin; they do NOT
+  # install it — measured, because the opposite reads as working: a repo carrying both keys
+  # still answered NOT-FOUND for `caveman:caveman` while the workspace root answered
+  # AVAILABLE under the same probe. The install is a machine-local step, done once at USER
+  # scope by `ensure_claude_plugins` in .superset/lib.sh (setup step 3), which covers the
+  # root and every clone at once. Both are OBJECTS, so `*` deep-merges them:
+  # a repo that enables its own plugins keeps them and gains caveman. (Arrays, by
+  # contrast, are replaced wholesale — which is precisely why `permissions` stays out.)
+  # A repo with no settings.json yet still gets the whole baseline (the `else` below).
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    base_for_merge="$(printf '%s' "$BASE_SETTINGS" | jq '{hooks, enabledPlugins, extraKnownMarketplaces}')"
+  else
+    base_for_merge="$BASE_SETTINGS"
+  fi
   existing="{}"; [[ -f "$SETTINGS_FILE" ]] && existing="$(cat "$SETTINGS_FILE")"
-  if printf '%s\n%s\n' "$existing" "$BASE_SETTINGS" | jq -s '.[0] * .[1]' > "$SETTINGS_FILE.tmp" 2>/dev/null && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"; then
-    ok "wrote .claude/settings.json (hardcoded sonar-free baseline; existing plugins preserved)"
-  else rm -f "$SETTINGS_FILE.tmp"; skip "9. could not merge settings.json — add the hooks block by hand"; fi
+  if merged="$(printf '%s\n%s\n' "$existing" "$base_for_merge" | jq -s '.[0] * .[1]' 2>/dev/null)"; then
+    if [[ -f "$SETTINGS_FILE" ]] && [[ "$merged" == "$(cat "$SETTINGS_FILE")" ]]; then
+      skip "9. .claude/settings.json already matches the baseline"
+    elif printf '%s\n' "$merged" > "$SETTINGS_FILE"; then
+      ok "wrote .claude/settings.json (hardcoded sonar-free baseline; existing plugins preserved)"
+    else skip "9. could not write settings.json — add the hooks block by hand"; fi
+  else skip "9. could not merge settings.json — add the hooks block by hand"; fi
 elif [[ ! -f "$SETTINGS_FILE" ]]; then
   printf '%s\n' "$BASE_SETTINGS" > "$SETTINGS_FILE" && ok "wrote .claude/settings.json (hardcoded sonar-free baseline)"
 else
@@ -915,7 +1046,18 @@ if ! have claude; then skip "10. 'claude' CLI not found — author scripts/dev.s
 elif [[ -f "$REPO_DIR/scripts/dev.sh" && "$FORCE" -ne 1 ]]; then skip "10. scripts/dev.sh already present"
 else
   mkdir -p "$REPO_DIR/scripts"
-  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | run | restart | stop | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. 'run' is the SINGLE SOURCE OF TRUTH for how to launch this repo: it builds if needed then launches/drives the app the repo's OWN way as a NON-INTERACTIVE agent path that proves it works and EXITS with a verdict (a server → start, poll a readiness/health check, report up/down, then tear down; a web app → build or start the dev server and confirm it serves; a CLI → a smoke invocation; a DB/migration repo → apply + verify; ANYTHING long-running MUST be backgrounded, polled for a ready marker, then stopped — never block forever), and it obeys the same verbose-log + one-line-summary rules as the others. When 'run' backgrounds a long-running instance it MUST record its PID (and port, if any) to a handle file under agent_logs/ (e.g. agent_logs/run.pid) so the instance can be found again. 'stop' reads that handle to tear down any instance 'run' left alive (kill the PID/process group, free the port, remove the handle), is idempotent, and reports stopped vs not-running. 'restart' = 'stop' then 'run' — a clean relaunch of the running instance — and obeys the same verbose-log + one-line-summary rules. After writing each run's log, prune the older logs for that command so only the most-recent N are kept (N from the DEV_LOG_KEEP env var, default 5; treat 0 or a non-numeric value as keep-all). POSIX bash, 'set -euo pipefail', a usage(), executable. Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
+  # A test-suite repo carries one extra subcommand. The QA skills (report-test-results,
+  # loadtest-baseline-gate) attach a run's own evidence to a ticket, and they are
+  # deliberately stack-agnostic: they never name Cypress/Playwright/k6/Appium, never guess
+  # an output directory, and never parse a tool's filename format. All of that lives HERE,
+  # in the repo's own harness, behind `artifacts`. Omit it and those skills degrade to "no
+  # screenshots" on a repo that in fact produced plenty. A code repo has no run evidence to
+  # list, so it does not get the subcommand.
+  artifacts_clause=""
+  if [[ "$KIND" == "test-suite" ]]; then
+    artifacts_clause=" This repo is a TEST-SUITE repo, so ALSO implement an 'artifacts' subcommand. It is a query like 'why' (no log of its own) that prints what the LAST test run produced, one row per line, TAB-separated: '<case-id>\\t<kind>\\t<repo-relative path>'. <case-id> is the test-case id the artifact's own filename carries (this repo's test titles start with one, e.g. TC001) or '-' when the artifact belongs to the whole run rather than one case; <kind> is one of fail-screenshot, screenshot, video, report, data. Derive the directories and the filename format from THIS repo's test tooling — that mapping is the whole point of putting it here. List ONLY files newer than the last test run (date them against that run's log filename timestamp, and accept an optional '--since <file>' to use that file's mtime instead, for a caller that drives the tool directly rather than through dev.sh), so a leftover artifact from an earlier run is never reported as fresh evidence. Exit 0 printing nothing when the run produced none."
+  fi
+  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | run | restart | stop | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. 'run' is the SINGLE SOURCE OF TRUTH for how to launch this repo: it builds if needed then launches/drives the app the repo's OWN way as a NON-INTERACTIVE agent path that proves it works and EXITS with a verdict (a server → start, poll a readiness/health check, report up/down, then tear down; a web app → build or start the dev server and confirm it serves; a CLI → a smoke invocation; a DB/migration repo → apply + verify; ANYTHING long-running MUST be backgrounded, polled for a ready marker, then stopped — never block forever), and it obeys the same verbose-log + one-line-summary rules as the others. When 'run' backgrounds a long-running instance it MUST record its PID (and port, if any) to a handle file under agent_logs/ (e.g. agent_logs/run.pid) so the instance can be found again. 'stop' reads that handle to tear down any instance 'run' left alive (kill the PID/process group, free the port, remove the handle), is idempotent, and reports stopped vs not-running. 'restart' = 'stop' then 'run' — a clean relaunch of the running instance — and obeys the same verbose-log + one-line-summary rules. After writing each run's log, prune the older logs for that command so only the most-recent N are kept (N from the DEV_LOG_KEEP env var, default 5; treat 0 or a non-numeric value as keep-all). POSIX bash, 'set -euo pipefail', a usage(), executable.${artifacts_clause} Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
   glance "scaffolding scripts/dev.sh (${LANG:-language inferred}) ..."
   if claude_run "$gen_prompt"; then
     [[ -f "$REPO_DIR/scripts/dev.sh" ]] && chmod +x "$REPO_DIR/scripts/dev.sh" 2>/dev/null
@@ -944,8 +1086,11 @@ else
 This repo's scripts/dev.sh already has a 'run' subcommand that is the SINGLE SOURCE OF TRUTH for how to build, launch and drive this app (just generated for this exact stack). To stay lean on tokens, DO NOT re-derive how to run, and DO NOT build/launch the app yourself to discover it — trust scripts/dev.sh run. The generated run skill MUST be a THIN WRAPPER: its 'Run (agent path)' section simply invokes 'scripts/dev.sh run' (and points at 'scripts/dev.sh status' / 'scripts/dev.sh why run' for diagnosis). Do NOT write a separate driver script that duplicates dev.sh, and keep Prerequisites/Setup to the few lines dev.sh assumes."
   fi
   glance "running ${SKILL_CMD} ..."
-  if claude_run "$skill_prompt"; then ok "$SKILL_CMD ran (delegates to scripts/dev.sh run)"; mark_done step10_5-skillgen
-  else skip "10.5. $SKILL_CMD $(claude_fail_hint 'is the skill installed? override the name with --skill-cmd')"; fi
+  if claude_run "$skill_prompt" && [[ -n "$(find "$REPO_DIR/.claude/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)" ]]; then
+    ok "$SKILL_CMD ran (delegates to scripts/dev.sh run)"; mark_done step10_5-skillgen
+  else
+    skip "10.5. $SKILL_CMD exited but no generated skill dir landed under .claude/skills/ — not marking done (retry, or run $SKILL_CMD by hand in $PATH_REL/)"
+  fi
 fi
 
 # ── 10.6 sync the codegraph index (before leaving the repo) ─────────────────────
@@ -962,6 +1107,20 @@ else skip "10.6. 'codegraph sync' failed"; fi
 cd "$ROOT"
 fi
 step "11. Back at the workspace root ($ROOT)"
+
+# ── 11.1 the Cursor face of everything seeded above ────────────────────────────
+# Steps 5-9 wrote the Claude-side config (CLAUDE.md, .claude/rules, skills, hooks,
+# settings.json). Cursor reads none of those paths, so project them: symlinks for
+# everything whose format already matches, generated files for hooks/permissions.
+# Idempotent and best-effort — a repo that gains rules later just needs a re-run.
+step "11.1. Project the agent config onto Cursor (.cursor/ + AGENTS.md) in $PATH_REL/"
+if [[ ! -x "$ROOT/scripts/aiworks-cursor.sh" ]]; then
+  skip "11.1. scripts/aiworks-cursor.sh not found — run 'aiworks cursor $REPO_NAME' later"
+elif "$ROOT/scripts/aiworks-cursor.sh" "$REPO_NAME" >/dev/null 2>&1; then
+  ok "Cursor layer projected for $REPO_NAME"
+else
+  skip "11.1. 'aiworks cursor $REPO_NAME' reported issues — run it directly to see them"
+fi
 
 # ── summary ──────────────────────────────────────────────────────────────────────
 # print_summary is defined near the top and armed as an EXIT trap before step 1, so the

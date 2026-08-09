@@ -43,17 +43,28 @@
       "Bash(sonar *)",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py:*)",
       "Bash(python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py:*)",
+      "Bash(uv run *prod_repro_seed.py*)",
+      "Bash(uv run *replay_shape.py*)",
+      "Bash(docker compose up*)",
+      "Bash(*scripts/vcs/pr-approve.sh*)",
+      "Bash(*git remote get-url*)",
       "mcp__codegraph",
       "mcp__sonarqube",
       "mcp__postgres_secondary",
       "mcp__postgres_main",
       "mcp__redis",
+      "mcp__pg_triage",
+      "mcp__redis_triage",
       "mcp__claude_ai_Figma__get_screenshot",
       "mcp__claude_ai_Figma__get_metadata",
       "mcp__claude_ai_Figma__get_design_context",
       "mcp__claude_ai_Figma__get_variable_defs",
       "mcp__claude_ai_Figma__get_libraries",
-      "mcp__claude_ai_Figma__search_design_system"
+      "mcp__claude_ai_Figma__search_design_system",
+      "Bash(curl http://localhost:*)",
+      "Bash(curl http://127.0.0.1:*)",
+      "Bash(curl https://localhost:*)",
+      "Bash(curl https://127.0.0.1:*)"
     ],
     "deny": [
       "Bash(sudo *)",
@@ -61,6 +72,8 @@
       "Bash(rm -rf ~*)",
       "Bash(git push --force*)",
       "Bash(git push -f *)",
+      "Bash(kubectl *)",
+      "Bash(gcloud *)",
       "Read(**/.env)",
       "Read(**/.env.local)",
       "Read(**/*.pem)",
@@ -69,7 +82,15 @@
       "Read(**/.aws/credentials)",
       "Read(**/secrets/**)",
       "Write(**/.env)",
-      "Edit(**/.env)"
+      "Edit(**/.env)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.claude/**)",
+      "Read(//etc/**)",
+      "Edit(~/.ssh/**)",
+      "Write(~/.ssh/**)",
+      "Edit(~/.aws/**)",
+      "Write(~/.aws/**)"
     ]
   },
   "hooks": {
@@ -85,6 +106,11 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/resolve-language.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/repo-health-check.sh",
+            "timeout": 15
           }
         ]
       }
@@ -116,6 +142,114 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-cd-guard.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-git-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-submodule-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-notify-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-codegraph-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-adapter-pipe-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-plan-path-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-config-comment-guard.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-submodule-guard.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-repo-context.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-agent-brief-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-agent-context.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-gate.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh",
+            "timeout": 10
           }
         ]
       }
@@ -128,6 +262,44 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-output-warden.sh",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-repo-context.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-codegraph-sync.sh"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-workflow-compile.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stagehand-show.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh",
+            "timeout": 10
           }
         ]
       }
@@ -145,6 +317,98 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/resolve-language.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/repo-health-check.sh",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-ack.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/slack-postback.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-milestone.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stagehand-follow.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/redis-triage-tunnel-reap.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-gate.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-gate.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-gate.sh",
+            "timeout": 10
           }
         ]
       }
@@ -153,13 +417,20 @@
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
-    "caveman@caveman": true
+    "caveman@caveman": true,
+    "debugging-code@debug-skill-marketplace": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
       "source": {
         "source": "github",
         "repo": "JuliusBrussee/caveman"
+      }
+    },
+    "debug-skill": {
+      "source": {
+        "source": "github",
+        "repo": "AlmogBaku/debug-skill"
       }
     }
   }

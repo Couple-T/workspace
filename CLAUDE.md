@@ -1,111 +1,100 @@
 # CLAUDE.md — {{ORG_NAME}} Organization workspace
 
-**Multi-repo workspace.** Nested repos are independent clones (own git
-history, remote, `CLAUDE.md`) — read a repo's own `CLAUDE.md` first.
+**Multi-repo workspace.** Nested repos are independent clones (own git history, remote, `CLAUDE.md`) — read a
+repo's own `CLAUDE.md` first, and confirm which repo you are in with `git rev-parse --show-toplevel` before any
+git op. Repos are declared under `products[].repos[]` in `workspace.config.yaml`; `mani list projects` ·
+`mani exec --all '<cmd>'` · `mani run <task>` · `mani sync` clones missing ones.
 
-⚠️ **Before any git op:** `git rev-parse --show-toplevel` to confirm the
-repo.
-
-**Discover repos:** declared under `products[].repos[]` in `workspace.config.yaml`
-(the source of truth); `mani.yaml` imports the per-product `mani.d/<product>.yaml`
-files generated from it by `scripts/aiworks`. `mani list projects` for the full list.
-
-**Open in an IDE:** `scripts/aiworks` also generates a multi-root
-`<workspace-basename>.code-workspace` from `products[].repos[]` (one folder root per repo +
-the meta-repo root). Open the **file** (`cursor <workspace>.code-workspace`), not the folder,
-so each product repo gets its own Source Control panel — opening the folder makes Git skip the
-gitignored clones and only the meta-repo shows.
-
-**Cross-repo (`mani`):** `sync` (clone missing) · `list projects` ·
-`exec --all '<cmd>'` · `run <task>`
+⚠️ **Never read `.env` / `.env.*`** (any adapter's `scripts/*/.env`, or anything matched by the blanket `.env*`
+gitignore rule) — **except `.env.example`** templates, which hold no real values. No `Read`, no
+`cat`/`grep`/`sed`/`head`/`tail`, no `rtk read`/`rtk pipe`/`rtk diff` (rtk renames the reading verbs, so the
+renamed form is no way past this), and no `bash -x`/`set -x` around code that sources one. To prove a var is set
+without exposing it use `grep -q '^VAR=.\+' .env` — exit code only, never a form that echoes the value. Enforced
+by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter secret is a live credential.
 
 ## Configuration (read these first)
 
-- `workspace.config.yaml` — the org's providers, ticket prefix, status lifecycle,
-  branch model, output-language policy (`language` — `en` default | `th`), auto-merge
-  policy, planning policy (`planning.auto_approve` /
-  `planning.to_html`), notification policy (`notify.enabled` / `notify.channel`), design
-  policy (`design.enabled` — the workspace-wide Figma switch, default OFF —
-  `design.figma_file_key` / `design.page_naming`), image-generation policy
-  (`image_generation.enabled` — default OFF — `image_generation.quality` /
-  `image_generation.max_per_request`), and the `products[].repos[]` registry
-  (repo URLs). The source of truth for this workspace; `scripts/aiworks sync` sets
-  everything up from it. Personal, non-shared overrides go in the git-ignored
-  `workspace.config.local.yaml` (analogue of `.claude/settings.local.json`; see
-  `workspace.config.local.example.yaml`) — it overrides this file for everything read at
-  runtime (chat, agents, interactive skills); the committed workflow mirror stays shared-only.
-- `CONTEXT.md` — the workspace glossary (ubiquitous language: orchestration, providers, repos,
-  language, config). One place to look up a term; each entry links to its fuller home.
-- `docs/adr/` — architecture decision records: why the workspace is shaped as it is
-  (`0001` config mirror, `0002` output localization, `0003` personal runtime overrides).
-- `docs/agents/language.md` — the output-language convention: `language: th` ⇒ **English
-  spine, Thai prose** (prose in Thai; titles/headings/labels, all code + commits + branch
-  names, and technical/domain terms stay English; code, checked-in repo docs, and **any `.md`
-  file** never Thai — only `.html` renders/tickets/chat/Slack localize).
-  Default `en` = unchanged. See the `## Language` section below.
-- `docs/agents/issue-tracker.md` — how to read/write tickets (the tracker adapter,
-  status names, id format).
-- `docs/agents/human-review.md` — the `Human:` convention: a human reviewer's required
-  changes, left as `Human:`-prefixed PR/MR review-thread comments, are blocking, top-priority
-  directives the agents auto-route (code→developer, test→qa, scope→planner) and resolve. The
-  `apply-human-review` skill drives them on demand ("take my review", no prefix needed).
-- `docs/agents/image-generation.md` — how the graphic-designer generates assets
-  (the `mcp-image` server + `GEMINI_API_KEY`), gated by `image_generation.enabled`
-  (default OFF); the design/PRD phase fails loud when it's not set up rather than
-  shipping placeholder art.
-- `docs/agents/figma.md` — how every agent works with Figma: the `design.enabled`
-  kill-switch (default OFF) and the canonical-file convention (`design.figma_file_key` —
-  build product screens into ONE file on a new page per feature, never `create_new_file`).
-- `docs/agents/submodules.md` — never develop inside a git **submodule** checkout: it's a
-  read-only pointer to a repo that is *also* cloned as its own primary clone at the
-  workspace root — branch/commit/PR in that primary clone (the coding-lifecycle skills
-  consult this to redirect submodule'd changes to the right repo).
-- Provider adapters: `scripts/vcs/` (PR/MR via `github`|`gitlab`),
-  `scripts/tracker/` (tickets via `notion`|`jira`), and `scripts/notify/` (chat via
-  `slack`). **Always go through the adapters — never call `gh`/`glab`/Notion/Jira/Slack
-  directly.**
-- **Test environment:** automated runs target **local** by default; staging is an
-  explicit, QA-reserved opt-in (`CYPRESS_ENV=staging`). Defer to each repo's default —
-  never hardcode an environment in agents/skills/workflow.
+- `workspace.config.yaml` — the source of truth, `@`-imported below so it is already in context. Keys documented
+  in `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither — the rule beside it.
+- `CONTEXT.md` — the workspace glossary · `docs/adr/` — why the workspace is shaped this way (`0001`–`0008`).
+- `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`):
+  author on the Claude side, never hand-edit `.cursor/`, and open the `.code-workspace` **file**, not the folder.
+- `docs/agents/language.md` · `caveman.md` · `voice.md` · `stagehand.md` — the always-on output conventions,
+  summarized in their own sections below.
+- `docs/agents/issue-tracker.md` — reading and writing tickets: the adapter, status names, id format.
+- `docs/agents/human-review.md` — a `Human:` review comment is a blocking directive the agents auto-route and
+  resolve; a `Human:` **reply on an agent's own must-fix CLEARS it** — approve and advance, never re-open it.
+- `docs/agents/loadtest-gate.md` — a green load suite is only **half** a verdict: a `suite_kind: load` repo must
+  also beat its base branch against a measured noise floor. Home of the rule binding EVERY test-suite gate — it
+  **never fails open**: no receipt (command + exit code + summary) and no result comment ⇒ recorded as *not run*.
+- `docs/agents/pii-provenance.md` — egress masks personal data only when a sanctioned PRODUCTION read returned
+  that value (keyed hash, never shape), leaving local and staging work untouched.
+- `docs/agents/submodules.md` — never develop inside a submodule checkout, its primary clone is at the workspace
+  root · `plan-artifacts.md` — one plan per repo, never committed · `worktree-gc.md` — bare `gc` only REPORTS ·
+  `doctor.md` — `aiworks doctor` reports what is missing/broken + the owner command per finding; `--fix` runs those.
+- `docs/agents/figma.md` · `image-generation.md` · `diagram-generation.md` — design, asset and diagram surfaces,
+  each behind its own `enabled` flag (default OFF).
+- `scripts/k8s/README.md` — READ-ONLY Kubernetes triage (`k8s_triage` MCP) through a `view`-only impersonated
+  identity, so the **API server** rejects writes. ⚠️ `Bash(kubectl *)`/`Bash(gcloud *)` denied — ask for `!kubectl`.
+- **Test environment:** automated runs target **local**; staging is an explicit, QA-reserved opt-in
+  (`CYPRESS_ENV=staging`). Defer to each repo's default — never hardcode one in agents or workflows.
+- **Known false-reds:** before calling a test failure real, rule out a stale persistent test DB, submodule branch
+  drift, and dual-formatter conflicts on generated files — re-run the scoped test in isolation against the base
+  branch. And when estimating, fetch the persisted story-point fields first (`/estimate-ticket`).
 
-## Language
-Output language follows `language` — from `workspace.config.local.yaml` if that personal
-override exists, else `workspace.config.yaml` (full policy: `docs/agents/language.md`).
-**This is resolved mechanically, not from memory:** a hook
-(`.claude/hooks/resolve-language.sh`, wired in `.claude/settings.json`) reads
-`workspace.config.local.yaml` if present (it's git-ignored and personal — see
-`docs/adr/0003`), else falls back to `workspace.config.yaml`, and injects the resolved
-language into context at `SessionStart` (full policy, once) AND on every
-`UserPromptSubmit` (a compact reminder, every turn) — for every teammate, since both the
-hook and its wiring are committed. A prose reminder to "check the file" was tried first
-and was missed twice, since it depended on the model remembering to act; a SessionStart-only
-injection was tried next and was still missed over a long tool-heavy session (the one-time
-injection gets crowded out) — the per-turn reinjection closes that gap. If the hook's
-injected context is ever missing (e.g. a stripped session), fall back to reading the file
-directly before your first output. When the resolved language is **`th`**, write **English spine,
-Thai prose** — prose in Thai (this CLI chat, tickets, PR/MR discussion, code review, Slack,
-and the `.html` interactive render of a plan) while the English **spine** stays English: titles +
-every section heading + labels/enum values, ALL code + code comments + git commit messages + branch
-names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). **Any
-`.md` file you author is English — always** (plans, testcases, PRD/BRD/summary Markdown in
-`agent_logs/`, and every checked-in repo doc — `docs/`, `README`, ADRs, committed PRD/BRD files):
-the `th` prose rule never touches `.md`. Default **`en`** ⇒ everything English, no change.
+## Provider adapters
 
-## Product Overview
+`scripts/vcs/` (PR/MR) · `scripts/tracker/` (tickets) · `scripts/notify/` (chat) · `scripts/observability/`
+(traces/logs). **Always go through the adapters — never call `gh`/`glab`/Notion/Jira/Slack/the SigNoz API
+directly.** ⚠️ **Run a WRITER bare** — never in a pipe, `&&`, `;`, `$( )` or a heredoc. The allow rules match the
+WHOLE command string, so a bare call matches and runs while a compound matches nothing, falls through to the
+permission classifier, and is denied **silently, without prompting anyone**. Piping buys nothing — these print
+1-4 lines; redirect to a file if a later step needs the output. Readers and any `--dry-run` may be piped freely.
+Enforced by `pretool-adapter-pipe-guard.sh`.
+
+## Language and compression
+
+Both are injected mechanically every session, so this section carries only what those injections do **not** say.
+If the language directive is ever missing (a stripped session), read the config yourself before your first
+output; under `th`, **any `.md` file you author is still English — always**. And ⚠️ **compression is an OUTPUT
+rule: the first brief that spawns an agent is INPUT and goes in FULL** — that one message is the agent's whole
+world. Everything after it is caveman, style never content, so a follow-up's NEW facts still go in complete.
+
+## Speaking and showing
+
+Per-person and off by default; what concerns you is what you put in a **reply**.
+
+- **`VOICE[group]: <one line>`** — every finished turn speaks a closing line; the only question is whether YOU
+  write it. Groups `green` · `red` · `ship` · `needs-you` · `incident`. Say the **result** — the finding, number,
+  verdict, or what is waiting for the user — never that you finished, which they can already see.
+- **`SAY[group]: <one line>`** — the same, spoken MID-turn at `chattiness: max` only, the moment you work
+  something out. Must sit mid-turn with a tool call still to come, and never tags a step you are about to take.
+- **`SHOW: <target>`** — puts what the reply TALKED ABOUT on screen: a URL, `<repo>!<iid>` (`my-repo!555`), a
+  ticket key, or a repo-relative path (`scripts/x.sh:42`) — never a hand-assembled PR/MR URL. A `~` focus phrase
+  (`my-repo!555 ~signature_key`) lands the reader ON the thing, not atop a page.
+
+## Notifications
+
+**Ticket work — auto-post, never ask.** When a workflow's code-review or ship step completes for a ticket (the
+PR/MR carries `tracker.ticket_prefix` in its title or branch), post the chat notification as part of that step.
+Not optional, not a follow-up, not something to ask permission for.
+
+**Workspace/framework work — ASK first.** A change to THIS workspace repo itself has no ticket and is not the
+team's sprint traffic; the same holds for any PR/MR with no ticket key. Report it in chat and ask — announcing
+infra work to a product channel spends attention nobody was waiting to give. Retract with
+`send.sh --delete <permalink>`, but those already looking saw it, so say so if it mattered.
+
+## DO NOT
+
+Three more bans, each hook-enforced rather than remembered: a **comment** in `workspace.config[.local].yaml`
+(`.claude/rules/workspace-config.md`) · a create/edit/commit **inside a git submodule checkout**
+(`.claude/rules/submodules.md` — reading, and `git -C <sub> checkout <ref>` to prove something, are fine) ·
+`codegraph` without an **absolute** `-p $CLAUDE_PROJECT_DIR/<repo>`, which otherwise walks up and answers from
+the WRONG repo with exit 0 (`pretool-codegraph-guard.sh`; the subcommand is `query`).
+
+## Product
+
 {{PRODUCT_DESCRIPTION}}
 
-## Tech Stack
-- <frontend / app stack>
-- <e2e testing stack>
-
-## Product Structure
-The group's repos are declared under `products:` in @workspace.config.yaml
-(and cloned via the generated `mani.d/<product>.yaml` files).
-
-**DO NOT:**
-- codegraph is not allowed at the organization (workspace) level — only inside an
-  individual repo.
-- Never edit, add, or commit **inside a git submodule checkout** (e.g.
-  `your-app/shared-lib/`, `your-web/packages/ui-kit/`). That
-  code belongs to a repo that is *also* cloned as its own primary clone at the workspace
-  root — make the change there. See `docs/agents/submodules.md`.
+**Stack:** <frontend / app stack> · <e2e testing stack>. Every repo's role, stack and green criterion is declared
+under `products:` in @workspace.config.yaml (and cloned via the generated `mani.d/<product>.yaml` files).

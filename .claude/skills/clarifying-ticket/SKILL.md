@@ -8,9 +8,10 @@ allowed-tools:
   - Grep
   - Glob
   # Codegraph (per-repo index): the FIRST lookup for the Mode-B code skim —
-  # codegraph explore/search before Grep/Glob/Read (which stay the last resort).
+  # codegraph explore/query before Grep/Glob/Read (which stay the last resort).
   - Bash(codegraph *)
   - AskUserQuestion
+  - Skill
 ---
 
 # Clarifying a ticket
@@ -112,7 +113,7 @@ for this org's ticket-id format, status names, and any read-only fields.
    partial/ambiguous, prefer linking to the existing ticket (note the overlap in the new
    ticket's **Source** block) over filing a near-duplicate.
 4. **(Mode B only) Clarify — when it isn't clear, ASK; never invent.** Shallow code skim
-   — **codegraph FIRST** (`codegraph explore`/`codegraph search` to find the area the
+   — **codegraph FIRST** (`codegraph explore`/`codegraph query` to find the area the
    request touches), with `Grep`/`Glob`/`Read` slices only as a last resort — →
    `AskUserQuestion` (≤4 related per call; skip anything the request, existing ticket, or
    step-2 classification already answers). Any gap that would change scope, behaviour, or
@@ -129,7 +130,13 @@ for this org's ticket-id format, status names, and any read-only fields.
    **Assumptions** block for anything inferred.) When refining an existing ticket, the
    template is a **skeleton, not a reset** — fold the step-1 content into its matching
    fields per `templates.md` (nothing dropped); the rewrite then goes through `--body`,
-   which preserves the ticket's images.
+   which preserves the ticket's images. **When a flow, relationship, lifecycle, or
+   structure in the spec would land more clearly as a picture than more prose**,
+   invoke `/diagram-ticket` before finalizing the body — it renders a Mermaid diagram,
+   attaches it, and returns a reference line + live-editor link to fold into the
+   template's top-level text (never nested inside a list; see its own gotchas). It's a
+   no-op enhancement, not a requirement: `diagrams.enabled=false` (the default) makes
+   it return `skipped` immediately, and plenty of tickets clarify fine with text alone.
 6. **Create the ticket with its spec in the body** (only if step 3 found no duplicate).
    One call — `--description` is the one-line summary, `--body` is the full rendered spec,
    `--issuetype` carries the step-2 Type classification onto the actual field (mapped to the

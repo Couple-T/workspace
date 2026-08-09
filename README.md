@@ -81,6 +81,22 @@ cp scripts/vcs/.env.example     scripts/vcs/.env       # GitHub/GitLab
 cp scripts/notify/.env.example  scripts/notify/.env    # Slack token
 ```
 
+> 🔍 **SonarQube MCP token** (only with `quality_gate.provider: sonarqube`). The `sonarqube`
+> MCP server runs as a **shared** container (`aiworks-mcp-sonarqube`, HTTP transport, like the
+> postgres MCP services); its `.mcp.json` entry sends your SonarCloud token as a per-request
+> `Authorization: Bearer` header, expanded from `SONARQUBE_TOKEN` **in the environment Claude
+> Code is launched from**. Claude Code does not auto-load `.env`, so load one into your shell
+> first. Get a token on [sonarcloud.io](https://sonarcloud.io) → **My Account → Security** →
+> Generate Tokens → **User Token** (the `squ_…` value). Put it in a git-ignored `.env`; the
+> committed `.envrc` (a one-line `dotenv`) auto-loads it with [`direnv`](https://direnv.net):
+> ```sh
+> brew install direnv                       # + hook your shell:  eval "$(direnv hook zsh)"
+> printf 'SONARQUBE_TOKEN=squ_your_token\n' >> .env   # workspace root; already git-ignored
+> direnv allow                              # trust the checked-in .envrc once
+> ```
+> Set `SONARQUBE_ORG` to your SonarCloud organization slug (in `.superset/.env`) if it differs
+> from the default. Restart Claude Code after the first setup so the MCP config reloads.
+
 **4. Set up the workspace** — clones + onboards every declared repo, installs node
 dependencies, and starts the shared MCP services. Idempotent, safe to re-run:
 
@@ -113,13 +129,81 @@ cursor <workspace>.code-workspace
 **How a run behaves (with the default policies):**
 
 - 🧭 **Plan approval is on** — the run stops after planning. Review, then re-run with
-  `--approve-plan` to continue.
+  `--approve-plan` to continue. Skip it on your own runs with `planning: auto_approve: true`
+  in the git-ignored `workspace.config.local.yaml` (the one control-flow key that takes a
+  personal override — see [ADR 0003](docs/adr/0003-personal-runtime-config-overrides.md)).
 - 🔒 **Auto-merge is off** — the run reviews + tests, then leaves the PR/MR open for a
   human to merge, and posts a review digest to your `notify.channel`.
 - 🎯 **Ticket status** is moved by the workflow itself — don't touch it by hand mid-run.
 
 Flip these in `workspace.config.yaml` (`planning.auto_approve`, `vcs.auto_merge`,
 `notify.*`).
+
+## 🔍 Production triage (optional)
+
+Two read-only MCP servers let an agent read **production ground truth** instead of guessing:
+`pg_triage` for Postgres rows ([`scripts/db/`](scripts/db/README.md)) and
+`redis_triage` for Redis keys and Streams ([`scripts/redis/`](scripts/redis/README.md)).
+Both are read-only by construction and disconnect when done.
+
+They live in **local scope**, not the shared `.mcp.json`: Claude Code spawns every enabled server
+in every session, and prod triage is occasional work, so the machines that do it are the ones that
+carry it. Opt in with one line in your git-ignored `workspace.config.local.yaml`:
+
+```sh
+cp scripts/db/.env.example    scripts/db/.env      # read-only DSNs, per target and per env
+cp scripts/redis/.env.example scripts/redis/.env   # Redis targets (+ tunnel, if you need one)
+./aiworks setup                                    # or: scripts/triage-mcp.sh sync
+scripts/triage-mcp.sh status                       # policy + what is registered
+```
+
+`aiworks sync` registers both servers on every machine — **staging triage needs no opt-in**.
+**Production** does, and the servers enforce it themselves, so it is one line in your git-ignored
+`workspace.config.local.yaml` and takes effect immediately (no re-register, no restart):
+
+```yaml
+triage:
+  prod: true          # PRODUCTION targets; staging works without it
+# enabled: false      # the other direction — keep both servers out of this machine's sessions
+```
+
+Restart the session for the tools to appear. Then verify (read-only):
+
+```sh
+uv run scripts/db/pg_triage_mcp.py --verify staging --target main   # + asserts prod is refused when off
+uv run scripts/redis/redis_triage_mcp.py --selftest
+```
+
+<details>
+<summary><strong>Under auto mode, add the authorization context (per machine)</strong></summary>
+
+Read-only by construction is not the same as *authorized*: under auto mode Claude also needs to be
+told that reading production through these prefixes is sanctioned, and where the line is. That
+context is prose in your personal `~/.claude/settings.json` under `autoMode.environment` — adapt
+the names to your setup:
+
+> Deployed DB access is ONLY through the pg-triage MCP, tool prefix `mcp__pg_triage__*`. Every
+> call names its environment explicitly (`env="staging"` | `env="prod"`; there is no default).
+> Treat EVERY `env="prod"` call as a sensitive, read-only production read, regardless of the
+> target name; `env="staging"` is ordinary non-production work. The server enforces a read-only
+> role and refuses prod entirely unless `triage.prod` is on for this machine; if any call under
+> this prefix ever mutates prod, treat it as a production write, not a read.
+
+> The local dev databases are ordinary LOCAL dev resources — routine local reads, scratch tables
+> and test queries there are fine. The ONE restriction: prod-derived data may reach them ONLY as
+> the MASKED output of `scripts/db/prod_repro_seed.py`; a prod read written to a local database
+> WITHOUT going through that tool is an unmasked prod-data flow and is NOT authorized.
+
+> Production Redis access is ONLY through the redis-triage MCP, tool prefix
+> `mcp__redis_triage__*` — typed READ tools only, with no command passthrough. That server
+> owns its own port-forward and forwards the Redis port ONLY; it is never a remote shell, and the
+> agent holds no `gcloud` grant. Treat every call against a `prod=true` target as a sensitive
+> read-only production read; if any call under this prefix ever mutates Redis, treat it as a
+> production write. A local dev Redis (`mcp__redis`) stays writable. Prod Redis VALUES are never
+> persisted locally: the only sanctioned local repro path is `capture_shape` →
+> `scripts/redis/replay_shape.py`, which writes SYNTHETIC values from a schema.
+
+</details>
 
 ## 🗂️ Managing repos
 
@@ -138,6 +222,25 @@ Flip these in `workspace.config.yaml` (`planning.auto_approve`, `vcs.auto_merge`
 
 > ⚠️ Never hand-edit `mani.d/`, the `.code-workspace` file, or the CONFIG block in
 > `.claude/workflows/dev-cycle.js` — all generated from the config.
+
+## 🔄 Keeping the tooling current
+
+`setup` only ever **installs what is missing** — it never moves a tool forward. `update` is
+the other half: it upgrades each prerequisite through whichever installer owns it on your
+machine (brew, rustup, corepack, gcloud, the Claude Code CLI + its plugins, codegraph, the
+shared MCP images), and skips anything brew doesn't own rather than shadowing it.
+
+```sh
+./aiworks update                        # every group; best-effort, one failure never aborts
+./aiworks update -n                     # preview — print each command, change nothing
+./aiworks update --only claude,plugins  # just the Claude Code CLI + its plugins
+./aiworks update --check-deps           # …and report outdated deps per repo (read-only)
+```
+
+Two things it reports but never changes: **node** (an nvm major switch moves the global bin
+dir, so `pnpm` and every other global silently leaves PATH — the safe command is printed for
+you), and **repo dependencies** (`npm update` / `cargo update` rewrite a lockfile, so each is a
+branch + tests + MR per repo, not a maintenance chore). Restart Claude Code after a plugin update.
 
 ## 📚 Learn more
 

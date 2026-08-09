@@ -5,10 +5,10 @@ export const meta = {
   phases: [
     { title: 'Scope', detail: 'cto: classify which repos the ticket touches + dependency order + whether the cross-repo test-suite (QA) gate applies', model: 'opus' },
     { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (code) · qa-planner designs the test plan + automation plan (test-suite repo) → branch + plan. The WORKFLOW moves the ticket to in_progress (per-repo agents no longer touch status). If planning.to_html, each plan is also rendered to interactive HTML; if planning.auto_approve is off, the run STOPS here for human plan approval (re-run with --approve-plan).', model: 'opus' },
-    { title: 'Build', detail: 'ALL scoped repos in parallel (build-order decoupled from merge-order — a build needs only the agreed contract, not a merged upstream; depends_on is still honored at Merge, upstream→downstream): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its spec(s) + regression scope — before the PR/MR.', model: 'sonnet/opus' },
+    { title: 'Build', detail: 'ALL scoped repos in parallel (build-order decoupled from merge-order — a build needs only the agreed contract, not a merged upstream; depends_on is still honored at Merge, upstream→downstream): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo iterates SCOPED (`scripts/dev.sh test <spec>`) then runs the ticket scope — its spec(s) + regression scope — before the PR/MR.', model: 'sonnet/opus' },
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
-    { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch. First review is one COMPLETE pass per reviewer; every later round RE-VISITS only that reviewer\'s own findings (raise nothing new) — except a fix-CAUSED regression, which HALTS the repo loudly for human action; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet' },
-    { title: 'Test suite', detail: 'qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `npm test -- <specs>`, NOT the full suite. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
+    { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec, AND runs the repo suite — approval is gated on a green receipt; a suite that cannot run halts the repo rather than failing open) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch. First review is one COMPLETE pass per reviewer; every later round RE-VISITS only that reviewer\'s own findings (raise nothing new) — except a fix-CAUSED regression, which HALTS the repo loudly for human action; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet' },
+    { title: 'Test suite', detail: 'qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `scripts/dev.sh test <specs>`, NOT the full suite, then reports the per-TC results to the ticket WITH the run\'s own screenshots embedded. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. NEVER fails open: the verdict needs a receipt (real command + exit code + summary line) AND a second agent must find the result comment on the ticket — otherwise the gate is recorded as NOT RUN, not as a pass, and nothing merges. A repo declared `suite_kind: load` must additionally be equal-or-better than the same scenario on the ticket\'s base branch, judged against the environment\'s own measured noise floor, so its verdict is pass / fail / unavailable; a regression the developer ATTRIBUTES to the change loops back for a fix (attribute first, fix second) up to loadtest.max_fix_rounds. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
     { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). The squash-merge is outward + irreversible, so under auto-mode only a human clears it: with vcs.auto_merge ON the workflow does NOT merge — it emits the exact `! …/merge-pr.sh` command (upstream→downstream) for the main session to present, then stops (status awaiting-human-ship). With auto-merge OFF the validated PR/MR is left OPEN and the run stops. Either way the run itself merges/distributes nothing.', model: 'sonnet[1m]' },
     { title: 'Distribute', detail: 'outward + irreversible like Merge, so also a human `!` step: the workflow emits the `! … firebase appdistribution:distribute …` command (a template the main session resolves) to run AFTER the merge lands; the main session then moves the ticket to done.', model: 'sonnet' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-repo/role token table (summarize-workflow-performance)', model: 'haiku' },
@@ -47,8 +47,17 @@ export const meta = {
 //   background agent), and the run stops (awaiting-human-ship). false ⇒ the run reviews + runs the
 //   test-suite gate then STOPS, leaving the PR/MR OPEN for a human. Either way the run merges/distributes nothing itself.
 // AUTO_APPROVE_PLAN — planning.auto_approve. false ⇒ after Kickoff the run STOPS for human plan
-//   approval before build; re-run with --approve-plan to proceed.
-// PLAN_TO_HTML — planning.to_html. true ⇒ planners ALSO render each plan to interactive HTML.
+//   approval before build; re-run with --approve-plan to proceed. Like PLAN_TO_HTML this const is
+//   only the FALLBACK DEFAULT: it is RE-RESOLVED at runtime (local-first) into RESOLVED_AUTO_APPROVE
+//   below — the value the gate actually reads — so a personal workspace.config.local.yaml
+//   `planning: auto_approve:` reaches a headless run too. It is the ONE control-flow key that takes a
+//   personal override: skipping the plan gate is reversible (review + the test-suite gate + merge all
+//   still stand between the plan and anything shipping). See docs/adr/0003.
+// PLAN_TO_HTML — planning.to_html. true ⇒ planners ALSO render each plan to interactive HTML. This
+//   const is only the FALLBACK DEFAULT: like LANGUAGE it is RE-RESOLVED at runtime (local-first) into
+//   RESOLVED_PLAN_TO_HTML below — the value the run actually uses — so a personal
+//   workspace.config.local.yaml `planning: to_html:` reaches a headless run too. It is an output
+//   preference, not control flow; AUTO_MERGE, the status lifecycle and REPOS stay shared-only.
 // NOTIFY / NOTIFY_PROVIDER / NOTIFY_CHANNEL — notify.{enabled,provider,channel}. When NOTIFY is
 //   true AND AUTO_MERGE is false, the final Notify phase posts a "please review" digest (the open
 //   PR/MR per repo) to NOTIFY_CHANNEL via the scripts/notify/ adapter. With auto-merge ON the run
@@ -82,6 +91,13 @@ const DESIGN_ENABLED = true     // from workspace.config.yaml design.enabled; fa
 const QUALITY_GATE = 'none'     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const REVIEW_LEVEL = 'thorough'     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
 const LANGUAGE = 'en'     // from workspace.config.yaml language; 'th' ⇒ English spine, Thai prose (docs/agents/language.md; see LANGUAGE_DIRECTIVE below); 'en' ⇒ unchanged
+const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-branch non-degradation gate (docs/agents/loadtest-gate.md)
+  tolerancePct: 10,            // a metric may degrade this much before it counts as a regression
+  noiseRuns: 2,                // base-vs-base runs used to measure the env's own run-to-run spread
+  noiseCeilingMultiple: 2,     // noise floor above tolerancePct × this ⇒ verdict 'unavailable' (env too coarse to judge)
+  maxFixRounds: 2,             // attributed-regression → developer fix → re-run loops before halting
+  baselineCache: '~/.cache/aiworks/loadtest-baselines',
+}
 const STATUS = {
   not_started: 'Backlog',
   todo: 'To Do',
@@ -130,20 +146,55 @@ const FIGMA_DIRECTIVE = (typeof DESIGN_ENABLED !== 'undefined' ? DESIGN_ENABLED 
 // reliably skip the check when absorbed in their actual task). A single dedicated resolver agent,
 // whose ENTIRE job is that one Read, is far more reliable — do it once, here, and bake the result
 // into every downstream prompt instead of hoping each one remembers.
-const LANG_SCHEMA = { type: 'object', additionalProperties: false, required: ['language'], properties: {
-  language: { type: 'string', enum: ['en', 'th'] }, source: { type: 'string' } } }
+//
+// THE SAME RESOLVER ALSO CARRIES planning.to_html and planning.auto_approve (see the consts above).
+// to_html is a personal OUTPUT preference — which artifacts a human wants to read. auto_approve is
+// control flow, and the ONE control-flow key that honors a personal override: the plan gate is
+// REVERSIBLE (review, the test-suite gate and merge all still stand between a plan and anything
+// shipping), so skipping it changes only how the runner spends their own time. The irreversible
+// control flow — auto_merge (it publishes), the status lifecycle and REPOS (they rewrite artifacts
+// the whole team reads) — stays SHARED-only. One resolver Read covers all three keys, so this costs
+// nothing over the language check it replaces. See docs/adr/0003.
+//
+// FAIL-CLOSED by construction: auto_approve is reported ONLY when a local `planning:` block exists,
+// so a resolver that throws, omits the key, or returns junk leaves the committed AUTO_APPROVE_PLAN
+// standing — the gate stays ON. Nothing here can loosen it by accident.
+const RUNTIME_SCHEMA = { type: 'object', additionalProperties: false, required: ['language'], properties: {
+  language: { type: 'string', enum: ['en', 'th'] }, plan_to_html: { type: 'boolean' }, auto_approve: { type: 'boolean' }, source: { type: 'string' } } }
 let RESOLVED_LANGUAGE = (typeof LANGUAGE !== 'undefined' ? LANGUAGE : 'en')
+let RESOLVED_PLAN_TO_HTML = (typeof PLAN_TO_HTML !== 'undefined' ? PLAN_TO_HTML : false)
+let RESOLVED_AUTO_APPROVE = (typeof AUTO_APPROVE_PLAN !== 'undefined' ? AUTO_APPROVE_PLAN : false)
 try {
-  const langCheck = await agent(
-    'Read `workspace.config.local.yaml` in the repo root if it exists AND has a `language:` line — that value wins, source="workspace.config.local.yaml". Otherwise read `workspace.config.yaml`\'s `language:` line (default "en" if absent), source="workspace.config.yaml". Return ONLY the resolved language ("en" or "th") and the source file — nothing else, no other files, no other analysis.',
-    { agentType: 'documentor', label: 'resolve-language', schema: LANG_SCHEMA },
+  const cfgCheck = await agent(
+    'Resolve three workspace config values, local-first. Read `workspace.config.local.yaml` in the repo root if it exists; else read `workspace.config.yaml`. (1) language: if the local file exists AND has a `language:` line, that value wins, source="workspace.config.local.yaml"; otherwise use `workspace.config.yaml`\'s `language:` line (default "en" if absent), source="workspace.config.yaml". (2) plan_to_html: if the local file exists AND has a `planning:` block, read `to_html` from THAT block ONLY — the merge is shallow per top-level key, so a local `planning:` block replaces the shared one whole and a `to_html` absent from it means false, NOT the shared file\'s value; otherwise use `workspace.config.yaml`\'s `planning.to_html` (default false if absent). (3) auto_approve: report this key ONLY when the local file exists AND has a `planning:` block — then read `auto_approve` from THAT block ONLY, and an `auto_approve` absent from that block means false, NOT the shared file value. If there is no local file, or it has no `planning:` block, OMIT auto_approve from your answer entirely so the workflow keeps its committed default. Return ONLY the resolved language ("en" or "th"), plan_to_html (boolean), auto_approve (boolean — omitted entirely unless a local `planning:` block exists), and the source file — nothing else, no other files, no other analysis.',
+    { agentType: 'documentor', label: 'resolve-runtime-config', schema: RUNTIME_SCHEMA },
   )
-  if (langCheck?.language === 'en' || langCheck?.language === 'th') RESOLVED_LANGUAGE = langCheck.language
-} catch { /* any failure here keeps the committed-default fallback above */ }
+  if (cfgCheck?.language === 'en' || cfgCheck?.language === 'th') RESOLVED_LANGUAGE = cfgCheck.language
+  if (typeof cfgCheck?.plan_to_html === 'boolean') RESOLVED_PLAN_TO_HTML = cfgCheck.plan_to_html
+  if (typeof cfgCheck?.auto_approve === 'boolean') RESOLVED_AUTO_APPROVE = cfgCheck.auto_approve
+} catch { /* any failure here keeps the committed-default fallbacks above */ }
+if (RESOLVED_PLAN_TO_HTML !== PLAN_TO_HTML) log(`planning.to_html resolved to ${RESOLVED_PLAN_TO_HTML} at runtime (committed mirror says ${PLAN_TO_HTML}) — personal workspace.config.local.yaml override.`)
+if (RESOLVED_AUTO_APPROVE !== AUTO_APPROVE_PLAN) log(`planning.auto_approve resolved to ${RESOLVED_AUTO_APPROVE} at runtime (committed mirror says ${AUTO_APPROVE_PLAN}) — personal workspace.config.local.yaml override.`)
 
 const LANGUAGE_DIRECTIVE = RESOLVED_LANGUAGE === 'th'
   ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write ALL prose — chat, ticket description & comments, PR/MR description & review discussion, and the .html render of a plan — in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, ALL code + code comments + git commit messages + branch names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). Code, checked-in repo docs (docs/, README, ADRs, committed PRD/BRD files), AND ANY file you author with a .md extension (plans, testcases, PRD/summary Markdown in agent_logs/) are NEVER Thai — the th prose rule applies to chat, tickets, PR/MR discussion, Slack, and .html docs only.'
   : ''
+
+// Every agent spawned with a NAMED agentType inherits caveman from its .claude/agents/
+// def, where `skills: - caveman:caveman` is preloaded at spawn — measured, not assumed:
+// the skill's own text was present in 5/5 probe transcripts. A `general-purpose` agent
+// has no def, so it inherits nothing, and that is the one spawn path where this
+// workspace's output-compression rule has to travel in the prompt itself. Appended to
+// those briefs ONLY (guard-backstop, ws-root, plan-guard) — a def-backed agent would
+// just pay for the same instruction twice.
+//
+// The INPUT half is the part that is easy to get wrong, and it has two sides. A brief
+// that ARRIVES compressed has lost context the agent cannot get back — so the FIRST
+// brief, the one that spawns an agent, is never compressed. Every message after that
+// spawn is, because the context already landed and a follow-up is a pointer rather than
+// a context transfer. Style only, though: a follow-up carrying a new fact carries it whole.
+// It matters most for guard-backstop, whose findings become PR comments a human reads.
+const CAVEMAN_DIRECTIVE = ' CAVEMAN_DIRECTIVE — invoke `/caveman:caveman` and write every report, comment, and reply ultra-compressed: drop articles/filler/pleasantries/hedging, fragments are fine, technical accuracy stays FULL, and code + identifiers + error strings stay verbatim. It governs how you WRITE, never what you DO: never skip a tool call, never skip a tool-availability check, and never claim a tool or shell is unavailable without first actually running it. It never applies to your INPUT either: the brief that spawned you stands in FULL — do not compress or summarize it away. If you spawn or message another agent, its FIRST brief goes out in FULL for the same reason, while every follow-up after that spawn IS compressed (the context already landed; a follow-up is a pointer, not a context transfer) — style only, so any NEW fact in a follow-up still goes in complete.'
 
 // ──────────────────────────────────────────────────────────────────────────
 // Inputs
@@ -155,8 +206,15 @@ const TICKET_RE = new RegExp(`${TICKET_PREFIX}-\\d+`, 'i')
 const ticket = (rawArg.match(TICKET_RE)?.[0] || rawArg).trim()
 if (!ticket) throw new Error(`dev-cycle needs a ticket number, e.g. args: "${TICKET_PREFIX}-12"`)
 const opt = typeof args === 'object' && args ? args : {}
-const MAX_GATE_ROUNDS = opt.maxGateRounds || 3     // build↔gates loops, per repo
-const MAX_REVIEW_ROUNDS = opt.maxReviewRounds || 3 // review↔fix loops, per repo
+// review↔fix loops, per repo. Generous ON PURPOSE: at review.level strict the gates report
+// must-fixes only, a reviewer that passes is FROZEN (never re-run), and a re-visit may raise
+// nothing new — so extra rounds cannot widen scope. They only let a repo finish its own
+// finding list inside ONE invocation instead of stranding a nearly-done PR at the cap. The
+// loop still exits the moment no findings remain, so the cap costs nothing when unused.
+const MAX_REVIEW_ROUNDS = opt.maxReviewRounds || 10
+// Attributed load-test regression → developer fix → re-run, per repo. Small by contrast: a
+// load run costs wall clock, not tokens (workspace.config.yaml loadtest.max_fix_rounds).
+const MAX_LOADTEST_FIX_ROUNDS = opt.maxLoadtestFixRounds || LOADTEST.maxFixRounds
 const MAX_BUILD_TRIAGE = opt.maxBuildTriage || 3   // fix attempts per failing test before a build agent must hand off
 // REVIEW LEVEL (workspace.config.yaml review.level, mirrored above). strict ⇒ the Review phase
 // reports must-fixes ONLY and suppresses the whole nice-to-have tier; thorough ⇒ + nice-to-have.
@@ -199,6 +257,12 @@ const BUILD_DISCIPLINE = ` BUILD DISCIPLINE (mandatory):
 • NEVER run a repo-wide formatter or autofix — no \`cargo fmt\`/\`clippy --fix\`, \`eslint .\`/\`prettier --write .\`, \`dart format .\`, \`gofmt -w .\`, or any whole-repo reformat. Format/lint ONLY the files you actually touched for this ticket; leave pre-existing drift in untouched files ALONE. A 50-file reformat diff that drowns the ticket change is itself a failure.
 • BOUND RED-TEST TRIAGE. Cap fixes at ${MAX_BUILD_TRIAGE} attempts per failing test. Before chasing a red, decide whether it is a FLAKY HARNESS rather than a real code failure — symptoms: passes/fails non-deterministically on re-run, shared or dirty fixtures, a query like fetch_optional resolving against MORE than one matching row, missing FK/seed data, leaked testcontainer state between tests. If it is the harness: fix FIXTURE ISOLATION / seeding (make the query deterministic) — do NOT loop trying to green a non-deterministic suite. If you cannot isolate it within the cap, FLAG it (status:"partial"/"blocked", name the flaky suite + cause in "remaining") and hand off; do not thrash.`
 
+// Appended to every test-suite gate prompt. The verdict is audited twice — the receipt must
+// describe a real command, and a SECOND agent reads the ticket for the result — because a run
+// has reported green having executed nothing, and a self-report cannot catch that about itself.
+const RECEIPT_CLAUSE = `
+RECEIPT (required — the verdict does not count without it): fill "receipt" with the EXACT command line you ran THIS session, its exit code, and the runner's own summary line quoted verbatim, plus the report file paths you produced and the URL of the comment you posted. Two checks run on your answer: this receipt, and an independent read of the ticket by another agent looking for your result comment. If either comes up empty the gate is recorded as NOT RUN — not as a pass — and nothing merges. So: post the per-scenario result to the ticket (\`scripts/tracker/add-ticket-comment.sh\`) whether the run was green or red, and never report from a report file you did not produce in this session — a stale artifact from an earlier round reads exactly like a fresh one.`
+
 // ──────────────────────────────────────────────────────────────────────────
 // Schemas
 // ──────────────────────────────────────────────────────────────────────────
@@ -232,16 +296,35 @@ const SCOPE_SCHEMA = {
     },
   },
 }
+// `unverified_claims` is REQUIRED, and an empty array is a real answer — the point is that a
+// planner must decide, per claim, whether it measured the thing or inferred it. An inferred
+// claim carries the command that would settle it, so the orchestrator (which holds grants the
+// planner does not — starting local services, running suites) can close the gap instead of
+// forwarding a guess as a finding. APP-1944 shipped a "missing index, suspected seq scans"
+// finding that one `aiworks run <repo>` + EXPLAIN would have corrected: the indexes existed.
 const REPO_PLAN_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['repo', 'base_branch', 'work_branch', 'plan_path', 'summary'],
+  required: ['repo', 'base_branch', 'work_branch', 'plan_path', 'summary', 'unverified_claims'],
   properties: {
     repo: { type: 'string' }, title: { type: 'string' },
     type: { type: 'string', enum: ['feature', 'bug', 'polish'] },
     base_branch: { type: 'string' }, work_branch: { type: 'string' },
     figma_url: { type: ['string', 'null'] }, plan_path: { type: 'string' },
-    plan_html: { type: ['string', 'null'] }, // set when PLAN_TO_HTML rendered the plan to interactive HTML
+    plan_html: { type: ['string', 'null'] }, // set when RESOLVED_PLAN_TO_HTML rendered the plan to interactive HTML
+    needs_artifact_publish: { type: ['boolean', 'null'] }, // plan_html rendered but Artifact publish is caller-only (no Artifact tool in a subagent)
     summary: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } },
+    unverified_claims: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false,
+        required: ['claim', 'why_blocked', 'unblock_command'],
+        properties: {
+          claim: { type: 'string' },           // the assertion the plan leans on
+          why_blocked: { type: 'string' },     // what stopped the measurement (missing grant, service down, needs prod scale)
+          unblock_command: { type: 'string' }, // the exact command that settles it
+        },
+      },
+    },
   },
 }
 // Resolves the absolute workspace (org) root ONCE at Kickoff so the workflow can hand every
@@ -344,6 +427,14 @@ const REVIEW_SCHEMA = {
   required: ['approved'],
   properties: {
     approved: { type: 'boolean' }, conclusion: { type: 'string' },
+    // The green gate: the reviewer RUNS the repo's suite on the PR/MR head itself (it holds the
+    // scripts/dev.sh grant — the other two gates deliberately do not) and reports the receipt.
+    // approved:true REQUIRES tests_green:true; a suite that could not run is gate_unavailable,
+    // never a pass — same contract the guardian and performance gates already use.
+    tests_green: { type: 'boolean' },
+    tests_receipt: { type: 'string' }, // the invocation + result, e.g. "scripts/dev.sh test → 214 passed / 0 failed"
+    gate_unavailable: { type: 'boolean' },
+    unavailable_reason: { type: 'string' }, // what was tried, why each attempt failed, the unblocking command
     comments: {
       type: 'array', items: {
         type: 'object', additionalProperties: false,
@@ -358,11 +449,41 @@ const REVIEW_SCHEMA = {
     regression_detail: { type: 'string' }, // what the fix broke + file:line + evidence it was the fix
   },
 }
+// The cross-repo QA gate's verdict. `receipt` is REQUIRED and not decorative: a gate that
+// returns passed:true with no evidence of having run is the one failure this schema exists to
+// stop (it has happened — the run reported green and no result reached the ticket). The caller
+// treats a missing/empty receipt as "did not run" and downgrades the verdict, so there is
+// nothing to gain by asserting a pass you cannot evidence.
 const TEST_SUITE_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['passed'],
+  required: ['passed', 'receipt'],
   properties: {
     passed: { type: 'boolean' }, conclusion: { type: 'string' },
+    receipt: {
+      type: 'object', additionalProperties: false,
+      required: ['command', 'exit_code', 'summary_line'],
+      properties: {
+        command: { type: 'string' },        // the exact command line you ran, this session
+        exit_code: { type: 'integer' },
+        summary_line: { type: 'string' },   // the runner's own tally, quoted verbatim
+        report_paths: { type: 'array', items: { type: 'string' } },
+        ticket_comment_url: { type: 'string' }, // where you posted the result
+      },
+    },
+    // Load suites (REPOS[id].suiteKind === 'load') only — the base-branch comparison.
+    // `unavailable` means the environment's noise floor is wider than the effect: an honest
+    // "cannot tell", loud-skipped like any other gate that could not run — never a quiet pass.
+    loadtest: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        verdict: { type: 'string', enum: ['pass', 'fail', 'unavailable'] },
+        base_sha: { type: 'string' }, candidate_sha: { type: 'string' },
+        baseline_cached: { type: 'boolean' }, env_fingerprint: { type: 'string' },
+        markdown: { type: 'string' },       // the comparator's table, as posted
+        regressed: { type: 'array', items: { type: 'string' } },
+        too_noisy: { type: 'array', items: { type: 'string' } },
+      },
+    },
     failures: {
       type: 'array', items: {
         type: 'object', additionalProperties: false,
@@ -371,6 +492,30 @@ const TEST_SUITE_SCHEMA = {
         },
       },
     },
+  },
+}
+// The developer's ATTRIBUTION verdict on a load-test regression — the step before any fix.
+// Its whole job is to keep a jittery environment from burning developer rounds: only
+// `attributable` earns a fix; the other two flip the gate to a loud `unavailable`.
+const LOADTEST_ATTRIBUTION_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['attribution', 'reasoning'],
+  properties: {
+    attribution: { type: 'string', enum: ['attributable', 'not-attributable', 'need-bigger-env'] },
+    reasoning: { type: 'string' },  // the commit / query / lock / allocation that explains it
+    evidence: { type: 'string' },   // file:line, EXPLAIN output, span — what you actually read
+    repo: { type: 'string' },       // which scoped repo carries the cause (where the fix lands)
+  },
+}
+// Independent confirmation that the gate's result actually REACHED the ticket. A second agent
+// reads the tracker rather than the gate re-asserting its own claim — self-report is the thing
+// being audited, so it cannot be the evidence.
+const RESULT_AUDIT_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['posted'],
+  properties: {
+    posted: { type: 'boolean' },
+    detail: { type: 'string' },  // the matching comment's opening line, or why none matched
   },
 }
 // One ticket-status move (the workflow's monotonic status driver — see moveTicket).
@@ -413,6 +558,10 @@ let trackerReachable = true // set by the scope stage; false → tracker writes 
 // quality/perf gate could not actually run). Fail-open policy: the run still merges/ships, but
 // this is surfaced loudly (summary banner + run result) so it is never read as gate-validated.
 let qualityGateUnavailable = null
+// Set when a LOAD suite ran green but its base-branch comparison could not produce a verdict
+// (the environment's noise floor is wider than the effect). Same loud-skip treatment: the run
+// continues, and the summary says plainly that "no slower than base" is unproven.
+let loadtestGateUnavailable = null
 const tick = (label) => { const now = budget.spent(); spend.push({ label, out: now - mark }); mark = now }
 
 // agent() THROWS when a subagent never returns StructuredOutput (after the engine's
@@ -485,7 +634,7 @@ async function writeSummary(runStatus, runResult) {
   const s = await safeAgent(
     `Run-recorder for the development-cycle workflow on ${ticket} (final status: ${runStatus}). You HAVE the Write tool + a narrow Bash perm for the usage parser — actually PRODUCE the file, do not just describe it.
 1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.
-${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}3. WRITE that narrative with the Write tool to agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md at the WORKSPACE (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
+${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}${loadtestGateUnavailable ? `2d. ⚠️ The load-test BASELINE comparison produced no verdict this run — put a prominent banner at the TOP (same treatment as the notes above): "${loadtestGateUnavailable}" The suite was green, but "no slower than the base branch" is UNPROVEN — do NOT describe this run as performance-validated, and state what would settle it (a run at the planned rate against a scaled environment).\n` : ''}3. WRITE that narrative with the Write tool to agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md at the WORKSPACE (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
 4. As the LAST step, RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write the file AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
 Return summary_path (the file you actually wrote + confirmed exists via Read), token_table_appended:true ONLY if you ran the parser and appended its real table, and a one-line note.` + LANGUAGE_DIRECTIVE,
     { agentType: 'documentor', phase: 'Summary', label: `summary:${ticket}`, schema: SUMMARY_SCHEMA },
@@ -533,7 +682,7 @@ On success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY i
 // PER-REPO PIPELINE  —  build ↔ gates ↔ PR ↔ review for ONE repo, up to
 // "approved, ready to merge". This is the OLD single-repo flow, parameterized by
 // the repo descriptor. Does NOT merge (merge is the ordered, cross-repo phase).
-// Returns { repo, status:'ready'|'build-unresolved'|'pr-unresolved'|'review-unresolved', ... }.
+// Returns { repo, status:'ready'|'build-unresolved'|'pr-unresolved'|'review-unresolved'|'review-tests-unverified', ... }.
 // NOTE: never calls phase() — multiple of these run in parallel within a wave, so
 // every agent() sets opts.phase explicitly to avoid racing the global phase state.
 // ──────────────────────────────────────────────────────────────────────────
@@ -549,13 +698,13 @@ async function runRepoPipeline(rp, desc) {
   const buildPrompt = desc.kind === 'test-suite'
     ? `${tag(R, desc.build, 'build', 0)} Build the test-suite automation for ${ticket} in the ${R} repo from the plan at ${rp.plan_path} (behaviour reference: agent_logs/${ticket}-testcases.md). ${inRepo}
 1. BRANCH ONLY — /self-control-gitflow start ${ticket} → create ${rp.work_branch} off ${rp.base_branch}. Do NOT finish/merge (the workflow opens + merges the PR later, in order).
-2. IMPLEMENT — strictly POM via /coding-automate ${ticket} (Page Objects in pages/, specs in tests/). Commit each slice conventionally (Refs ${ticket}).
-3. ITERATE SCOPED, not full — while building/fixing one feature run only its spec(s) on the SAME command: \`npm test -- <spec-token…>\`. Do NOT run the whole suite on every change.
-4. BOUNDED TRIAGE on a break — re-run the broken case ONCE (\`PLATFORM=<failing-platform> npm test -- <spec-token>\` + ONE \`npm run why\`), classify it, then ACT and MOVE ON — do not keep digging:
+2. IMPLEMENT — strictly POM via /coding-automate ${ticket}, in THIS repo's own layout and idiom (read its CLAUDE.md + .claude/rules/ — never assume a directory or a framework). Each test's title MUST open with its TC id from agent_logs/${ticket}-testcases.md, and each scenario MUST end by capturing a screenshot: the runner names artifacts after the test title, so that id is what ties the evidence to the results row. Commit each slice conventionally (Refs ${ticket}).
+3. ITERATE SCOPED, not full — while building/fixing one feature run only its spec(s), through THIS repo's harness: \`scripts/dev.sh test <the repo's own spec-scoping args>\`. Do NOT run the whole suite on every change, and do NOT reach for \`npm test\` — in several repos here it is a stub that exits 1.
+4. BOUNDED TRIAGE on a break — re-run the broken case ONCE (the same scoped \`scripts/dev.sh test\` + ONE \`scripts/dev.sh why test\`), classify it, then ACT and MOVE ON — do not keep digging:
    • automation/selector/flake → fix the spec/Page Object and re-run that one case until green.
-   • genuine APP/feature bug → log it to agent_logs/${ticket}-bugs.md and comment it ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with platform + repro, then move on. You are in the ${R} repo ONLY — NEVER read, reason about, or edit the app repo's source; root-causing app behaviour is the developer's job at the test-suite gate, not yours.
+   • genuine APP/feature bug → log it to agent_logs/${ticket}-bugs.md and comment it ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with the repro AND the failure screenshot's path from \`scripts/dev.sh artifacts\`, then move on. You are in the ${R} repo ONLY — NEVER read, reason about, or edit the app repo's source; root-causing app behaviour is the developer's job at the test-suite gate, not yours.
    • a brand-new feature spec red only because the app change is not built into this run yet is EXPECTED — note it and move on; it validates at the test-suite gate against the candidate build, not here.
-5. SCOPED RUN before handoff — once your automation is correct, run THIS ticket's scope ONCE on iOS AND Android: \`npm test -- <spec-token…>\` covering (a) the ticket's own spec(s) you built + (b) the ticket's regression spec(s) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)). Do NOT run the whole suite (\`npm test\` with no args): the full-suite run is ON-DEMAND only (the user triggers a full run separately), not part of this flow. ${desc.green} is the target — but a scoped red caused ONLY by reported app bugs or expected pre-merge reds is a VALID handoff state; record it, do not chase it.
+5. SCOPED RUN before handoff — once your automation is correct, run THIS ticket's scope ONCE via \`scripts/dev.sh test <scoping args>\` covering (a) the ticket's own spec(s) you built + (b) the ticket's regression spec(s) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)). Do NOT run the whole suite (\`scripts/dev.sh test\` with no scoping args): the full-suite run is ON-DEMAND only (the user triggers a full run separately), not part of this flow. Then confirm \`scripts/dev.sh artifacts\` lists a capture per scenario you automated — a green run with no rows means the capture step did not take effect, and the results report will have nothing to attach. ${desc.green} is the target — but a scoped red caused ONLY by reported app bugs or expected pre-merge reds is a VALID handoff state; record it, do not chase it.
 6. RETURN CONTRACT (mandatory) — /handoff, then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of the suite state (green, or red + the bug ids you reported), commit count, status="complete" (a green run, OR a red caused only by reported app bugs / expected pre-merge reds — both are a valid complete handoff for this phase) else "partial"/"blocked" with what's left in "remaining", and in "fixed" the spec/Page Object files you touched. Do NOT move the ticket status — the workflow does that. A red-but-reported suite is SUCCESS for this phase — never withhold the structured result to investigate further, and never exceed the step-4 triage budget.`
     : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} Treat this repo's docs/adr/* and CONTEXT.md as AUTHORITATIVE context the plan defers to: read them FIRST, and where the plan text and an ADR disagree, the ADR wins. If ${rp.work_branch} ALREADY exists with prior work (an approved re-run over an existing branch), RECONCILE existing code that contradicts the updated ADRs/plan — reshape it to the canonical schema/shape (e.g. a stale snake_case seed → the canonical kebab/Section schema) rather than only appending new code on top of the old shape. Run /coding-feature (it loads this repo's CLAUDE.md + coding_standards AND the workspace coding-style — storytelling code, NO body comments — "read before your first edit", and its Step 4 drives the build test-first through /tdd's red-green-refactor loop) and /karpathy-guidelines, committing each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.`
   let dev = await safeAgent(
@@ -622,7 +771,10 @@ async function runRepoPipeline(rp, desc) {
   // SonarQube nor risks tripping a usage-policy safeguard.
   if (desc.guard && QUALITY_GATE === 'none') log(`[${R}] quality_gate.provider=none — guardian gate skipped (auto-pass, no SonarQube attempt).`)
   const reviewers = [
-    desc.review && { key: 'review', role: desc.review, schema: REVIEW_SCHEMA, passed: (r) => r?.approved === true, open: (r) => r?.comments?.length || 0 },
+    // tests_green is part of the pass predicate, not just the brief: an approval that cannot point
+    // at a suite the reviewer actually ran is the exact failure the green gate exists to prevent,
+    // so the workflow enforces it deterministically rather than trusting the return text.
+    desc.review && { key: 'review', role: desc.review, schema: REVIEW_SCHEMA, passed: (r) => r?.approved === true && r?.tests_green === true, open: (r) => r?.comments?.length || 0 },
     desc.guard && QUALITY_GATE !== 'none' && { key: 'guard', role: 'guardian-engineer', schema: GATE_SCHEMA, passed: (r) => r?.passed === true, open: (r) => (r?.blocking?.length || 0) + (STRICT ? 0 : (r?.fold_in?.length || 0)) },
     desc.perf && { key: 'perf', role: 'performance-engineer', schema: GATE_SCHEMA, passed: (r) => r?.passed === true, open: (r) => (r?.blocking?.length || 0) + (STRICT ? 0 : (r?.fold_in?.length || 0)) },
   ].filter(Boolean)
@@ -647,13 +799,19 @@ async function runRepoPipeline(rp, desc) {
     reviewers.forEach((rv) => { modeThisRound[rv.key] = didFirstReview[rv.key] ? 'revisit' : 'first' })
     const changed = lastFixed.length ? ` The developer's last fix touched: ${lastFixed.join('; ')} — look there to confirm your threads are resolved and to judge whether the fix itself caused a regression.` : ''
     const prRef = `the OPEN PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}; ${rp.work_branch} → ${rp.base_branch})`
+    // GREEN GATE (code reviewer only — it is the one gate holding the scripts/dev.sh grant).
+    // A review that never ran the suite cannot say the PR/MR doesn't break the tests, so
+    // approved:true is gated on a receipt from a run the reviewer ACTUALLY performed. Mirrors
+    // the gate_unavailable contract the guardian + performance gates already use: a suite that
+    // could not run is UNVERIFIED, never a silent pass.
+    const greenGate = `🛑 MUST DO before you approve — RUN THE SUITE yourself on ${rp.work_branch} (workflow step 5, "Verify green"): \`scripts/dev.sh test\` from inside ${R}, plus \`scripts/dev.sh analyze\`/\`gen\` when this repo's definition of green names them — green here means "${desc.green ?? 'the repo suite passes'}". Run the WHOLE suite, never the raw toolchain (cargo/npm/pnpm), and drill a failure with \`scripts/dev.sh why test\` rather than dumping the log. The developer built on this same clone, so HEAD should already be ${rp.work_branch} — confirm with \`git rev-parse HEAD\` before trusting the run. Return tests_green + tests_receipt (the invocation and its result). A RED suite is a must-fix: comment it inline (failing test + shortest decisive output line + the change you believe caused it) and return approved:false — but first rule out a known false-red (stale/shared test DB, submodule branch drift, a suite already red on ${rp.base_branch}) by re-running it in isolation. If the suite needs a local stack, bring it up via that repo's own harness (\`<dep-repo>/scripts/dev.sh run\`) and re-run — "the environment was down" is not an answer. If it STILL genuinely cannot run, set tests_green:false + gate_unavailable:true + unavailable_reason (what you tried, why each attempt failed, the exact unblocking command), post ONE loud PR/MR comment that the test gate could not run, and do NOT approve — never fabricate a green.`
     // RE-VISIT — uniform across all three reviewers, with a per-role "what to re-check" line. The
     // first review is the COMPLETE, CLOSED finding set: confirm your OWN prior findings are addressed,
     // add nothing new. The ONE exception is a fix-CAUSED regression → fix_regression + a loud comment;
     // the workflow halts the repo for human action rather than looping the dev.
     const revisitTask = (rv) => {
       const recheck = rv.key === 'review'
-        ? `Do NOT run /review again — that re-derives a full review from scratch and surfaces new findings, exactly what re-visit forbids. Instead list the review threads YOU opened (\`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`) and, for each must-fix you raised in your first review, confirm the developer's fix + reply genuinely resolve it. Return approved:true ONLY when EVERY one of your first-review must-fixes is resolved; else approved:false listing which of YOUR threads remain open.`
+        ? `Do NOT run /review again — that re-derives a full review from scratch and surfaces new findings, exactly what re-visit forbids. Instead list the review threads YOU opened (\`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`) and, for each must-fix you raised in your first review, confirm the developer's fix + reply genuinely resolve it. The green gate is NOT scoped down by a re-visit: the developer changed code, so RE-RUN the suite (\`scripts/dev.sh test\` from inside ${R}, plus analyze/gen where this repo's green needs them) and return a FRESH tests_green + tests_receipt — last round's green proves nothing about this commit, and a fix that resolves your thread while breaking a test is exactly what this catches. Return approved:true ONLY when EVERY one of your first-review must-fixes is resolved AND tests_green is true; else approved:false listing which of YOUR threads remain open (a newly-red suite counts as one).`
         : `Do NOT re-scan or re-profile broadly. Re-check ONLY the blocking + fold_in items YOU raised in your first review (\`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\` / \`pr-threads.sh\`): confirm each is resolved on the PR/MR. Return passed:true ONLY when EVERY one of your first-review items is resolved; else passed:false listing which of YOUR items remain. File NO new Improvement tickets and add NO new blocking/fold_in items.`
       return `RE-VISIT (round ${reviewRound}) of ${prRef}. ${inRepo} Your first review is the COMPLETE, CLOSED finding set — you are ONLY confirming your OWN prior findings are addressed, NOT reviewing afresh. Raise, comment on, or file NOTHING new.${changed} ${recheck}
 THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY caused a NEW blocking problem (a regression the fix introduced — NOT a pre-existing issue your first review missed), do NOT fold it into the loop. Post ONE loud PR/MR comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "⚠️ REGRESSION: <what the fix broke + evidence it was this fix>"\`, then return ${rv.key === 'review' ? 'approved:false' : 'passed:false'} with fix_regression:true and regression_detail (what broke, file:line, why it is the fix). The workflow then HALTS this repo loudly for human action — it is not yours to fix in-loop.`
@@ -662,7 +820,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     const onPr = `the OPEN PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}; ${rp.work_branch} → ${rp.base_branch}). ${inRepo} ${scopeNote} Post each must-fix as a comment ON THE PR/MR at the specific file:line via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "<comment>"\` — NEVER on the tracker.`
     const firstReviewPrompt = (rv) =>
       rv.key === 'review'
-        ? `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Review ${onPr} Run /review (standards + spec) against the target. Return approved:true ONLY when the diff meets the bar and every ${STRICT ? 'must-fix' : 'must-fix AND nice-to-have'} comment is resolved; otherwise approved:false with the open comments.`
+        ? `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Review ${onPr} Run /review (standards + spec) against the target. ${greenGate} Return approved:true ONLY when the diff meets the bar, tests_green is true, and every ${STRICT ? 'must-fix' : 'must-fix AND nice-to-have'} comment is resolved; otherwise approved:false with the open comments.`
         : rv.key === 'guard'
           ? `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Quality-gate (static-analysis) review of ${ticket} in ${R} on ${onPr} The workspace's configured quality-gate provider is quality_gate.provider="${QUALITY_GATE}" (mirrored from workspace.config.yaml — do NOT re-read the file). If it is 'none', skip the scan and pass cleanly. Otherwise (SonarQube) run the gate by whichever channel is LIVE in THIS run-context: FIRST try the SonarQube MCP — if the mcp__sonarqube tools are not already in your toolset, load them with ToolSearch (e.g. \`select:mcp__sonarqube__get_project_quality_gate_status,mcp__sonarqube__search_sonar_issues_in_projects,mcp__sonarqube__search_security_hotspots\`) and read the quality-gate status + issues + security hotspots for the PR SHA; if the MCP is NOT reachable, FALL BACK to the installed \`sonar\` CLI over Bash (\`sonar analyze\` / \`sonar verify --file <changed-file>\`). GATE-UNAVAILABLE: if NEITHER channel can actually run the scan (no MCP AND no working CLI/auth), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason naming both channels you tried and why each failed, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the configured SonarQube gate could NOT run in this run-context; never fabricate a green status. You summarize the scanner's output, not author a security review. For each BLOCKING issue/hotspot post a PR/MR comment (rule + file:line + remediation) and list it under "blocking"; as a light secondary pass sanity-check this repo's sensitive spots against the scanner output: ${desc.guardianFocus}. Triage every NON-blocking finding into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR fix (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the exact remediation and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have hardening (needs its own design, touches multiple layers, changes a contract/permission model, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. Return passed:false while ANY blocking OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY obtained a green quality-gate result (or the provider is 'none') AND no fold_in item is left unresolved — NEVER passed:true for a scan you could not run (use gate_unavailable for that). Return the structured gate result.`
           : `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Performance review of ${ticket} in ${R} on ${onPr} Profile the changed flows with this repo's profiling tooling (e.g. for a Flutter app every profiling command goes through scripts/perf.sh, never raw flutter/dart: perf.sh build --profile, perf.sh run --profile + perf.sh devtools); measure jank, startup, memory, rebuild storms, unbounded lists, costly/unindexed queries; mandatory animations stay 60fps. For each CRITICAL regression post a PR/MR comment WITH the measurement as evidence and list it under "blocking". Triage every NON-blocking optimization into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR optimization (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope; e.g. MediaQuery.of(context).size → MediaQuery.sizeOf(context), or an O(n²) lookup → a Set) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the measurement/mechanism + exact fix direction and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have optimization (needs its own design, touches multiple layers, changes a query/index/schema, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have; e.g. a composite (status, createdAt) index) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. GATE-UNAVAILABLE: if your profiling tooling cannot actually run in this run-context (e.g. scripts/perf.sh / the profiler is unavailable so you could measure nothing), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason explaining what you tried and why it couldn't run, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the performance gate could NOT run; never fabricate a clean profile. Return passed:false while ANY blocking regression OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY profiled the changed flows AND found zero blocking regressions AND no fold_in item is left unresolved — NEVER passed:true for a profile you could not run (use gate_unavailable for that). Return the structured gate result.`
@@ -677,13 +835,15 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     // A guard/perf gate that DIES — e.g. an Anthropic usage-policy safeguard tripping on the
     // security-review phrasing, or a transient API error — must NOT read as a hard run failure.
     // Guard: Layer 2 backstop (neutral general-purpose checklist over the diff). Perf: map to
-    // gate_unavailable so the run continues (fail-open). The code reviewer has no gate_unavailable
-    // concept → stays null (inconclusive, re-run next round).
+    // gate_unavailable so the run continues (fail-open). A code reviewer that DIES stays null
+    // (inconclusive, re-run next round) — distinct from the code reviewer REPORTING
+    // gate_unavailable, which means its test gate could not run and HALTS the repo (never
+    // fail-open: an unverified suite must not reach a merge).
     const guardBackstop = async (msg) => {
       log(`⚠️  [${R}] guardian subagent could not complete (${msg}) — running checklist inline via neutral agent (backstop).`)
       try {
         const bk = await agent(
-          `${tag(R, 'general-purpose', 'guard-backstop', reviewRound)} Static code-quality pass over the diff of ${prRef}. ${inRepo} Read the diff (\`git diff ${rp.base_branch}...${rp.work_branch}\`) and check the CHANGED lines for: ${desc.guardianFocus}. Post each concrete file:line issue via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "<issue + fix>"\` and list under "blocking" (no generic advice). Return passed:true when clean, else passed:false with the blocking list.` + LANGUAGE_DIRECTIVE,
+          `${tag(R, 'general-purpose', 'guard-backstop', reviewRound)} Static code-quality pass over the diff of ${prRef}. ${inRepo} Read the diff (\`git diff ${rp.base_branch}...${rp.work_branch}\`) and check the CHANGED lines for: ${desc.guardianFocus}. Post each concrete file:line issue via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "<issue + fix>"\` and list under "blocking" (no generic advice). Return passed:true when clean, else passed:false with the blocking list.` + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
           { agentType: 'general-purpose', phase: 'Review', label: `guard-backstop:${ticket}:${R}#${reviewRound}`, schema: GATE_SCHEMA },
         )
         if (bk) return { ...bk, via_backstop: true }
@@ -708,14 +868,29 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     }
     const results = await parallel(openReviewers.map((rv) => () => runReviewer(rv)))
     results.forEach((r, i) => { verdict[openReviewers[i].key] = r })
-    // A gate that reports gate_unavailable is frozen as UNAVAILABLE — NOT a pass, but it
+    // A guard/perf gate that reports gate_unavailable is frozen as UNAVAILABLE — NOT a pass, but it
     // can't be "fixed" by the developer either, so we stop re-running it (fail-open: the
     // repo can still reach 'ready'; the workflow surfaces the unavailability loudly).
+    // The CODE gate is NOT fail-open: its gate_unavailable means the SUITE never ran, so nothing in
+    // this run can say the PR/MR doesn't break the tests. Shipping on "it reads correct" is exactly
+    // what the green gate exists to stop, so it halts the repo instead (handled just below).
     openReviewers.forEach((rv) => {
       const v = verdict[rv.key]
-      if (v && v.gate_unavailable === true) { done[rv.key] = 'unavailable'; gatesUnavail[rv.key] = v.unavailable_reason || 'configured gate could not run in this run-context' }
-      else if (rv.passed(v)) done[rv.key] = true
+      const unavail = v?.gate_unavailable === true
+      if (unavail && rv.key !== 'review') { done[rv.key] = 'unavailable'; gatesUnavail[rv.key] = v.unavailable_reason || 'configured gate could not run in this run-context' }
+      else if (!unavail && rv.passed(v)) done[rv.key] = true
     })
+
+    // TEST GATE COULD NOT RUN — hard halt, never fail-open. The reviewer tried the repo harness
+    // (and any dependency stack it needs) and still could not produce a green receipt, so the
+    // verdict is UNVERIFIED: leave the PR/MR OPEN, merge nothing, and surface the unblocking
+    // command for a human. Re-run the dev-cycle once the suite can run.
+    const testGateDown = openReviewers.find((rv) => rv.key === 'review' && verdict[rv.key]?.gate_unavailable === true)
+    if (testGateDown) {
+      const why = verdict.review?.unavailable_reason || 'the repo test suite could not run in this run-context (no reason given)'
+      log(`⛔ [${R}] TEST GATE COULD NOT RUN on review round ${reviewRound} — ${why}. No approval, nothing merged; PR left OPEN. Unblock the suite, then re-run the dev-cycle.`)
+      return { repo: R, status: 'review-tests-unverified', plan: rp, pr, reviewRound, verdict, handoff: { status: 'blocked', summary: 'code review could not verify the suite is green', remaining: why } }
+    }
 
     // A reviewer that COMPLETED a pass in first-review mode has now done its one full review, so
     // every later pass for it is a re-visit. A crash (null verdict) leaves it in first-review mode.
@@ -828,7 +1003,7 @@ const wsRootRes = await safeAgent(
   `${tag('all', 'workspace', 'kickoff')} One-shot setup for the ${ticket} planning phase — touch NO git, NO tracker, write NO plan files. Your cwd IS the workspace (org) root (the dir that holds .claude/ and workspace.config.yaml).
 1. Print its ABSOLUTE path with \`pwd -P\` (resolve symlinks).
 2. Pre-create the plan-artifact dirs so later writes have a target UNDER each repo (paths are relative to your cwd — do NOT cd): \`mkdir -p ${repoDirs.map((d) => `"${d}/agent_logs" "${d}/agent_logs/development-planner"`).join(' ')}\`.
-Return workspace_root = the absolute path from step 1.`,
+Return workspace_root = the absolute path from step 1.` + CAVEMAN_DIRECTIVE,
   { agentType: 'general-purpose', model: 'haiku', phase: 'Kickoff', label: `ws-root:${ticket}`, schema: WS_ROOT_SCHEMA },
 )
 const WORKSPACE_ROOT = (wsRootRes?.workspace_root || '').trim().replace(/\/+$/, '')
@@ -839,6 +1014,13 @@ if (!haveAbs) log(`⚠️ [kickoff] could NOT resolve an absolute workspace root
 // repo). planRel/planHtmlRel are repo-ROOT-relative (the data-plan-md convention + what the
 // build/gate phases read from inside the repo); planPath/planHtmlPath are the ABSOLUTE forms we
 // hand the planner and record on the plan.
+//
+// The naming rule below is the EXECUTABLE expression of docs/agents/plan-artifacts.md — that
+// document is the single source of truth. Change it there first, then here; and do not restate
+// these paths anywhere else (an agent definition once carried a third, stale spelling, and the
+// resulting three-way disagreement is why APP-1944's plan landed where nothing could read it).
+// One plan file PER REPO: a build agent is spawned with its own repo as cwd, so a single file
+// covering several repos is unreadable to all but one of them.
 const planMeta = {}
 for (const r of scoped) {
   const desc = REPOS[r.repo]
@@ -885,29 +1067,40 @@ const plans = (await parallel(scoped.map((r) => () => {
   const preserveTest = approvePlan
     ? ` APPROVED RE-RUN (--approve-plan) — PRESERVE THE PLAN: FIRST, try to Read ${planPath} (the automation plan) and ${testcasesRel}. If the automation plan EXISTS and is non-empty, the human may have edited it — do NOT re-run /plan-testcases or /plan-automate and do NOT re-publish to the ticket. Read both files as-is and return the structured repo plan FROM them, with plan_path=${planPath} byte-unchanged. ONLY if the automation plan does NOT exist do you run the full planning chain described below.`
     : ''
-  // PLAN_TO_HTML: after the plan markdown exists, render it to a shareable interactive HTML.
+  // RESOLVED_PLAN_TO_HTML: after the plan markdown exists, render it to a shareable interactive HTML.
   // The markdown at planPath stays the SOURCE OF TRUTH this workflow reads at build — the HTML
   // is human-only. data-plan-md stays REPO-ROOT-RELATIVE (planRel) per the in-HTML convention;
   // the on-disk file is the absolute planPath. When auto_approve is OFF, turn on plan-approval mode.
-  const approvalClause = !AUTO_APPROVE_PLAN
+  // RESOLVED_AUTO_APPROVE, not the committed const: a personal local override must not leave an
+  // approval widget on a plan this run will never stop at (or drop one off a plan it will).
+  const approvalClause = !RESOLVED_AUTO_APPROVE
     ? ` Since planning.auto_approve is OFF, turn ON plan-approval mode in that HTML: set data-plan-approval="pending", data-plan-md="${planRel}" (the repo-root-relative path to the authoritative markdown this workflow reads at build — never replace it with the HTML), data-plan-cmd="/dev-cycle ${ticket} --approve-plan", and inline plan-approval.js. The human approves in the page; approving downloads the markdown to drop over the on-disk plan at ${planPath} before the re-run.`
     : ''
-  const htmlClause = PLAN_TO_HTML
+  // Both branches state the resolved value EXPLICITLY so the planner never re-resolves it from
+  // disk (its agent file tells it to self-resolve local-first only when no directive is present —
+  // without the OFF clause a personal local override could make it render HTML this run never asked
+  // for, or skip one it did, whenever the resolver above fell back to the committed default).
+  const htmlClause = RESOLVED_PLAN_TO_HTML
     ? (approvePlan
         ? ` PLAN-TO-HTML is ON but this is an APPROVED RE-RUN: the interactive HTML at ${planHtmlPath} was already rendered on the first run — do NOT re-render it (wasted cost). Run /write-interactive-docs to create it ONLY if ${planHtmlPath} is MISSING. Set plan_html=${planHtmlPath}.`
         : ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at ${planHtmlPath} (write it to that ${repoRoot ? 'ABSOLUTE ' : ''}path UNDER the repo, NEVER the workspace root; it must read as a human-facing plan write-up; the markdown at ${planPath} stays the source of truth a later phase executes), and set plan_html to that path in your structured result.${approvalClause}`)
-    : ''
+    : ' PLAN-TO-HTML is OFF for this run — planning.to_html was already resolved for you (local-first) and this is AUTHORITATIVE: do NOT re-check any config file. Render NO interactive HTML; the plan markdown is the only artifact. Leave plan_html null.'
+  // Grounding contract. A planner has narrow grants (no dev.sh, no docker, no Artifact tool), so
+  // whatever it could not measure has to travel back as a claim + the command that settles it —
+  // the orchestrator holds those grants and can close the gap. Without this, "the local DB was
+  // down" reads as a finished answer and an inferred claim ships as a finding.
+  const groundingClause = ` GROUNDING (mandatory): every claim in the plan is either MEASURED (you ran the query/EXPLAIN/test and quote the real numbers) or returned in unverified_claims — each with why_blocked and the exact unblock_command that would settle it (e.g. \`aiworks run ${r.repo}\` then an EXPLAIN, or \`scripts/dev.sh test\`). unverified_claims is REQUIRED; [] is a valid answer and means you measured everything you assert. Never present an inferred claim as a finding, and never end at "the service was down" — name the command.${RESOLVED_PLAN_TO_HTML ? ' Since you rendered an interactive HTML, set needs_artifact_publish=true: publishing a shareable Artifact needs the Artifact tool, which you do not have — the caller does it.' : ''} Plan paths, naming, and the never-commit rule: docs/agents/plan-artifacts.md — do not commit, stage, push, or open a PR/MR for anything you wrote.`
   const prompt = desc.kind === 'test-suite'
     ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo.${anchor}${preserveTest} Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
     : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/).${anchor}${preserveCode} Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes) — the workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan with plan_path=${planPath}.${htmlClause}`
-  return agent(prompt + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
+  return agent(prompt + groundingClause + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
 }))).filter(Boolean)
 // Normalize the recorded paths to the ABSOLUTE, repo-anchored forms — consistently for every
 // repo, regardless of what the planner echoed back (a planner that returned a bare-relative or
 // workspace-rooted path is overwritten with the canonical one) — and carry the dependency edges.
 plans.forEach((p) => {
   const m = planMeta[p.repo]
-  if (m) { p.plan_path = m.planPath; if (PLAN_TO_HTML) p.plan_html = m.planHtmlPath }
+  if (m) { p.plan_path = m.planPath; if (RESOLVED_PLAN_TO_HTML) p.plan_html = m.planHtmlPath }
   p.depends_on = (scoped.find((s) => s.repo === p.repo)?.depends_on) || []
 })
 
@@ -918,7 +1111,7 @@ plans.forEach((p) => {
 const guardRepos = plans.map((p) => {
   const m = planMeta[p.repo]
   const files = [m.planRel]
-  if (PLAN_TO_HTML) files.push(m.planHtmlRel)
+  if (RESOLVED_PLAN_TO_HTML) files.push(m.planHtmlRel)
   if (m.kind === 'test-suite') files.push(m.testcasesRel) // /plan-testcases output, read by build + the gate
   return { repo: p.repo, repoDir: m.repoDir, files }
 })
@@ -929,7 +1122,7 @@ For each file <f> of clone dir <dir>:
   1. If "<dir>/<f>" already exists → correctly placed; add to that repo's "ok".
   2. Else if the bare workspace-root "<f>" exists (a misfile) → \`mkdir -p\` the target's parent under "<dir>", \`mv "<f>" "<dir>/<f>"\`, and add to "relocated".
   3. Else → missing everywhere; add to "missing".
-Use plain shell only (test -f, mkdir -p, mv). Touch NO git, NO tracker, and NO file other than the relocations above. Do NOT move or alter the workspace-root run summaries (e.g. ${ticket}-DEV-CYCLE-SUMMARY.md) or anything not listed. Return the per-repo { repo, ok, relocated, missing } report.`,
+Use plain shell only (test -f, mkdir -p, mv). Touch NO git, NO tracker, and NO file other than the relocations above. Do NOT move or alter the workspace-root run summaries (e.g. ${ticket}-DEV-CYCLE-SUMMARY.md) or anything not listed. Return the per-repo { repo, ok, relocated, missing } report.` + CAVEMAN_DIRECTIVE,
   { agentType: 'general-purpose', model: 'haiku', phase: 'Kickoff', label: `plan-guard:${ticket}`, schema: PLAN_GUARD_SCHEMA },
 )
 const relocatedAll = (guard?.repos || []).flatMap((g) => (g.relocated || []).map((f) => `${g.repo}:${f}`))
@@ -951,13 +1144,14 @@ if (missingPlans.length) {
 const waveList = toWaves(plans)
 log(`Plan ${ticket}: ${plans.map((p) => `${p.repo}@${p.work_branch}→${p.base_branch}`).join(', ')}`)
 log(`Plan artifacts: ${plans.map((p) => `${p.repo}=${p.plan_path}`).join(', ')}`)
-if (PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)
+if (RESOLVED_PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)
 log(`Build: all ${plans.length} repo(s) in parallel · merge order: ${waveList.map((w) => `[${w.join(', ')}]`).join(' → ')}`)
 tick('kickoff')
 
 // PLAN-APPROVAL GATE — when planning.auto_approve is off, STOP here with the plan(s) ready
 // for a human to review/approve; the run does NOT proceed to build. Re-run with --approve-plan.
-if (!AUTO_APPROVE_PLAN && !approvePlan) {
+// Reads RESOLVED_AUTO_APPROVE (local-first, see the resolver above), not the committed const.
+if (!RESOLVED_AUTO_APPROVE && !approvePlan) {
   const planList = plans.map((p) => `${p.repo}: ${p.plan_path}${p.plan_html ? ` (html: ${p.plan_html})` : ''}`).join('; ')
   log(`⏸️ Plan approval required (planning.auto_approve=false) — plans ready for human review, NOT proceeding to build: ${planList}. Re-run \`/dev-cycle ${ticket} --approve-plan\` once approved.`)
   const summary = await writeSummary('awaiting-plan-approval', { ticket, repos: waveList.flat(), plans, testSuiteRequested, testSuiteGateUnavailable })
@@ -994,9 +1188,16 @@ if (aborted.length) {
   if (regressionHalts.length) {
     log(`⛔⛔ FIX-CAUSED REGRESSION HALT — human action required before this run can finish: ${regressionHalts.map((id) => `${id} (${repoResults[id]?.handoff?.remaining ?? 'see PR'})`).join(' | ')}. Nothing merged or distributed; the PR(s) are left OPEN. Fix the regression, then re-run \`/dev-cycle ${ticket}\` to resume.`)
   }
-  const runStatus = regressionHalts.length ? 'review-regression-halt' : 'repo-unresolved'
-  const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, regressionHalts, repoResults, testSuiteRequested, testSuiteGateUnavailable })
-  return { ticket, status: runStatus, aborted, handoffs, regressionHalts, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
+  // A code gate that could not RUN the suite is its own loud halt — distinct from open findings,
+  // because nothing here failed review: the review simply could not prove the branch is green, and
+  // approving/merging on that is precisely what the green gate forbids.
+  const testsUnverified = aborted.filter((id) => repoResults[id]?.status === 'review-tests-unverified')
+  if (testsUnverified.length) {
+    log(`⛔⛔ TEST GATE UNVERIFIED — the code review could not run the suite, so no approval was posted and nothing was merged: ${testsUnverified.map((id) => `${id} (${repoResults[id]?.handoff?.remaining ?? 'see PR'})`).join(' | ')}. The PR(s) are left OPEN. Unblock the suite, then re-run \`/dev-cycle ${ticket}\` to resume.`)
+  }
+  const runStatus = regressionHalts.length ? 'review-regression-halt' : testsUnverified.length ? 'review-tests-unverified' : 'repo-unresolved'
+  const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, regressionHalts, testsUnverified, repoResults, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: runStatus, aborted, handoffs, regressionHalts, testsUnverified, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // All scoped repos are built, reviewed, and approved — the WHOLE change set is ready.
@@ -1029,20 +1230,107 @@ if (scope.test_suite?.needed && testSuiteRepo && mergeOrder.some((id) => !REPOS[
   const specHint = testSuiteFixed.length
     ? ` The ${testSuiteRepo} build for this ticket touched these spec/Page-Object files — use them to pin the ticket's own spec scope: ${testSuiteFixed.join(', ')}.`
     : ''
+  // A LOAD suite measures numbers, so passing its own thresholds proves only that the system
+  // still works — not that it is no slower. Green stays necessary; equal-or-better than the
+  // ticket's base branch becomes the actual bar.
+  const isLoadSuite = REPOS[testSuiteRepo].suiteKind === 'load'
+  const loadClause = isLoadSuite
+    ? `
+3. LOAD SUITE — ${testSuiteRepo} is declared suite_kind: load, so a green run is NOT a pass on its own. Invoke \`/loadtest-baseline-gate ${ticket}\` and run the SAME scenario against the ticket's base branch as well, so the candidate has a number to beat. The base is the branch this ticket's PR/MR actually TARGETS (${mergeOrder.filter((id) => !REPOS[id].testSuite).map((id) => `${id} → ${repoResults[id]?.plan?.base_branch}`).join(', ')}), not the repo default. The skill measures the environment's own noise floor from ${LOADTEST.noiseRuns} base runs, sets each metric's threshold to max(${LOADTEST.tolerancePct}%, that floor), and returns pass / fail / unavailable — fill the "loadtest" object from its output verbatim, including base_sha, candidate_sha and its markdown table. Do NOT compute the comparison yourself and do NOT relax a k6 threshold to make a run green: moving the bar is not passing the gate. If the noise floor is too wide to judge, "unavailable" is the correct, expected answer — report it rather than picking a side.`
+    : ''
   testSuite = await safeAgent(
     `${tag(testSuiteRepo, 'qa-runner', 'test-suite')} CROSS-REPO TEST-SUITE gate for ${ticket} — SCOPED to THIS ticket, NOT the full suite. Validate the CANDIDATE (the ticket's work branches, NOT yet merged): build the app/service repo(s) from their ticket work branch(es) — ${candidates.join(', ')} (checkout that branch in each repo before building). Work in the ${testSuiteRepo} repo (cwd ${REPOS[testSuiteRepo].path}/, already on its work branch ${repoResults[testSuiteRepo].plan.work_branch}). Then run ONLY this ticket's scope:
 1. SCOPE = (a) the ticket's own spec(s) automated for ${ticket} + (b) the ticket's regression spec(s). Derive (a) from the spec map in agent_logs/${ticket}-automation-plan.md${specHint} Derive (b) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" recap — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)).
-2. RUN SCOPED — \`npm test -- <spec-token…>\` covering exactly the ticket + regression spec(s) on each platform the suite targets. Do NOT run \`npm test\` with no args: the FULL-suite run is ON-DEMAND (the user triggers it separately) and is NOT part of this gate.
-On a red: SINGLE-CASE triage — re-run just the broken case to rule out flake: \`PLATFORM=<failing-platform> npm test -- <spec-token>\` (+ \`npm run why\`). If it reproduces as a genuine APP/feature bug, report it as-is — comment a reproducible report ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with platform + evidence, list it in failures, and fail the gate (you do NOT fix app code here — only re-run to triage).
-Return passed:true only if the scoped run (ticket + regression spec(s)) is green; otherwise passed:false with the failures.`,
+2. RUN SCOPED — \`scripts/dev.sh test <this repo's own spec-scoping args>\` covering exactly the ticket + regression spec(s). Never \`npm test\` (a stub that exits 1 in several repos here), and never \`scripts/dev.sh test\` with no scoping args: the FULL-suite run is ON-DEMAND (the user triggers it separately) and is NOT part of this gate.
+3. REPORT WITH EVIDENCE — /report-test-results ${ticket}. It reads \`scripts/dev.sh why test\` + \`scripts/dev.sh artifacts\` and posts the per-TC results table to the ticket with the run's OWN screenshots embedded in the comment (failures full-width, passes as a thumbnail strip). A green run that captured no artifacts is reported as unevidenced — say so, never dress it up as proven.
+On a red: SINGLE-CASE triage — re-run just the broken case to rule out flake (the same scoped \`scripts/dev.sh test\` + \`scripts/dev.sh why test\`). If it reproduces as a genuine APP/feature bug, report it as-is — comment a reproducible report ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with the evidence, list it in failures, and fail the gate (you do NOT fix app code here — only re-run to triage).
+Return passed:true only if the scoped run (ticket + regression spec(s)) is green; otherwise passed:false with the failures.${loadClause}${RECEIPT_CLAUSE}`,
     { agentType: 'qa-runner', phase: 'Test suite', label: `test-suite:${ticket}`, schema: TEST_SUITE_SCHEMA },
   )
   log(`Test-suite gate (scoped: ticket + regression): ${testSuite?.passed ? 'PASS' : `${testSuite?.failures?.length ?? '?'} failure(s)`}`)
   tick('test-suite')
+
+  // 4a. NEVER FAIL OPEN. A gate result is only worth what its evidence is worth, so the
+  // verdict is checked twice before it counts: the receipt must describe a real command, and
+  // a SECOND agent must find the result on the ticket. (A run has reported green with neither
+  // — the suite was never executed and nothing reached the ticket, which is exactly the shape
+  // a self-report cannot catch about itself.) Mirrors the code reviewer's green-gate rule at
+  // review time: a gate that could not run HALTS the repo rather than passing.
+  const rc = testSuite?.receipt
+  const receiptOk = !!(rc?.command && Number.isInteger(rc.exit_code) && rc.summary_line)
+  const audit = await safeAgent(
+    `${tag(testSuiteRepo, 'qa-runner', 'test-suite-audit')} AUDIT ONLY — run no tests, fix nothing. The ${ticket} test-suite gate claims: exit_code=${rc?.exit_code ?? '(none)'}, summary="${(rc?.summary_line || '(none)').slice(0, 160)}". Read the ticket's comments (\`scripts/tracker/get-ticket-comments.sh ${ticket}\`) and decide ONE thing: is there a comment reporting THIS run's results — the per-scenario outcome of the run just described? Set posted:true only if you can quote its opening line back in "detail". A comment from an earlier round, a plan, or a bug report is NOT a result comment: posted:false, and say what you found instead.`,
+    { agentType: 'qa-runner', phase: 'Test suite', label: `audit:${ticket}`, schema: RESULT_AUDIT_SCHEMA },
+  )
+  if (!receiptOk || !audit?.posted) {
+    const why = !receiptOk
+      ? 'the gate returned no usable receipt (command + exit code + summary line)'
+      : `an independent read of the ticket found no result comment for this run (${audit?.detail || 'no detail'})`
+    log(`⛔ TEST-SUITE GATE UNVERIFIED — ${why}. Treating the verdict as NOT RUN, never as a pass. NOTHING merged; PR/MR left OPEN. Re-run the dev-cycle once the suite genuinely runs and reports.`)
+    const summary = await writeSummary('test-suite-unverified', { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested, why })
+    return { ticket, status: 'test-suite-unverified', mergeOrder, repoResults, testSuite, testSuiteRequested, why, summary, spend }
+  }
+
   if (!testSuite?.passed) {
     log('⚠️ Test-suite gate failed — stopping before Distribute + Merge. The candidate does not pass; NOTHING merged; left for human review.')
     const summary = await writeSummary('test-suite-failed', { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested })
     return { ticket, status: 'test-suite-failed', mergeOrder, repoResults, testSuite, testSuiteRequested, summary, spend }
+  }
+
+  // 4b. LOAD SUITE — green is only half the bar. A load suite exists to measure NUMBERS, so
+  // the candidate must also be equal-or-better than the same scenario on the ticket's base
+  // branch. Three verdicts, and `unavailable` is a real one: when the environment's own
+  // run-to-run noise floor is wider than the effect, no honest call exists, so the gate
+  // loud-skips instead of inventing one in either direction.
+  if (isLoadSuite) {
+    let lt = testSuite?.loadtest
+    let ltRound = 0
+    while (lt?.verdict === 'fail' && ltRound < MAX_LOADTEST_FIX_ROUNDS) {
+      ltRound++
+      // Attribute BEFORE fixing. A percentile that moved on a laptop is not yet a regression,
+      // and a developer round spent on jitter is worse than no round at all.
+      const attrRepo = mergeOrder.find((id) => !REPOS[id].testSuite)
+      const attribution = await safeAgent(
+        `${tag(attrRepo, 'developer', 'loadtest-attribution', ltRound)} ATTRIBUTION ONLY for ${ticket} — do NOT change code in this step. The load-test gate measured a regression against base ${lt.base_sha || '(base)'} on candidate ${lt.candidate_sha || '(candidate)'}:
+${lt.markdown || (lt.regressed || []).join('; ')}
+Decide ONE of three, and ground it in something you actually read:
+• attributable — you can name the commit, query, lock, allocation or added round-trip in THIS ticket's diff that explains the measured move. Put it in "reasoning" with file:line evidence, and set "repo" to the repo that carries it.
+• not-attributable — the diff contains nothing that plausibly explains it; the move is environmental (host load, container jitter, a cold cache). Say what you checked to rule the diff out.
+• need-bigger-env — the effect could be real but this environment cannot show it (single container, rate tuned down); name the environment that could.
+Only "attributable" earns a fix round — the other two flip the gate to a loud "unavailable" and no code is touched. Guessing "attributable" to look thorough costs a real load run.`,
+        { agentType: 'developer', phase: 'Test suite', label: `lt-attribute:${ticket}:${ltRound}`, schema: LOADTEST_ATTRIBUTION_SCHEMA },
+      )
+      if (attribution?.attribution !== 'attributable') {
+        lt = { ...lt, verdict: 'unavailable', too_noisy: [...(lt.too_noisy || []), `developer attribution: ${attribution?.attribution || 'unavailable'} — ${attribution?.reasoning || 'no reasoning returned'}`] }
+        log(`[loadtest] round ${ltRound}: developer says ${attribution?.attribution || 'no verdict'} — not a regression of this change; gate → unavailable, no fix round spent.`)
+        break
+      }
+      const fixRepo = REPOS[attribution.repo] ? attribution.repo : attrRepo
+      log(`[loadtest] round ${ltRound}: ATTRIBUTED to ${fixRepo} — ${String(attribution.reasoning).slice(0, 120)}`)
+      const fix = await safeAgent(
+        `${tag(fixRepo, 'developer', 'loadtest-fix', ltRound)} Fix the ATTRIBUTED load-test regression for ${ticket} in ${fixRepo}, on ${repoResults[fixRepo]?.plan?.work_branch}. Cause (your own attribution): ${attribution.reasoning}${attribution.evidence ? ` — evidence: ${attribution.evidence}` : ''}. Measured: ${(lt.regressed || []).join('; ') || 'see the comparison table on the PR/MR'}. Fix the cause, keep ${REPOS[fixRepo]?.green}, commit (fix(…) Refs ${ticket}) and push — the gate re-runs the candidate against the SAME cached baseline, so the next measurement is comparable only if you push. Do not touch the load-test repo or its thresholds: moving the bar is not fixing the regression.`,
+        { agentType: 'developer', phase: 'Test suite', label: `lt-fix:${ticket}:${ltRound}`, schema: DEV_SCHEMA },
+      )
+      log(`[loadtest] round ${ltRound} fix: ${fix?.summary?.slice(0, 80) ?? 'no summary'}`)
+      const reRun = await safeAgent(
+        `${tag(testSuiteRepo, 'qa-runner', 'test-suite', ltRound)} RE-RUN the load-test gate for ${ticket} after a fix in ${fixRepo} (round ${ltRound}). Rebuild the candidate from the ticket work branches — ${candidates.join(', ')} — then invoke /loadtest-baseline-gate ${ticket} again. The baseline is UNCHANGED (same base SHA), so reuse the cached base runs and measure the candidate only. Post the fresh comparison to the ticket and the PR/MR, and return the same structured result as before — receipt included.${RECEIPT_CLAUSE}`,
+        { agentType: 'qa-runner', phase: 'Test suite', label: `test-suite:${ticket}:r${ltRound}`, schema: TEST_SUITE_SCHEMA },
+      )
+      if (reRun) { testSuite = reRun; lt = reRun.loadtest }
+      tick(`loadtest-round-${ltRound}`)
+    }
+    testSuite = { ...testSuite, loadtest: lt }
+    if (lt?.verdict === 'fail') {
+      log(`⛔ LOAD-TEST REGRESSION stands after ${ltRound} fix round(s) — ${(lt.regressed || []).join('; ')}. The candidate is slower than ${lt.base_sha || 'base'} by more than the environment's own noise. NOTHING merged; PR/MR left OPEN for human action.`)
+      const summary = await writeSummary('loadtest-degraded-halt', { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested, rounds: ltRound })
+      return { ticket, status: 'loadtest-degraded-halt', mergeOrder, repoResults, testSuite, testSuiteRequested, summary, spend }
+    }
+    if (lt?.verdict === 'unavailable' || !lt?.verdict) {
+      loadtestGateUnavailable = `The load-test gate could not judge ${ticket} against its base branch: ${(lt?.too_noisy || []).join('; ') || 'no baseline comparison was returned'}. The suite is GREEN, but "equal-or-better than base" is UNPROVEN — do NOT describe this run as performance-validated.`
+      log(`⚠️  LOAD-TEST BASELINE UNAVAILABLE — ${loadtestGateUnavailable}`)
+    } else {
+      log(`✅ Load-test baseline: no tracked metric degraded past its threshold vs ${lt.base_sha || 'base'}${lt.baseline_cached ? ' (cached baseline)' : ''}.`)
+    }
   }
 } else if (scope.test_suite?.needed && !testSuiteRepo) {
   testSuiteGateUnavailable = testSuiteGateUnavailable
@@ -1082,7 +1370,7 @@ for (const id of mergeOrder) {
     // NOTIFY (final phase) — auto-merge is off, so the validated PR/MR are awaiting a human:
     // ping the configured chat channel to review them. No-op unless notify.enabled.
     const notify = await notifyReview(mergeOrder)
-    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable, summary, notify, spend }
+    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable, loadtestGateUnavailable, summary, notify, spend }
   }
   // AUTO-MERGE ON → emit the `!` merge command (never dispatch the doomed agent; see above).
   const absRepo = haveAbs ? `${WORKSPACE_ROOT}/${desc.path}` : desc.path
@@ -1119,7 +1407,7 @@ const summary = await writeSummary('awaiting-human-ship', { ticket, mergeOrder, 
 return {
   ticket, status: 'awaiting-human-ship',
   repos: mergeOrder, repoResults, merges, shipSteps,
-  testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable,
+  testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable, loadtestGateUnavailable,
   summary, trackerReachable,
   spend, // per-phase output-token deltas; the per-repo/role table lives in summary.summary_path
 }

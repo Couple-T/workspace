@@ -17,8 +17,13 @@
 #   PERSONAL OVERRIDES: a git-ignored workspace.config.local.yaml overrides the shared config at
 #   RUNTIME (chat / agents / interactive skills), but is deliberately NOT read here — this
 #   committed mirror always reflects workspace.config.yaml (shared) ONLY, so no personal pref
-#   ever leaks into a tracked file. (`language` still reaches headless-workflow agents via their
-#   per-agent pointer, which reads the local file at runtime — see docs/agents/language.md.)
+#   ever leaks into a tracked file. (The personal OUTPUT preferences still reach a headless run at
+#   RUNTIME, not through this mirror: dev-cycle.js's resolve-runtime-config sub-agent reads the local
+#   file local-first and resolves `language`, `planning.to_html` + `planning.auto_approve` into
+#   RESOLVED_LANGUAGE / RESOLVED_PLAN_TO_HTML / RESOLVED_AUTO_APPROVE, making the consts it generates
+#   here the FALLBACK DEFAULTS for those three — see docs/agents/language.md + docs/adr/0003. The
+#   IRREVERSIBLE control-flow consts (auto_merge, statuses, REPOS) are shared-only, with no runtime
+#   override at all.)
 #
 # WHAT IT DERIVES (workspace.config.yaml → dev-cycle.js CONFIG)
 #   tracker.ticket_prefix            → const TICKET_PREFIX
@@ -26,6 +31,7 @@
 #   vcs.auto_merge                   → const AUTO_MERGE
 #   quality_gate.provider            → const QUALITY_GATE            (dev-cycle.js; 'none' ⇒ guardian gate skips+passes)
 #   review.level                     → const REVIEW_LEVEL            (dev-cycle.js; 'strict' ⇒ must-fixes only, no nice-to-have)
+#   loadtest.*                       → const LOADTEST                (dev-cycle.js; the base-branch non-degradation gate)
 #   language                         → const LANGUAGE                (dev-cycle.js AND prd.js; 'en' default | 'th' ⇒ English spine, Thai prose)
 #   planning.auto_approve            → const AUTO_APPROVE_PLAN
 #   planning.to_html                 → const PLAN_TO_HTML
@@ -44,6 +50,8 @@
 #       kind              → the role/gate DEFAULTS below (plan/build/review/guard/perf/
 #                           testSuite/green/guardianFocus/base) — the single source of truth
 #                           for what each kind means in the workflow
+#       suite_kind        → which flavour of test-suite ('load' arms the base-branch
+#                           non-degradation gate — docs/agents/loadtest-gate.md)
 #       path / distribute / auto_merge / green / guardian_focus → optional per-repo overrides
 #
 # ALSO GENERATES — the multi-root <workspace>.code-workspace file (one folder root per repo)
@@ -63,6 +71,11 @@
 #   order ⇒ no spurious diff); any user-added top-level keys (esp. `settings`) are PRESERVED. A
 #   `settings` block is seeded ONLY on first create, never overwritten on regen.
 #
+# ALSO CHECKS — that workspace.config.example.yaml still documents every key of
+#   workspace.config.yaml (section 0). That template is what `aiworks add` copies for a NEW org,
+#   so a key only ever added HERE is a key no other org can discover. Advisory (a warning, never
+#   a failure) and one-directional: keys the example documents but this workspace omits are fine.
+#
 # Idempotent and safe: it replaces only the region between the AIWORKS:CONFIG markers in
 # dev-cycle.js, validates the result with `node --check` (when node is present), and restores
 # the file untouched on a genuine syntax error. A node --check KILLED BY A SIGNAL (exit >=128,
@@ -74,6 +87,8 @@
 #   aiworks config [options]
 #
 #   --config <file>     workspace.config.yaml to read   (default: <workspace>/workspace.config.yaml)
+#   --config-local <f>  the personal override to CHECK   (default: <workspace>/workspace.config.local.yaml)
+#                       Read by the advisory guards only — never baked into the generated mirror.
 #   --target <file>     dev-cycle.js to rewrite          (default: <workspace>/.claude/workflows/dev-cycle.js)
 #   --prd-target <file> prd.js to rewrite (its design CONFIG) (default: <workspace>/.claude/workflows/prd.js)
 #   --workspace <file>  <name>.code-workspace to (re)generate (default: <workspace>/<basename>.code-workspace)
@@ -92,11 +107,12 @@ warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
 die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
 # ── args ──────────────────────────────────────────────────────────────────────
-WC="" TARGET="" PRD_TARGET="" WS_TARGET="" DRY=0 QUIET=0
+WC="" WC_LOCAL="" TARGET="" PRD_TARGET="" WS_TARGET="" DRY=0 QUIET=0
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config)     WC="${2:-}"; shift 2 ;;
+    --config)       WC="${2:-}"; shift 2 ;;
+    --config-local) WC_LOCAL="${2:-}"; shift 2 ;;
     --target)     TARGET="${2:-}"; shift 2 ;;
     --prd-target) PRD_TARGET="${2:-}"; shift 2 ;;
     --workspace)  WS_TARGET="${2:-}"; shift 2 ;;
@@ -122,10 +138,167 @@ WS_NAME="$(basename "$ROOT")"
 
 # Personal, git-ignored override — read at RUNTIME by chat/agents/skills, NOT baked into this
 # committed mirror (so no personal pref leaks into a tracked file). Just surface that it exists.
-WC_LOCAL="$ROOT/workspace.config.local.yaml"
+# --config-local exists so the checks that read this file are TESTABLE against a fixture. It is
+# not a way to point a real run at another machine's overrides: nothing here is baked into the
+# generated mirror either way.
+[[ -n "$WC_LOCAL" ]] || WC_LOCAL="$ROOT/workspace.config.local.yaml"
 if [[ -f "$WC_LOCAL" && "$QUIET" -ne 1 ]]; then
   warn "workspace.config.local.yaml present — a RUNTIME-only personal override (chat/agents/skills); this committed mirror is regenerated from workspace.config.yaml (shared) only."
 fi
+
+# ── 0. drift guard: every key here must be DOCUMENTED in workspace.config.example.yaml ──
+# WHY: `aiworks add` bootstraps a NEW org by COPYING workspace.config.example.yaml
+# (aiworks-add.sh), and every doc points a newcomer at that file — so a key that only ever
+# landed in THIS workspace's config is a key no other org can discover. Six whole blocks had
+# drifted that way before this check existed (observability, review, diagrams, artifacts,
+# voice, triage): each feature was configured here and shipped, and the template still
+# described a workspace without them.
+#
+# ADVISORY, never fatal — a missing example entry breaks nothing that runs; it only costs the
+# next org the knowledge. And ONE-DIRECTIONAL on purpose: the example may document keys this
+# workspace omits (`design`, `image_generation` here) — an omitted optional block just takes
+# its default, which is not drift.
+CONFIG_EXAMPLE="$ROOT/workspace.config.example.yaml"
+
+# Dotted key paths of the nested maps, one per line. Follows the same 2-space indent contract
+# aiworks-sync.sh relies on; comment lines and list items (`- url:`) are skipped, so the
+# products[] subtree contributes only the `products` key itself.
+config_key_paths() {   # <yaml-file>
+  awk '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    !/^[ ]*[A-Za-z_][A-Za-z0-9_]*[ ]*:/ { next }
+    {
+      ind = match($0, /[^ ]/) - 1
+      key = $0; sub(/^ */, "", key); sub(/[ ]*:.*$/, "", key)
+      d = int(ind / 2); stack[d] = key
+      path = stack[0]
+      for (i = 1; i <= d; i++) path = path "." stack[i]
+      print path
+    }' "$1"
+}
+
+config_drift_check() {
+  [[ -f "$CONFIG_EXAMPLE" ]] || return 0
+  local ex_paths; ex_paths="$(config_key_paths "$CONFIG_EXAMPLE")"
+  local missing=() p leaf ancestor covered
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    # An ancestor is already reported ⇒ its whole subtree goes with it. Reporting the children
+    # too would bury the one line that matters ("`voice` is undocumented") under 20 of its keys.
+    covered=
+    for ancestor in ${missing[@]+"${missing[@]}"}; do
+      case "$p" in "$ancestor".*) covered=1; break ;; esac
+    done
+    [[ -n "$covered" ]] && continue
+    printf '%s\n' "$ex_paths" | grep -qxF "$p" && continue
+    # A key the example only COMMENTS OUT — or names in its prose, like the optional
+    # tracker.statuses.* — IS documented: the example's job is to explain a key, not to set it.
+    # Hence the leaf name matched anywhere in the file, which is deliberately lenient: a guard
+    # that cries wolf gets ignored, and the block-level miss above is the one that actually hurts.
+    leaf="${p##*.}"
+    grep -qE "(^|[^A-Za-z0-9_])${leaf}([^A-Za-z0-9_]|\$)" "$CONFIG_EXAMPLE" && continue
+    missing+=("$p")
+  done < <(config_key_paths "$WC" | grep -v '^products')
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    [[ "$QUIET" -eq 1 ]] || ok "workspace.config.example.yaml documents every key in $(basename "$WC")"
+    return 0
+  fi
+  # STDERR on purpose: `aiworks sync` runs this script with stdout to /dev/null unless -v, so a
+  # warning printed like the other lines would be silently dropped in the one flow most likely
+  # to run right after someone edits the config.
+  warn "workspace.config.example.yaml does NOT document: ${missing[*]}" >&2
+  warn "  a new org bootstraps its config by COPYING that file, so an undocumented key is one nobody else can find — add each one there too (default OFF / neutral value, with the comment that explains it)." >&2
+}
+config_drift_check
+
+# ── 0b. comment guard: the LIVE config files carry NO comments ──────────────────────────
+# The counterpart of the drift guard above: the example TEMPLATE is where an explanation
+# belongs, and the live file is data. `.claude/hooks/dev-wrapper/pretool-config-comment-guard.sh`
+# blocks an agent from writing one; this catches the other way in — a hand edit in an editor,
+# or a config copied wholesale from the template before the copy path learned to strip.
+# ADVISORY like the drift guard: nothing about a comment breaks a run, and `aiworks sync` must
+# not fail over a formatting rule. It prints the one command that fixes it.
+# Rationale: docs/adr/0006-config-carries-no-comments.md
+config_comment_check() {
+  local scanner="$ROOT/scripts/lib/yaml_comments.py" f hits dirty=0
+  [[ -f "$scanner" ]] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  for f in "$WC" "$WC_LOCAL"; do
+    [[ -f "$f" ]] || continue
+    hits="$(python3 "$scanner" --check "$f" 2>&1)" && continue
+    dirty=1
+    warn "$(basename "$f") carries $(printf '%s\n' "$hits" | grep -c .) YAML comment line(s) — the live config is data, not documentation:" >&2
+    printf '%s\n' "$hits" | head -5 >&2
+    warn "  move the explanation to $(basename "${f%.yaml}").example.yaml (or docs/) and strip the file: python3 scripts/lib/yaml_comments.py --write $(basename "$f")" >&2
+  done
+  [[ "$dirty" -eq 1 || "$QUIET" -eq 1 ]] || ok "the live config files carry no comments"
+}
+config_comment_check
+
+# ── 0c. value guard: a key documented as a BOOLEAN carries a boolean ────────────────────
+# The drift guard checks that every key is DOCUMENTED; the comment guard, that the file is data.
+# Neither has ever looked at a VALUE — and a value held the quietest failure this workspace has
+# had: `stagehand.enabled: ture` in a personal config read as OFF for weeks. Every `*_cfg_bool`
+# reader resolves "not truthy" to false, so a typo and a deliberate opt-out are the same thing to
+# every surface that reports state. The readers now log it (voice_cfg_bool / stage_cfg_bool), but
+# a reader's log needs VERBOSE=1 to be seen; THIS is the surface someone actually reads.
+#
+# Which keys are boolean is LEARNED from the templates, not listed here, so a new flag is covered
+# the day it is documented — which the drift guard above already requires. Learning uses the
+# STRICT literals true/false only: `narrate_gap: 0` is a count, and admitting 0/1 as boolean would
+# flag every number in the file. Validation is lenient (yes/on/off/1/0 all pass) because those are
+# legal YAML booleans a teammate may well write; only a value in NEITHER set is reported.
+# ADVISORY like both siblings — a typo'd flag breaks no run, it just silently means "off".
+config_key_values() {   # <yaml-file> → "path<TAB>value", one per line
+  awk '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    /^[[:space:]]*-/ { next }
+    !/^[ ]*[A-Za-z_][A-Za-z0-9_]*[ ]*:/ { next }
+    {
+      ind  = match($0, /[^ ]/) - 1
+      line = $0; sub(/^ */, "", line)
+      key  = line; sub(/[ ]*:.*$/, "", key)
+      val  = line; sub(/^[^:]*:[ \t]*/, "", val)
+      sub(/[ \t]+#.*$/, "", val); gsub(/^[ \t]+|[ \t]+$/, "", val)
+      gsub(/^["'\'']|["'\'']$/, "", val)
+      d = int(ind / 2); stack[d] = key
+      for (i = d + 1; i <= 20; i++) stack[i] = ""
+      path = stack[0]
+      for (i = 1; i <= d; i++) path = path "." stack[i]
+      printf "%s\t%s\n", path, val
+    }' "$1"
+}
+
+config_bool_check() {
+  local tmpl bools f path val lower bad=()
+  bools="$(
+    for tmpl in "$CONFIG_EXAMPLE" "$ROOT/workspace.config.local.example.yaml"; do
+      [[ -f "$tmpl" ]] && config_key_values "$tmpl"
+    done | awk -F'\t' 'tolower($2) == "true" || tolower($2) == "false" { print $1 }' | sort -u
+  )"
+  [[ -n "$bools" ]] || return 0
+  for f in "$WC" "$WC_LOCAL"; do
+    [[ -f "$f" ]] || continue
+    while IFS=$'\t' read -r path val; do
+      [[ -n "$val" ]] || continue
+      printf '%s\n' "$bools" | grep -qxF "$path" || continue
+      lower="$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')"
+      case "$lower" in true|yes|1|on|false|no|0|off) continue ;; esac
+      bad+=("$(basename "$f")  $path: $val")
+    done < <(config_key_values "$f")
+  done
+  if [[ ${#bad[@]} -eq 0 ]]; then
+    [[ "$QUIET" -eq 1 ]] || ok "every boolean flag in the live config carries a boolean"
+    return 0
+  fi
+  # STDERR for the same reason as the two guards above: `aiworks sync` drops this script's stdout.
+  warn "a flag documented as a boolean carries a value that is neither — it reads as OFF:" >&2
+  printf '      %s\n' "${bad[@]}" >&2
+  warn "  every *_cfg_bool reader resolves anything but true/yes/1/on to false, so a typo here is indistinguishable from opting out. Fix the value." >&2
+}
+config_bool_check
 
 START_RE='>>> AIWORKS:CONFIG START'
 END_RE='<<< AIWORKS:CONFIG END'
@@ -158,6 +331,10 @@ DESIGN_EN_RAW='false'; DESIGN_KEY=''; DESIGN_PAGE='{work_key} / {feature}'   # F
 IMG_EN_RAW='false'; IMG_QUALITY='balanced'; IMG_MAX='2'   # image-gen OFF unless image_generation.enabled: true
 QG_RAW='none'   # quality_gate.provider — 'none' (guardian gate skips+passes) unless the org declares sonarqube
 RL_RAW='strict' # review.level — 'strict' (must-fixes only) unless the org declares thorough
+# loadtest.* — the base-branch non-degradation gate for a `suite_kind: load` repo. Defaults
+# match the workflow's fallbacks; every one is a number the gate reads at runtime.
+LT_TOL='10'; LT_NOISE_RUNS='2'; LT_NOISE_CEIL='2'; LT_FIX_ROUNDS='2'
+LT_CACHE='~/.cache/aiworks/loadtest-baselines'
 STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
                   # in declared order. The workflow drives a monotonic subset (STATUS_ORDER); the
                   # rest are carried for humans/other tools — so a rich board isn't silently dropped.
@@ -181,6 +358,11 @@ while IFS=$'\t' read -r k v; do
     IMG_MAX)            IMG_MAX="$v" ;;
     QUALITY_GATE)       QG_RAW="$v" ;;
     REVIEW_LEVEL)       RL_RAW="$v" ;;
+    LT_TOLERANCE)       LT_TOL="$v" ;;
+    LT_NOISE_RUNS)      LT_NOISE_RUNS="$v" ;;
+    LT_NOISE_CEILING)   LT_NOISE_CEIL="$v" ;;
+    LT_MAX_FIX_ROUNDS)  LT_FIX_ROUNDS="$v" ;;
+    LT_BASELINE_CACHE)  LT_CACHE="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
 done < <(
@@ -210,6 +392,11 @@ done < <(
     sec=="image_generation" && /^  max_per_request:/ { print "IMG_MAX\t"     val($0); next }
     sec=="quality_gate" && /^  provider:/            { print "QUALITY_GATE\t" val($0); next }
     sec=="review"       && /^  level:/               { print "REVIEW_LEVEL\t" val($0); next }
+    sec=="loadtest"     && /^  tolerance_pct:/        { print "LT_TOLERANCE\t"      val($0); next }
+    sec=="loadtest"     && /^  noise_runs:/           { print "LT_NOISE_RUNS\t"     val($0); next }
+    sec=="loadtest"     && /^  noise_ceiling_multiple:/ { print "LT_NOISE_CEILING\t" val($0); next }
+    sec=="loadtest"     && /^  max_fix_rounds:/       { print "LT_MAX_FIX_ROUNDS\t" val($0); next }
+    sec=="loadtest"     && /^  baseline_cache:/       { print "LT_BASELINE_CACHE\t" val($0); next }
   ' "$WC"
 )
 AUTO_MERGE="$(jsbool "$AM_RAW" true)"
@@ -222,6 +409,12 @@ case "$IMG_QUALITY" in fast|balanced|quality) ;; *) IMG_QUALITY='balanced' ;; es
 [[ "$IMG_MAX" =~ ^[0-9]+$ ]] || IMG_MAX='2'         # numeric budget cap; fall back to 2
 QUALITY_GATE="${QG_RAW:-none}"
 case "$QUALITY_GATE" in sonarqube|none) ;; *) QUALITY_GATE='none' ;; esac   # clamp to the supported providers
+# loadtest.* — clamp to sane numbers; a garbage value falls back rather than reaching the gate.
+[[ "$LT_TOL" =~ ^[0-9]+$ ]]         || LT_TOL='10'
+[[ "$LT_NOISE_RUNS" =~ ^[0-9]+$ ]] && [[ "$LT_NOISE_RUNS" -ge 2 ]] || LT_NOISE_RUNS='2'  # <2 cannot measure a floor
+[[ "$LT_NOISE_CEIL" =~ ^[0-9]+$ ]] && [[ "$LT_NOISE_CEIL" -ge 1 ]] || LT_NOISE_CEIL='2'
+[[ "$LT_FIX_ROUNDS" =~ ^[0-9]+$ ]]  || LT_FIX_ROUNDS='2'
+LT_CACHE="${LT_CACHE:-~/.cache/aiworks/loadtest-baselines}"
 REVIEW_LEVEL="$(printf '%s' "${RL_RAW:-strict}" | tr '[:upper:]' '[:lower:]')"
 case "$REVIEW_LEVEL" in strict|thorough) ;; *) REVIEW_LEVEL='strict' ;; esac   # clamp to the two levels (default strict)
 LANGUAGE="$(printf '%s' "${LANG_RAW:-en}" | tr '[:upper:]' '[:lower:]')"
@@ -262,7 +455,7 @@ repos_body=""
 repo_count=0
 folders_tsv=""   # accumulates "<folder name>\t<folder path>\n" per repo, in declared order,
                  # for the multi-root <name>.code-workspace `folders` array (built in step 6).
-while IFS=$'\037' read -r url kind path dist green gf am; do   # \037 (US): empty fields preserved
+while IFS=$'\037' read -r url kind path dist green gf am sk; do   # \037 (US): empty fields preserved
   [[ -n "$url" ]] || continue
   name="${url%.git}"; name="${name##*/}"; name="${name##*:}"
   [[ -n "$name" ]] || { warn "could not derive a repo name from url '$url' — skipped"; continue; }
@@ -294,6 +487,9 @@ while IFS=$'\037' read -r url kind path dist green gf am; do   # \037 (US): empt
   entry+="    green: $(jsq "$d_green"),"$'\n'
   [[ "$d_guard" == true ]] && entry+="    guardianFocus: $(jsq "$d_gf"),"$'\n'
   [[ "$d_testsuite" == true ]] && entry+="    testSuite: true,"$'\n'
+  # suite_kind: which FLAVOUR of test-suite this is. 'load' arms the base-branch
+  # non-degradation gate (docs/agents/loadtest-gate.md); absent ⇒ a plain pass/fail suite.
+  [[ -n "$sk" ]] && entry+="    suiteKind: $(jsq "$sk"),"$'\n'
   entry+="    distribute: ${local_dist},"$'\n'
   [[ -n "$am" ]] && entry+="    autoMerge: $(jsbool "$am" true),"$'\n'
   entry+="  },"$'\n'
@@ -308,9 +504,9 @@ done < <(
       if(k~/^url:/) url=val(k); else if(k~/^kind:/) kind=val(k)
       else if(k~/^path:/) path=val(k); else if(k~/^distribute:/) dist=val(k)
       else if(k~/^green:/) green=val(k); else if(k~/^guardian_focus:/) gf=val(k)
-      else if(k~/^auto_merge:/) am=val(k) }
-    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am }
-      url="";kind="";path="";dist="";green="";gf="";am="" }
+      else if(k~/^auto_merge:/) am=val(k); else if(k~/^suite_kind:/) sk=val(k) }
+    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am,sk }
+      url="";kind="";path="";dist="";green="";gf="";am="";sk="" }
     /^products:[ \t]*$/ { inp=1; next }
     inp && /^  - id:/ { flush(); inrepos=0; next }
     inp && /^    repos:[ \t]*$/ { inrepos=1; next }
@@ -374,6 +570,13 @@ const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml desig
 const QUALITY_GATE = $(jsq "$QUALITY_GATE")     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const REVIEW_LEVEL = $(jsq "$REVIEW_LEVEL")     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
 const LANGUAGE = $(jsq "$LANGUAGE")     // from workspace.config.yaml language; 'th' ⇒ English spine, Thai prose (docs/agents/language.md; see LANGUAGE_DIRECTIVE below); 'en' ⇒ unchanged
+const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-branch non-degradation gate (docs/agents/loadtest-gate.md)
+  tolerancePct: ${LT_TOL},            // a metric may degrade this much before it counts as a regression
+  noiseRuns: ${LT_NOISE_RUNS},                // base-vs-base runs used to measure the env's own run-to-run spread
+  noiseCeilingMultiple: ${LT_NOISE_CEIL},     // noise floor above tolerancePct × this ⇒ verdict 'unavailable' (env too coarse to judge)
+  maxFixRounds: ${LT_FIX_ROUNDS},             // attributed-regression → developer fix → re-run loops before halting
+  baselineCache: $(jsq "$LT_CACHE"),
+}
 const STATUS = {
 ${status_body}}
 const REPOS = {

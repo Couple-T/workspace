@@ -368,6 +368,40 @@ tracker_add_comment() {
   printf 'Added comment to %s (id %s)\n' "$ticket" "${cid:-?}"
 }
 
+tracker_add_attachment() {
+  die "add-ticket-attachment.sh is not implemented for TRACKER_PROVIDER=notion yet (Notion needs the file-upload API + a block append) — attach the file to the page manually for now"
+}
+
+tracker_remove_attachment() {
+  die "remove-ticket-attachment.sh is not implemented for TRACKER_PROVIDER=notion yet (its counterpart, add-ticket-attachment.sh, isn't either) — remove the file from the page manually"
+}
+
+# Notion pages ARCHIVE rather than delete (the API has no hard delete), and an archived
+# page is restorable from the trash — a different contract from Jira's irreversible
+# delete. Rather than quietly map one onto the other, say so and let the caller decide.
+tracker_delete_ticket() {
+  die "delete-ticket.sh is not implemented for TRACKER_PROVIDER=notion — Notion archives a page (restorable) instead of deleting it, which is a different guarantee; archive it from the UI, or ask for an explicit --archive verb"
+}
+
+# Notion has no separate attachment endpoint to enumerate: images/files already carry
+# their direct URL inline in tracker_get_details' output ("[image: URL]" in the body,
+# "name (URL)" in a files property) — read that output, there is nothing more to fetch.
+tracker_get_attachments() {
+  printf 'Notion tickets have no separate attachment list — images/files already appear as direct URLs inline in get-ticket-details.sh output. Fetch that and download-ticket-attachment.sh any URL you find there.\n'
+}
+
+# REF is a direct URL (as printed inline by tracker_get_details, e.g. the "(https://...)"
+# in an image block or files property) — Notion's file/external URLs need no auth.
+tracker_download_attachment() {
+  local ref="$2" dest="$3" http err
+  [[ "$ref" =~ ^https?:// ]] || die "REF must be the direct URL printed by get-ticket-details.sh (got '$ref')"
+  err="$(mktemp)"
+  http="$(curl -sS -L -o "$dest" -w '%{http_code}' "$ref" 2>"$err")" || { die "download of $ref failed: $(cat "$err")"; rm -f "$err"; }
+  rm -f "$err"
+  [[ "${http:-000}" -lt 400 ]] || die "GET $ref -> HTTP $http"
+  printf 'Downloaded %s -> %s\n' "$ref" "$dest"
+}
+
 tracker_edit_comment() {
   die "edit-ticket-comment.sh is not implemented for TRACKER_PROVIDER=notion yet (Notion's comment API has no update endpoint) — edit the comment manually for now"
 }
@@ -454,4 +488,8 @@ tracker_find() {
       + " | " + (if $title == "" then "(untitled)" else $title end)
       + (if $desc == "" then "" else "  ::  " + $desc end)
   '
+}
+
+tracker_delete_comment() {
+  die "delete-ticket-comment.sh is not implemented for TRACKER_PROVIDER=notion (the API cannot delete a comment) — resolve or edit it instead"
 }

@@ -15,7 +15,7 @@ The message text is the first positional arg, or stdin.
 printf '%s' "$msg" | scripts/notify/send.sh --channel '#reviews'
 ```
 
-Three message modes:
+Five modes — four that send, one that retracts:
 - **raw** — `[text]` arg or stdin (the default).
 - **`--review <KEY>`** — compose + post the "please review" digest of a ticket's open PR/MR
   across every repo (the dev-cycle Notify phase).
@@ -32,6 +32,24 @@ Three message modes:
 
 ```sh
 scripts/notify/send.sh --reply FM-2098 '✅ FM-2098 — approved. Standards clean, 0 must-fix.'
+```
+
+- **`--file <path>`** — upload `<path>` as a **file** instead of a text message; the `[text]`
+  argument becomes its caption (`initial_comment`), so the whole reply is **one message**.
+  Combine with `--thread-ts` to attach into a thread. Needs a **bot token + the `files:write`
+  scope** (a webhook can't upload); it can't combine with `--review`/`--reply`. Before any byte
+  leaves the machine an **outbound gate** refuses (exit non-zero) a file that is over
+  `OUTBOUND_MAX_FILE_MB` (default 15) or matches a **secret/token** pattern, and **redacts**
+  any **production**-derived personal value (a text file uploads as a redacted copy under the
+  same filename; a binary one is refused, since its bytes can't be rewritten safely). Local and
+  staging test data is never touched — provenance decides, not shape: see
+  `docs/agents/pii-provenance.md`. The message text and caption are redacted the same way.
+  `--title` sets the file's title (default: its basename).
+  This is what lets the Slack dispatcher answer "give me a csv/pdf/md/json" with the actual file.
+
+```sh
+scripts/notify/send.sh --channel '#your-channel' --thread-ts 1723450000.001 \
+  --file .aiworks/out/repos.csv 'here is the repo list csv you asked for'
 ```
 
 ## Where it's used
@@ -69,3 +87,18 @@ Set **one** of these in `scripts/notify/.env`:
 
 `aiworks sync` seeds `NOTIFY_PROVIDER` + `NOTIFY_CHANNEL` from `workspace.config.yaml`;
 the secret is added by hand.
+
+- **`--delete <permalink|ts>`** — **retract** a message this bot posted (`chat.delete` on Slack).
+  Pass the permalink a send printed (channel + ts are parsed out of it) or a bare ts with
+  `--channel`. Bot-token only, and the provider refuses anyone else's message, so the blast radius
+  is exactly what this bot sent. It is its own mode: it can't combine with
+  text/`--review`/`--reply`/`--file`/`--thread-ts`. Deleting removes it for new readers, not for
+  whoever already read it — if the message mattered, follow up in the channel rather than assuming
+  it was never seen. **When to reach for it:** a notification that went to the wrong audience or
+  shouldn't have gone out at all (see `CLAUDE.md` §Notifications — workspace/framework PRs are
+  ask-first, ticket work is auto-post).
+
+```sh
+scripts/notify/send.sh --delete 'https://<team>.slack.com/archives/<CHANNEL>/p1700000000000000'
+scripts/notify/send.sh --delete 1700000000.000000 --channel <CHANNEL> --dry-run
+```

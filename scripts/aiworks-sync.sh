@@ -156,7 +156,22 @@ WC="$ROOT/workspace.config.yaml"
 # (2sp) per product; `    repos:` (4sp); `      - url:` (6sp) per repo; `        <field>:` (8sp).
 parse_repos() {
   awk '
-    function val(s){ sub(/^[^:]*:[ \t]*/,"",s); sub(/[ \t]+#.*$/,"",s); gsub(/^["'\'']|["'\'']$/,"",s); return s }
+    # A quoted scalar is read to its closing quote and unescaped, so a value holding ":",
+    # "#", or a quote round-trips through aiworks-add.sh (which writes desc double-quoted).
+    # Only an UNQUOTED value gets the trailing-comment strip — inside quotes, "#" is content.
+    function val(s,   r,i,c){ sub(/^[^:]*:[ \t]*/,"",s)
+      if(s ~ /^"/){ r=""
+        for(i=2;i<=length(s);i++){ c=substr(s,i,1)
+          if(c=="\\" && i<length(s)){ i++; r=r substr(s,i,1); continue }
+          if(c=="\""){ break }
+          r=r c }
+        return r }
+      if(s ~ /^'\''/){ r=""
+        for(i=2;i<=length(s);i++){ c=substr(s,i,1)
+          if(c=="'\''"){ if(substr(s,i+1,1)=="'\''"){ r=r "'\''"; i++; continue } break }
+          r=r c }
+        return r }
+      sub(/[ \t]+#.*$/,"",s); return s }
     function setkv(line){ k=line; sub(/^[ \t]*/,"",k)
       if(k ~ /^url:/) url=val(k); else if(k ~ /^kind:/) kind=val(k)
       else if(k ~ /^lang:/) lang=val(k); else if(k ~ /^distribute:/) dist=val(k)
@@ -377,6 +392,41 @@ NODE
   esac
 }
 
+# ── deployed-env triage MCPs (pg_triage + redis_triage), local scope ──────────────
+# Registration follows `triage.enabled` (default ON — staging triage needs no authorization);
+# PRODUCTION access follows `triage.prod` (default OFF), which the servers read in-process, so it is
+# NOT a registration concern. Both are read LOCAL-FIRST. This step also migrates the pre-0005
+# `prod_pg_triage` / `prod_redis_triage` registrations away. The reconcile logic lives in
+# scripts/triage-mcp.sh (also runnable by hand: `scripts/triage-mcp.sh status`).
+seed_triage_mcps() {
+  local sh="$DIR/triage-mcp.sh"
+  step "Reconcile the read-only triage MCPs (staging+prod) with the triage policy"
+  [[ -x "$sh" ]] || { warn "scripts/triage-mcp.sh missing or not executable — skipping"; return 0; }
+  local args=(sync); [[ "$DRY" -eq 1 ]] && args+=(-n)
+  local out; out="$("$sh" "${args[@]}" 2>&1)"
+  if [[ "$VERBOSE" -eq 1 ]]; then
+    [[ -n "$out" ]] && printf '%s\n' "$out"
+  else
+    # Quiet mode still surfaces a state CHANGE (and any warning) — "registered, restart the
+    # session for its tools to appear" is the one line a teammate must not miss.
+    printf '%s\n' "$out" | grep -Ev 'already registered|Triage MCPs DISABLED|staging only —|production targets are ENABLED' | grep -E '.' || true
+  fi
+}
+
+# ── Kubernetes triage readiness ───────────────────────────────────────────────────
+# A DOCTOR, not an installer: k8s_triage needs no configuration (it derives its targets from the
+# kubeconfig), but it does need a read-only identity bootstrapped per cluster and the right to
+# impersonate it — neither of which this machine can grant itself. The check reads only, prints
+# the exact command for each gap, and always exits 0, so a teammate who never touches Kubernetes
+# is not blocked by it. See scripts/k8s/README.md and docs/adr/0007.
+check_k8s_triage() {
+  local sh="$DIR/k8s/setup.sh"
+  [[ -x "$sh" ]] || return 0
+  step "Check the Kubernetes triage identity (read-only)"
+  if [[ "$DRY" -eq 1 ]]; then dim "would run scripts/k8s/setup.sh"; return 0; fi
+  if [[ "$VERBOSE" -eq 1 ]]; then "$sh"; else "$sh" --quiet; fi
+}
+
 # Resolve the positional: a known products[].id is a product filter; anything else is a repo name.
 if [[ -n "$SELECTOR" ]]; then
   if parse_repos | awk -F$'\037' -v p="$SELECTOR" '$1==p{f=1} END{exit f?0:1}'; then
@@ -406,6 +456,15 @@ prepare_adapter_env
 # once the user supplies a key — and fails loud (via the /prd-design preflight) when it can't.
 seed_image_gen_settings
 
+# Register (or deregister) the read-only triage MCPs per triage.enabled, and migrate the pre-0005
+# names away. Reaching PRODUCTION stays a separate, per-machine opt-in (triage.prod) that the
+# servers enforce themselves, so staging triage works out of the box.
+seed_triage_mcps
+
+# k8s_triage carries no config, so there is nothing to seed — but its read-only identity has to
+# exist in each cluster. Report the gaps with the command that closes them; never fail sync.
+check_k8s_triage
+
 # ── SonarQube onboarding scaffold (quality_gate.provider: sonarqube) ─────────────
 # Read the provider once, then seed a minimal sonar-project.properties into each CODE repo so the
 # dev-cycle guardian gate resolves a real project instead of silently hitting "no project for this
@@ -420,7 +479,7 @@ QG_PROVIDER="$(awk '
 QG_PROVIDER="${QG_PROVIDER:-none}"
 
 seed_sonar_scaffold() {
-  local prod="$1" key="$2" repokind="$3" reldir="$4"
+  local prod="$1" key="$2" repokind="$3" reldir="$4" url="$5"
   [[ "$QG_PROVIDER" == "sonarqube" ]] || return 0
   case "$repokind" in test-suite) return 0 ;; esac     # the QA repo has no guardian gate
   local dir="$ROOT/${reldir:-$key}"
@@ -432,15 +491,115 @@ seed_sonar_scaffold() {
        "$dir/package.json" "$dir/.sonarlint/connectedMode.json" 2>/dev/null; then
     return 0
   fi
-  local pkey="${prod:+${prod}_}${key}"
+  # SonarCloud keys a project as `<gitlab-top-level-group>_<repo>` and scopes it to a
+  # SonarCloud organization slug — BOTH come from the repo's GitLab path, NOT from the
+  # workspace product id (`prod`, which was the old — wrong — prefix). Parse the path from
+  # either URL form (git@host:<group>/<subgroup…>/<repo>.git or
+  # https://host/<group>/<subgroup…>/<repo>.git): the top-level group is the key prefix, and
+  # the first subgroup (when the path nests group/subgroup/repo) is the org slug. Override
+  # with SONAR_KEY_PREFIX / SONAR_ORG in the environment when a setup names them differently.
+  local gpath="${url%.git}"      # drop .git
+  gpath="${gpath#*://}"          # drop scheme://          (https form; no-op for ssh)
+  gpath="${gpath#*@}"            # drop user@              (ssh form; no-op for https)
+  gpath="${gpath#*[:/]}"         # drop host + its : or /  → group[/subgroup…]/repo
+  local oldifs="$IFS"; IFS='/'; set -f; local segs=($gpath); set +f; IFS="$oldifs"
+  local prefix="${SONAR_KEY_PREFIX:-${segs[0]:-}}"   # :- guards keep this nounset-safe (set -u)
+  local org="${SONAR_ORG:-}"
+  if [[ -z "$org" ]]; then
+    if [[ "${#segs[@]}" -ge 3 ]]; then org="${segs[1]:-}"; else org="${segs[0]:-}"; fi
+  fi
+  local pkey="${prefix:+${prefix}_}${key}"
   {
     printf '# Seeded by `aiworks sync` (quality_gate.provider: sonarqube) so the dev-cycle guardian gate\n'
     printf '# resolves a project. Set sonar.host.url + auth in CI/locally; tune sources/exclusions per repo.\n'
+    [[ -n "$org" ]] && printf 'sonar.organization=%s\n' "$org"
     printf 'sonar.projectKey=%s\n' "$pkey"
     printf 'sonar.projectName=%s\n' "$key"
     printf 'sonar.sources=.\n'
-  } > "$dir/sonar-project.properties" && ok "seeded sonar-project.properties (projectKey=$pkey)"
+  } > "$dir/sonar-project.properties" && ok "seeded sonar-project.properties (org=${org:-–}, projectKey=$pkey)"
 }
+
+# ── test-suite contract: `dev.sh artifacts` must actually answer ──────────────────
+# The QA skills attach a run's own evidence (screenshots, the rendered run report) to a
+# ticket, and they get every path from the repo's own `scripts/dev.sh artifacts` so they
+# never have to know whether the repo runs Cypress, Playwright, k6 or Appium. But dev.sh
+# is SCAFFOLDED BY A MODEL (aiworks-add step 10, best-effort) — a repo can end up without
+# the subcommand, and the failure is silent and plausible: the report just says "no
+# screenshots captured", which is exactly what a genuinely capture-less run says too.
+# So verify it here rather than trusting the generator. Advisory: this reports, never
+# blocks — a sync is not the place to fail a repo over a reporting nicety.
+check_artifacts_contract() {
+  local key="$1" repokind="$2" reldir="$3"
+  [[ "$repokind" == "test-suite" ]] || return 0
+  local dir="$ROOT/${reldir:-$key}"
+  [[ -x "$dir/scripts/dev.sh" ]] || return 0        # no harness at all — step 10 already said so
+  local out rc=0
+  out="$( cd "$dir" && ./scripts/dev.sh artifacts 2>&1 )" || rc=$?
+  # rc 2 is "unknown command". rc 1 with a message ("no test run yet") is a healthy
+  # subcommand on a repo that simply hasn't run — that is a pass, not a finding.
+  if [[ "$rc" -eq 2 ]] || printf '%s' "$out" | grep -qiE 'unknown (sub)?command'; then
+    warn "$key: scripts/dev.sh has no 'artifacts' subcommand — QA reports on this repo will attach no evidence (see .claude/skills/report-test-results/SKILL.md §3)"
+    return 0
+  fi
+  # It answered. If it printed rows, every row must be the 3-column contract.
+  if [[ -n "$out" ]] && ! printf '%s' "$out" | awk -F'\t' 'NF!=3{bad=1} END{exit bad?1:0}'; then
+    warn "$key: 'dev.sh artifacts' rows are not '<id><TAB><kind><TAB><path>' — QA reports cannot join them to scenarios"
+  fi
+}
+
+# ── CLAUDE.md budget: the always-loaded instruction has to stay small ─────────────
+# Every CLAUDE.md is loaded IN FULL at the start of every session, so its length is a
+# per-turn tax and, past a point, a drag on adherence (Anthropic's own guidance: target
+# under 200 lines). `aiworks add` step 7 already caps a NEW repo at 60 — but that guard
+# fires once, at onboarding, and says nothing as the file grows afterwards. This is the
+# drift check: it re-measures on every sync, for the root and for every repo.
+#
+# The cure when it fires is `.claude/rules/<topic>.md` carrying a `paths:` list, which
+# loads only when Claude reads a matching file. ⚠️ A rule with NO `paths:` loads at launch
+# with the same priority as CLAUDE.md, so moving prose into one to satisfy this check buys
+# nothing — scope the rule, or delete what a doc or a hook already owns. Reports, never
+# blocks: a sync is not the place to fail a repo over the size of its instruction.
+CLAUDEMD_MAX_ROOT=100   # a meta-repo indexing every repo, the adapter families and docs/
+CLAUDEMD_MAX_REPO=60    # the same cap aiworks-add.sh step 7 hands to /init
+check_claudemd_size() {
+  local label="$1" dir="$2" max="$3" n
+  [[ -f "$dir/CLAUDE.md" ]] || return 0
+  n="$(grep -c '' "$dir/CLAUDE.md" 2>/dev/null || echo 0)"
+  [[ "$n" -gt "$max" ]] || return 0
+  warn "$label: CLAUDE.md is $n lines (>$max) — move path-specific detail into .claude/rules/<topic>.md with a paths: list, and drop what a doc or hook already owns"
+  noted+=("$label: CLAUDE.md $n lines (>$max)")
+}
+
+# ── parallel pre-clone: clone the WHOLE set up front, concurrently ────────────────
+# The per-repo loop below delegates to `aiworks add`, whose step 3 clones via a BARE
+# `mani sync` — so a fresh workspace clones all N repos ONE AT A TIME. Measured on a large
+# set (~18 repos): 125s sequential vs 42s with `mani sync --parallel` (~3x, saves ~83s). On a
+# fresh Superset worktree the clone is the single biggest, CACHE-IMMUNE cost — node installs
+# hit the machine-global pnpm/npm store (warm) and codegraph indexes fast, but every new
+# worktree must re-clone from scratch. So clone the whole set here, in parallel, BEFORE the
+# onboard loop; each per-repo `aiworks add` then finds its repo already cloned (step 3 SKIP)
+# and only onboards. `mani sync` is idempotent (only MISSING repos are cloned), so this is a
+# fast no-op on re-runs. SSH-key auth via ssh-agent means --parallel needs no per-repo prompt
+# (mani cautions against --parallel only for repos needing INTERACTIVE credentials).
+# Covers the full sweep AND a product-scoped sync: product == tags[0] on every mani.d entry
+# (guaranteed by `aiworks add`), so `mani sync -t <product>` clones exactly that product's
+# repos. A --repo/repo-name filter is small and left to the per-repo clone (cloning one repo
+# gains nothing). Tunable: raise concurrency with `-f <N>` (mani's default forks: 4).
+if [[ -z "$REPO_FILTER" ]]; then
+  mani_scope=(); [[ -n "$PRODUCT" ]] && mani_scope=(-t "$PRODUCT")
+  step "Pre-clone every repo in parallel (mani sync --parallel${PRODUCT:+ -t $PRODUCT})"
+  if [[ "$DRY" -eq 1 ]]; then
+    printf '    %swould run: mani sync --parallel%s  (clone every MISSING repo concurrently, ~3x vs sequential)%s\n' "$c_dim" "${PRODUCT:+ -t $PRODUCT}" "$c_off"
+  elif ! command -v mani >/dev/null 2>&1; then
+    warn "mani not installed — skipping the parallel pre-clone; each repo clones during its own onboard"
+  else
+    preclone_rc=0
+    if [[ "$VERBOSE" -eq 1 ]]; then mani sync --parallel ${mani_scope[@]+"${mani_scope[@]}"} || preclone_rc=$?
+    else mani sync --parallel ${mani_scope[@]+"${mani_scope[@]}"} >/dev/null 2>&1 || preclone_rc=$?; fi
+    if [[ "$preclone_rc" -eq 0 ]]; then ok "parallel pre-clone done (already-present repos skipped)"
+    else warn "parallel pre-clone exited $preclone_rc — each repo's onboard will retry its own clone"; fi
+  fi
+fi
 
 # ── iterate every declared repo and delegate to aiworks-add.sh ───────────────────
 total=0; synced=0; failed=0; noted=(); MATCHED=""
@@ -480,7 +639,7 @@ while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) �
   # </dev/null so aiworks-add never consumes this loop's parse stream. Its own prompts read
   # /dev/tty (not stdin), so when -y is OMITTED they still fire here; with no tty they fall back
   # to defaults. Ctrl+C is signal-based, so it still stops the whole sweep.
-  if "${cmd[@]}" </dev/null; then synced=$((synced+1)); seed_sonar_scaffold "$prod" "$key" "$repokind" "$path"
+  if "${cmd[@]}" </dev/null; then synced=$((synced+1)); seed_sonar_scaffold "$prod" "$key" "$repokind" "$path" "$url"; check_artifacts_contract "$key" "$repokind" "$path"; check_claudemd_size "$key" "$ROOT/${path:-$key}" "$CLAUDEMD_MAX_REPO"
   else
     rc=$?
     [[ "$rc" -eq 130 ]] && { printf '\n%s✗ interrupted during %s/%s%s\n' "$c_warn" "$prod" "$key" "$c_off" >&2; exit 130; }
@@ -521,6 +680,20 @@ if [[ -x "$SUPGEN" ]]; then   # prints its own "==> Ensure .superset lifecycle h
   elif [[ "$VERBOSE" -eq 1 ]]; then "$SUPGEN"    || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"
   else "$SUPGEN" >/dev/null || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"; fi   # quiet by default
 fi
+
+# ── project the whole workspace onto Cursor ───────────────────────────────────────
+# One pass over the root + every repo, after the per-repo work above has settled the
+# Claude-side config. Symlinks only (plus the generated hooks/permissions pair), so a
+# repo that was already in sync costs nothing. Never runs in dry-run.
+CURGEN="$DIR/aiworks-cursor.sh"
+if [[ -x "$CURGEN" && "$DRY" -ne 1 ]]; then
+  step "Project the agent config onto Cursor (AGENTS.md + .cursor/) for the root and every repo"
+  if [[ "$VERBOSE" -eq 1 ]]; then "$CURGEN" || warn "could not project the Cursor layer — run 'aiworks cursor' by hand"
+  else "$CURGEN" >/dev/null || warn "could not project the Cursor layer — run 'aiworks cursor' by hand"; fi
+fi
+
+# ── the root's own instruction is subject to the same budget ─────────────────────
+[[ "$DRY" -eq 1 ]] || check_claudemd_size "(workspace root)" "$ROOT" "$CLAUDEMD_MAX_ROOT"
 
 # ── summary ──────────────────────────────────────────────────────────────────────
 printf '\n%s──────── sync summary ────────%s\n' "$c_step" "$c_off"

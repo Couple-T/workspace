@@ -7,7 +7,14 @@ def adf_to_text:
   def node:
     . as $n
     | ($n.type // "") as $t
-    | if   $t == "text"        then ($n.text // "")
+    # A link is rendered in Markdown form `[text](href)` so the URL survives a read AND
+    # round-trips: a description read out and written back through md_to_adf rebuilds the
+    # same link instead of flattening it to dead text (the read-then-rewrite path is how
+    # APP-1952 lost pasted media — same shape of loss). A label that IS its URL renders
+    # bare; the autolink in _md_first relinks it on the way back in.
+    | if   $t == "text"        then ( ($n.text // "") as $x
+                                      | ([ $n.marks[]? | select(.type == "link") | .attrs.href ][0] // "") as $h
+                                      | if ($h != "" and $h != $x) then "[\($x)](\($h))" else $x end )
       elif $t == "hardBreak"   then "\n"
       elif $t == "paragraph"   then ( (($n.content // []) | map(node) | join("")) + "\n" )
       elif $t == "heading"     then ( (("#" * (($n.attrs.level // 1))) + " ") + (($n.content // []) | map(node) | join("")) + "\n" )
@@ -48,14 +55,9 @@ def adf_append_media($media):
                        content:[{type:"text", text:"Attachments (carried over)"}]} ] + $media)
   end;
 
-# Build a minimal ADF doc from a plain-text string (for comment writes / one-line
-# descriptions). Each non-empty line becomes a paragraph; ADF rejects empty text nodes.
-def text_to_adf:
-  . as $t
-  | ($t | split("\n") | map(select(length > 0))) as $lines
-  | { type: "doc", version: 1,
-      content: ( (if ($lines | length) == 0 then [$t] else $lines end)
-                 | map({ type: "paragraph", content: [{ type: "text", text: . }] }) ) };
+# `text_to_adf` (a minimal doc from a one-line/plain string) is defined further down,
+# after `_adf_para`, because it shares the same inline parser — a URL must come out
+# clickable there too, not only in a full Markdown body.
 
 # --- Markdown → ADF doc (write side; the Jira analogue of notion.jq md_to_blocks) -
 # Turn a Markdown spec into an ADF document so a full ticket spec lands in the issue
@@ -66,16 +68,43 @@ def text_to_adf:
 
 # Leftmost inline-markup match, or null. Capture index identifies the kind:
 #   0 `code`  1 [text](url)  2 **bold**  3 __bold__  4 *italic*  5 _italic_
-def _md_first($s):
-  [ $s | match("(`[^`]+`)|(\\[[^\\]]+\\]\\([^)]+\\))|(\\*\\*[^*]+\\*\\*)|(__[^_]+__)|(\\*[^*]+\\*)|(_[^_]+_)") ] | .[0];
+#   6 bare ticket key (e.g. APP-123)  7 bare url
+# The link alternative carries a `(?<!!)` lookbehind so an IMAGE (`![alt](…)`) is not
+# claimed as a link with a stray `!` left in front of it. Images are block nodes
+# (mediaSingle/mediaGroup, see _md_media_nodes) and are folded out before this runs;
+# the lookbehind only guards the case of one appearing mid-prose.
+# Index 6/7 (autolinks) are last on purpose: `match` picks the leftmost START position
+# and only breaks a tie by alternative order, so a URL/key inside `code` or inside a
+# [label](url) is still claimed by the earlier-starting token, not by the autolink —
+# same reasoning as the URL fix in [[tracker-urls-autolink-and-roundtrip]], extended to
+# a second mention kind (APP-2286: "mentioned another ticket in prose" was dead text).
+# The URL body excludes brackets/parens/quotes (so a wrapped "(see https://x)" stops
+# at the paren) and may not END on sentence punctuation (so a trailing "." is prose).
+# The `_`/`__` alternatives are guarded against INTRAWORD matches, per CommonMark. A
+# snake_case identifier written as prose is otherwise read as emphasis and its
+# underscores are EATEN: `agent_logs/executed_verbose/x.log` rendered as italic
+# "agentlogs/executedverbose/x.log" on a real ticket — a path the reader cannot copy,
+# and silently wrong rather than visibly broken. Underscores are far more common in
+# our prose (table names, field names, file paths) than intraword emphasis ever is.
+# The ticket-key alternative is built from $ctx.prefix (e.g. "APP", the project's own
+# key) rather than a generic [A-Z]+-[0-9]+ pattern — a generic pattern false-positives
+# on ISO-8601/UTF-8/RFC-2119-shaped prose that is not a ticket reference at all. When
+# $ctx.prefix is empty (no project configured for this call), the alternative is built
+# from a placeholder that cannot occur in real text, so it structurally never matches —
+# this keeps capture-group indices identical whether or not a prefix is known.
+def _md_first($s; $ctx):
+  ( ($ctx.prefix // "") ) as $p0
+  | (if ($p0 | length) > 0 then $p0 else "NOPFX" end) as $p
+  | [ $s | match("(`[^`]+`)|((?<!!)\\[[^\\]]+\\]\\([^)]+\\))|(\\*\\*[^*]+\\*\\*)|((?<![A-Za-z0-9])__[^_]+__(?![A-Za-z0-9]))|(\\*[^*]+\\*)|((?<![A-Za-z0-9_])_[^_]+_(?![A-Za-z0-9_]))|(\\b\($p)-[0-9]+\\b)|(https?://[^\\s<>()\\[\\]\"'`]*[^\\s<>()\\[\\]\"'`.,;:!?])") ] | .[0];
 def _adf_plain($s): if (($s // "") | length) == 0 then [] else [{ type: "text", text: $s }] end;
 
 # Parse inline Markdown into ADF text nodes with marks (strong/em/code/link).
 # Recurses on the tail; ADF forbids empty text nodes, so empties are dropped.
-def _inline_adf:
+# $ctx = {base: <tracker base url, "" to disable ticket-key linking>, prefix: <project key, "" to disable>}.
+def _inline_adf($ctx):
   . as $s
   | if ($s | length) == 0 then []
-    else (_md_first($s)) as $m
+    else (_md_first($s; $ctx)) as $m
     | if $m == null then _adf_plain($s)
       else ($m.offset) as $o | ($m.length) as $n | ($m.string) as $tok
       | ($s[0:$o]) as $pre | ($s[($o + $n):]) as $post
@@ -84,18 +113,35 @@ def _inline_adf:
           elif $g[1] != null then ($tok | match("\\[([^\\]]+)\\]\\(([^)]+)\\)") | .captures) as $c
                                   | { type:"text", text:($c[0].string), marks:[{type:"link", attrs:{href:($c[1].string)}}] }
           elif ($g[2] != null or $g[3] != null) then { type:"text", text:($tok[2:-2]), marks:[{type:"strong"}] }
+          elif $g[6] != null then
+            ( if (($ctx.base // "") | length) > 0
+              then { type:"text", text:$tok, marks:[{type:"link", attrs:{href:("\($ctx.base)/browse/\($tok)")}}] }
+              else { type:"text", text:$tok } end )
+          elif $g[7] != null then { type:"text", text:$tok, marks:[{type:"link", attrs:{href:$tok}}] }
           else { type:"text", text:($tok[1:-1]), marks:[{type:"em"}] }
           end ) as $styled
-      | _adf_plain($pre) + [$styled] + ($post | _inline_adf)
+      | _adf_plain($pre) + [$styled] + ($post | _inline_adf($ctx))
       end
     end;
 
-def _adf_text($s):       ($s // "") | _inline_adf;                   # inline marks honoured
+def _adf_text($s; $ctx):       ($s // "") | _inline_adf($ctx);       # inline marks honoured
 def _adf_text_plain($s): if (($s // "") | length) == 0 then [] else [{ type:"text", text:$s }] end;  # literal (code)
-def _adf_para($s):
-  (($s // "") | _inline_adf) as $c
+def _adf_para($s; $ctx):
+  (($s // "") | _inline_adf($ctx)) as $c
   | if ($c | length) == 0 then { type:"paragraph" } else { type:"paragraph", content:$c } end;
-def _adf_li($s):   { type: "listItem",  content: [_adf_para($s)] };
+# Build a minimal ADF doc from a plain-ish string (for comment writes / one-line
+# descriptions). Each non-empty line becomes a paragraph, parsed with the same inline
+# rules as a body — so a URL is a real link mark, not dead text a reader must copy.
+def text_to_adf($ctx):
+  . as $t
+  | ($t | split("\n") | map(select(length > 0))) as $lines
+  | { type: "doc", version: 1,
+      content: ( (if ($lines | length) == 0 then [$t] else $lines end) | map(_adf_para(.; $ctx)) ) };
+# 0-arity default: back-compat for existing callers that don't have a base/prefix to
+# hand (e.g. the plain regression suite) — behaves exactly as before (no ticket-key link).
+def text_to_adf: text_to_adf({base:"", prefix:""});
+
+def _adf_li($s; $ctx):   { type: "listItem",  content: [_adf_para($s; $ctx)] };
 def _adf_list($kind; $items):
   { type: (if $kind == "ordered" then "orderedList" else "bulletList" end), content: $items };
 
@@ -105,7 +151,7 @@ def _split_cells($row):
   ($row | sub("^\\s*\\|"; "") | sub("\\|\\s*$"; "") | split("|") | map(gsub("(^\\s+)|(\\s+$)"; "")));
 def _is_sep_row($row):
   ($row | test("-")) and ($row | test("^\\s*\\|?[\\s:|\\-]+\\|?\\s*$"));
-def _adf_table($rows):
+def _adf_table($rows; $ctx):
   ($rows | map(_split_cells(.))) as $all
   | (if (($rows | length) >= 2 and (_is_sep_row($rows[1])))
      then {hdr: true, head: $all[0], body: $all[2:]}
@@ -113,15 +159,43 @@ def _adf_table($rows):
   | { type: "table", attrs: {isNumberColumnEnabled: false, layout: "default"},
       content: (
         ( if $t.hdr
-          then [ {type:"tableRow", content: ($t.head | map({type:"tableHeader", attrs:{}, content:[_adf_para(.)]}))} ]
+          then [ {type:"tableRow", content: ($t.head | map({type:"tableHeader", attrs:{}, content:[_adf_para(.; $ctx)]}))} ]
           else [] end )
-        + ( $t.body | map({type:"tableRow", content: (map({type:"tableCell", attrs:{}, content:[_adf_para(.)]}))}) )
+        + ( $t.body | map({type:"tableRow", content: (map({type:"tableCell", attrs:{}, content:[_adf_para(.; $ctx)]}))}) )
       ) };
+
+# --- Images → ADF media (write side) ---------------------------------------------
+# `![alt](attachment:<id>)` renders an issue ATTACHMENT inside the body/comment, so
+# evidence (a test screenshot, a rendered load-test report) sits in the prose that
+# explains it instead of only in the Attachments panel. `<id>` is the numeric id the
+# attachments endpoint returns on upload — see tracker_add_attachment, which prints it
+# for exactly this purpose. An image token that is NOT alone on its line stays literal
+# text: a media node is block-level in ADF, so there is nowhere valid to put it inside a
+# paragraph, and a silent drop would lose the evidence without saying so.
+#
+# Two block shapes, because they read differently:
+#   one image on a line  → mediaSingle, full width — for a failure a human must SEE.
+#   many images on a line → mediaGroup, a thumbnail strip — for pass evidence that is
+#                           proof-of-record, not something anyone reads one by one.
+def _md_image_ids($l):
+  [ $l | scan("!\\[[^\\]]*\\]\\(attachment:([^)]+)\\)") | .[0] ];
+# A line is a media BLOCK only when it holds nothing but image tokens (and whitespace).
+def _is_media_line($l):
+  (($l | test("!\\[[^\\]]*\\]\\(attachment:[^)]+\\)"))
+   and ($l | gsub("!\\[[^\\]]*\\]\\(attachment:[^)]+\\)"; "") | test("^\\s*$")));
+def _adf_media($id):
+  { type:"media", attrs:{ type:"file", id:$id, collection:"" } };
+def _adf_media_node($ids):
+  if ($ids | length) == 1
+  then { type:"mediaSingle", attrs:{layout:"center"}, content:[ _adf_media($ids[0]) ] }
+  else { type:"mediaGroup", content:( $ids | map(_adf_media(.)) ) }
+  end;
 
 # Classify one (non-fence, non-blank, non-table) line into a token {kind, level?, text?}.
 def _md_classify:
   . as $l
-  | if   ($l|test("^### "))             then {kind:"h",      level:3, text:($l|sub("^### ";""))}
+  | if   (_is_media_line($l))           then {kind:"media",  ids:(_md_image_ids($l))}
+    elif ($l|test("^### "))             then {kind:"h",      level:3, text:($l|sub("^### ";""))}
     elif ($l|test("^## "))              then {kind:"h",      level:2, text:($l|sub("^## ";""))}
     elif ($l|test("^# "))               then {kind:"h",      level:1, text:($l|sub("^# ";""))}
     elif ($l|test("^[-*] \\[ \\] "))    then {kind:"bullet",  text:("[ ] " + ($l|sub("^[-*] \\[ \\] ";"")))}
@@ -134,17 +208,20 @@ def _md_classify:
     end;
 
 # A non-list, non-table token → its ADF block node.
-def _md_tok_to_node:
+def _md_tok_to_node($ctx):
   . as $t
-  | if   $t.kind == "h"     then { type:"heading", attrs:{level:$t.level}, content:_adf_text($t.text) }
+  | if   $t.kind == "h"     then { type:"heading", attrs:{level:$t.level}, content:_adf_text($t.text; $ctx) }
+    elif $t.kind == "media" then _adf_media_node($t.ids)
     elif $t.kind == "rule"  then { type:"rule" }
-    elif $t.kind == "quote" then { type:"blockquote", content:[_adf_para($t.text)] }
+    elif $t.kind == "quote" then { type:"blockquote", content:[_adf_para($t.text; $ctx)] }
     elif $t.kind == "code"  then ((_adf_text_plain($t.text)) as $c
                                   | if ($c|length) == 0 then { type:"codeBlock" } else { type:"codeBlock", content:$c } end)
-    else                         { type:"paragraph",  content:_adf_text($t.text) }
+    else                         { type:"paragraph",  content:_adf_text($t.text; $ctx) }
     end;
 
-def md_to_adf:
+# $ctx = {base: <tracker base url>, prefix: <project key>} — see _inline_adf. Both empty
+# (the 0-arity default below) reproduces the exact prior behaviour: no ticket-key linking.
+def md_to_adf($ctx):
   # phase 1 — fold fenced code blocks and pipe-table runs into tokens; classify the rest
   ( ( . // "" ) | gsub("\r"; "") | split("\n")
     | reduce .[] as $l ( {toks:[], incode:false, buf:[], trows:[]};
@@ -171,20 +248,21 @@ def md_to_adf:
       . as $s
       | ($t.kind) as $k
       | if ($k == "bullet" or $k == "ordered") then
-          (if $s.lk == $k then ($s | .items += [_adf_li($t.text)])
+          (if $s.lk == $k then ($s | .items += [_adf_li($t.text; $ctx)])
            else
              (if $s.lk != null then ($s | .content += [_adf_list($s.lk; $s.items)]) else $s end)
-             | .lk = $k | .items = [_adf_li($t.text)]
+             | .lk = $k | .items = [_adf_li($t.text; $ctx)]
            end)
         elif ($k == "table") then
           ((if $s.lk != null then ($s | .content += [_adf_list($s.lk; $s.items)] | .lk=null | .items=[]) else $s end)
-           | .content += [ _adf_table($t.rows) ])
+           | .content += [ _adf_table($t.rows; $ctx) ])
         else
           (if $s.lk != null then ($s | .content += [_adf_list($s.lk; $s.items)] | .lk=null | .items=[]) else $s end)
-          | .content += [ ($t | _md_tok_to_node) ]
+          | .content += [ ($t | _md_tok_to_node($ctx)) ]
         end )
   | (if .lk != null then (.content += [_adf_list(.lk; .items)]) else . end)
-  | { type:"doc", version:1, content: (if (.content|length) == 0 then [_adf_para("")] else .content end) };
+  | { type:"doc", version:1, content: (if (.content|length) == 0 then [_adf_para(""; $ctx)] else .content end) };
+def md_to_adf: md_to_adf({base:"", prefix:""});
 
 # Render a single issue's fields to aligned "Key: value" plain text.
 def issue_details_text($base):
@@ -201,6 +279,7 @@ def issue_details_text($base):
   | ($rows | map(.k | length) | max // 0) as $w
   | ($i.fields.description | adf_to_text) as $desc
   | ($i.fields.description | adf_media_blocks | length) as $nmedia
+  | ($i.fields.attachment // []) as $attach
   # Issue links, grouped by the phrase THIS issue sees. In a GET, Jira names the OTHER end in
   # the field that matches the phrase to show FROM THIS ISSUE: an `outwardIssue` field → show
   # the OUTWARD phrase (e.g. "blocks") toward it; an `inwardIssue` field → show the INWARD
@@ -225,6 +304,9 @@ def issue_details_text($base):
         else "" end)
     + (if $nmedia > 0
         then "\n⚠ \($nmedia) embedded image/attachment(s) in the description — carried over automatically when the body is rewritten via upsert-ticket-details.sh.\n"
+        else "" end)
+    + (if ($attach | length) > 0
+        then "\n📎 \($attach | length) attachment(s) — CORE input, fetch before relying on the description alone: \($attach | map(.filename) | join(", ")). List + download via get-ticket-attachments.sh / download-ticket-attachment.sh.\n"
         else "" end);
 
 # Render the /comment payload to plain text.

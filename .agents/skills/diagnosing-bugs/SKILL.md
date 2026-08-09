@@ -13,6 +13,16 @@ When the resolved language is **`th`**, write every ticket description, spec, ac
 
 A discipline for hard bugs. Skip phases only when explicitly justified.
 
+## First: can you trigger it at all?
+
+This skill is built on a loop you can run — Phase 1 exists to get one, and every later phase
+consumes it. If the symptom lives **only in a deployed environment** and no loop is reachable
+(the request is gone, the pod is gone, you have a trace id and telemetry and nothing to press),
+this discipline does not apply and forcing it produces a plausible story instead of a cause.
+
+**Stop and use `root-cause-deployed` instead.** Come back here once a deployed finding gives you
+something reproducible to fix.
+
 When exploring the codebase, read `CONTEXT.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
 ## Phase 1 — Build a feedback loop
@@ -35,6 +45,32 @@ Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give
 10. **HITL bash script.** Last resort. If a human must click, drive _them_ with `scripts/hitl-loop.template.sh` so the loop is still structured. Captured output feeds back to you.
 
 Build the right feedback loop, and the bug is 90% fixed.
+
+### When the loop needs the *actual* production data
+Some data bugs only reproduce against the real offending rows — a fixed-point money value that
+overflows, an identifier that resolves the wrong record, a race-triggering timestamp — that
+synthetic fixtures don't recreate. Get the ground truth with **`/pg-triage`** (read-only),
+then persist an entity-scoped, PII-masked slice into a **throwaway local DB** via the one
+sanctioned path, **`scripts/db/prod_repro_seed.py`**, and point the local service at it:
+
+```bash
+uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json   # → repro_<KEY> (masked)
+# ... reproduce against local source ...
+uv run scripts/db/prod_repro_seed.py --ticket <KEY> --teardown         # DROP it wholesale (Phase 6 cleanup)
+```
+
+When the stale thing is a **cache, a session, or a stream** rather than a row, the ground truth
+is **`/redis-triage`** (read-only, `target` from `scripts/redis/.env`): a cached value that
+disagrees with the DB, a session or token that should exist, or a consumer group behind on a
+stream. Redis has **no seed tool** — prod values never land locally. Reproduce by taking the
+observed *shape* into a test (the default), or, when the repro truly needs keys,
+`capture_shape` → `scripts/redis/replay_shape.py --label <KEY>` (synthetic values only, one
+`repro:<KEY>:` prefix, `--teardown` in Phase 6). A consumer group's pending-entry history cannot
+be replayed: read it live and fix forward.
+
+Never hand-craft local `INSERT`s from prod values — the tool enforces mask + isolation +
+teardown in code. This is a developer step and lives entirely within this skill's sandbox;
+the `--teardown` DROP is part of Phase 6 cleanup. (Full contract: developer.md "Prod data for a repro".)
 
 ### Tighten the loop
 
