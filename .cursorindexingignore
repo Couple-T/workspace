@@ -3,3 +3,4 @@
 # and `aiworks remove` drops it again — no hand-editing needed.
 !feeedme-app/
 !feeedme-appium/
+!feeed-cs/

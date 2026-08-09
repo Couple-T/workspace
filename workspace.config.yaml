@@ -46,7 +46,7 @@ image_generation:
   max_per_request: 2
 
 products:
-  - id: feeed-me
+  - id: feeed-me-app
     repos:
       - url: git@github.com:Couple-T/feeedme-app.git
         kind: mobile
@@ -55,10 +55,19 @@ products:
         app_id: com.feeedme.feeedme
         distribute: firebase
         green: "flutter test"
-        guardian_focus: "secrets, data-protection, perms…"
+        guardian_focus: "secrets, data-protection"
 
       - url: git@github.com:Couple-T/feeedme-appium.git
         kind: test-suite
         desc: Android/iOS E2E UI tests for the feeed-me app.
         lang: javascript
         green: "appium tests passed successfully"
+
+  - id: feeed-me-cs
+    repos:
+      - url: git@github.com:Couple-T/feeed-cs.git
+        kind: automation
+        desc: The customer support AI agentic, to reply social media inbox from the customers, in variants platforms like Facebook, Instagram, etc.
+        lang: n8n, terraform
+        green: "n8n workflows are running successfully"
+        guardian_focus: "secrets, data-protection"

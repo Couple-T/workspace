@@ -114,7 +114,7 @@ const REPOS = {
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
     green: 'flutter test',
-    guardianFocus: 'secrets, data-protection, perms…',
+    guardianFocus: 'secrets, data-protection',
     distribute: 'firebase',
   },
   'feeedme-appium': {
@@ -124,6 +124,15 @@ const REPOS = {
     guard: false, perf: false,
     green: 'appium tests passed successfully',
     testSuite: true,
+    distribute: null,
+  },
+  'feeed-cs': {
+    path: 'feeed-cs', kind: 'automation',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'n8n workflows are running successfully',
+    guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
 }

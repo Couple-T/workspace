@@ -16,6 +16,11 @@
     "feeedme-app/build": true,
     "feeedme-app/.dart_tool": true,
     "feeedme-app/ios/Pods": true,
-    "feeedme-app/android/.gradle": true
+    "feeedme-app/android/.gradle": true,
+    "feeedme-appium/node_modules": true,
+    "feeedme-appium/dist": true,
+    "feeedme-appium/coverage": true,
+    "feeedme-appium/.expo": true,
+    "feeed-cs/.terraform": true
   }
 }
