@@ -364,9 +364,59 @@ check_repos() {
     local d=""
     [[ -n "$only_mani" ]] && d="in mani.d only: $only_mani"
     [[ -n "$only_cfg"  ]] && d="${d:+$d; }in config only: $only_cfg"
-    fail $g "mani.d and products[] disagree" "$d" "aiworks config"
+    fail $g "mani.d and products[] disagree" "$d" "aiworks sync"
   else
     pass $g "mani.d ↔ products[] agree" "$(mani_repos | grep -c .) repos"
+  fi
+
+  # Stale mani.d/<product>.yaml (basename not a products[].id) leaves duplicate project keys
+  # after a rename; mani silently drops collisions on import. Sync prunes these.
+  local stale_prod="" f base
+  local -a live_products=()
+  while IFS= read -r base; do
+    [[ -n "$base" ]] && live_products+=("$base")
+  done < <(awk '
+    /^products:[ 	]*$/ { inp=1; next }
+    inp && /^  - id:/ {
+      sub(/^[^:]*:[ 	]*/, "")
+      gsub(/^["'\'' \t]+|["'\'' \t]+$/, "")
+      if ($0 != "") print
+      next
+    }
+    inp && /^[A-Za-z_]/ { inp=0 }
+  ' "$CFG")
+  is_live_prod() {
+    local p="$1" x
+    for x in "${live_products[@]+"${live_products[@]}"}"; do [[ "$x" == "$p" ]] && return 0; done
+    return 1
+  }
+  shopt -s nullglob
+  for f in "$ROOT"/mani.d/*.yaml; do
+    base="$(basename "$f" .yaml)"
+    is_live_prod "$base" || stale_prod="${stale_prod:+$stale_prod }$base.yaml"
+  done
+  shopt -u nullglob
+  if [[ -n "$stale_prod" ]]; then
+    fail $g "stale mani.d product file(s)" "$stale_prod — not in products[].id; duplicate keys make mani drop projects"          "aiworks sync"
+  else
+    pass $g "mani.d product files match products[].id"
+  fi
+
+  # Duplicate project keys across mani.d files — mani drops them silently.
+  local dups
+  dups="$(awk '
+    /^  [A-Za-z0-9._-]+:[[:space:]]*$/ {
+      k=$0; sub(/:[[:space:]]*$/, "", k); sub(/^  /, "", k)
+      file=FILENAME; sub(/.*\//, "", file)
+      if (seen[k] != "" && seen[k] != file) {
+        if (!printed[k]++) print k " (" seen[k] " + " file ")"
+      } else seen[k]=file
+    }
+  ' "$ROOT"/mani.d/*.yaml 2>/dev/null || true)"
+  if [[ -n "$dups" ]]; then
+    fail $g "duplicate mani project key(s)" "$(printf '%s' "$dups" | tr '\n' '; ')"          "aiworks sync"
+  else
+    pass $g "no duplicate mani project keys"
   fi
 
   local missing="" ready=0 total=0 r

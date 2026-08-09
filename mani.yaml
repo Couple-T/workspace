@@ -1,9 +1,8 @@
 # Per-product project files are GENERATED into mani.d/ by `scripts/aiworks sync`
 # (from workspace.config.yaml products[]), which also maintains this import list.
 import:
-  - mani.d/feeed-me-cs.yaml
   - mani.d/feeed-me-app.yaml
-  - mani.d/feeed-me.yaml
+  - mani.d/feeed-me-cs.yaml
 
 sync_gitignore: false
 
