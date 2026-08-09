@@ -401,6 +401,46 @@ check_repos() {
   else
     pass $g "clones are git-ignored"
   fi
+
+  # Every loop above walks the DECLARED set, so a clone on disk that no mani.d entry names is
+  # invisible to all of them: `aiworks sync` never onboards it, its step 3.1 never adds the
+  # `/<dir>/` line to .gitignore, and the unignored check above never looks at it. Git then
+  # treats the nested repo as a GITLINK — `git add -A` stages mode 160000, a bare pointer to
+  # a commit nobody who clones this workspace can resolve. The usual cause is a branch switch:
+  # the clone is an untracked directory and survives, while the .gitignore line and the
+  # products[] entry that arrived with it are tracked and revert.
+  #
+  # Compared against EXPECTED, not SELECTED — `--repo` narrows what we inspect, and must not
+  # make the repos it excluded look undeclared.
+  local orphans="" orphans_open="" d
+  for d in "$ROOT"/*/; do
+    d="${d%/}"; r="${d##*/}"
+    [[ -e "$d/.git" ]] || continue                       # also skips the unmatched glob
+    printf '%s\n' "$EXPECTED" | grep -qx "$r" && continue
+    orphans="${orphans:+$orphans }$r"
+    git -C "$ROOT" check-ignore -q "$r" 2>/dev/null || orphans_open="${orphans_open:+$orphans_open }$r"
+  done
+  if [[ -n "$orphans" ]]; then
+    warn $g "clone(s) no mani.d entry declares" \
+         "$orphans${orphans_open:+ — and $orphans_open is not git-ignored, so \`git add -A\` stages it as a gitlink}" \
+         "see: aiworks add <url> to declare it, or remove the directory"
+  else
+    pass $g "no undeclared clones"
+  fi
+
+  # The same hazard one step later: a gitlink already IN the index. Without a .gitmodules to
+  # back it, this is never a real submodule — committing it publishes a pointer that no clone
+  # of this workspace can resolve. `git rm --cached` touches the index only, never the files;
+  # -f is needed because the staged commit differs from both HEAD and the nested repo's own
+  # HEAD the moment that clone moves on, and with --cached it still cannot delete anything.
+  local links
+  links="$(git -C "$ROOT" ls-files -s 2>/dev/null | awk '$1=="160000"' | cut -f2- | tr '\n' ' ')"
+  links="${links% }"
+  if [[ -n "$links" && ! -f "$ROOT/.gitmodules" ]]; then
+    fail $g "gitlink staged, no .gitmodules" \
+         "$links — committing this makes a submodule nobody can clone" \
+         "git rm --cached -f -- $links"
+  fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
