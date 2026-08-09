@@ -64,26 +64,21 @@ it can re-parent it under the new epic instead).
 > From `workspace.config.yaml: tracker`. Re-read that file if these disagree with it —
 > the config is the source of truth, this section is its prose face.
 
-- **Provider:** `linear` (`TRACKER_PROVIDER=linear` in `scripts/tracker/.env`).
-- **Ticket id format:** `FMA-<n>` (e.g. `FMA-19`); the id regex is `FMA-\d+`. A bare number
-  is accepted and expanded with `LINEAR_TEAM_KEY`.
-- **Team key:** `FMA`. `--status` names a **workflow state**, resolved to its id within the
-  team, so the `tracker.statuses` names must match the board's real state names (they do:
-  `Backlog`, `To Do`, `In Progress`, `In Review`, `Ready To Test`, `Testing`, `Done`).
-- Descriptions and comments are **Markdown-native**. `--issuetype`/`--component` →
-  **labels**; there is no separate issue-type field. Linear has a single numeric `estimate`,
-  so `--effort` + `--dev-points` + `--qa-points` are **summed** into it.
-- **Retired:** this org was on Notion (database "FeeedMe App Tasks", ticket prefix `FM`)
-  until 2026-07. `FM-<n>` ids surviving in ADRs, commits, branch names and test titles are
-  those old tickets and do **not** resolve on the current board.
+- **Provider:** `<notion | jira | linear>`
+- **Ticket id format:** `<PREFIX>-<n>` (e.g. `FM-9`, `APP-123`). The id regex is
+  `<PREFIX>-\d+`. A bare number is accepted (Notion: looked up by the unique-id
+  property; Jira/Linear: expanded with `JIRA_PROJECT_KEY` / `LINEAR_TEAM_KEY`).
+- **Notion only:** tasks database id = `<NOTION_DB_ID>`; unique-id property =
+  `<NOTION_ID_PROP, default "Task ID">`. Never write `Task ID` or `Updated at`
+  (read-only / auto).
+- **Jira only:** project key = `<JIRA_PROJECT_KEY>`; status changes happen via
+  **workflow transitions** (the adapter resolves a transition whose target matches the
+  status name you pass).
+- **Linear only:** team key = `<LINEAR_TEAM_KEY>`; `--status` names a workflow state
+  resolved within the team. Linear has a single numeric `estimate`, so `--effort` +
+  `--dev-points` + `--qa-points` are summed into it. Optional default project:
+  `LINEAR_PROJECT` / `LINEAR_PROJECT_ID` in `.env`.
 
-Other providers, for when the config changes:
-
-- **Notion:** tasks database id = `NOTION_DB_ID`; unique-id property = `NOTION_ID_PROP`
-  (default `Task ID`). Never write `Task ID` or `Updated at` (read-only / auto).
-- **Jira:** project key = `JIRA_PROJECT_KEY`; status changes happen via **workflow
-  transitions** (the adapter resolves a transition whose target matches the status name
-  you pass).
 
 ## Status lifecycle
 
