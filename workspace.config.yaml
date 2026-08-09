@@ -9,7 +9,7 @@ vcs:
 notify:
   enabled: false
   provider: slack
-  channel: "#feeed-me-reviews"
+  channel: "#feeed-me-app"
 
 tracker:
   provider: linear
