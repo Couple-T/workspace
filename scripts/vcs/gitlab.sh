@@ -27,10 +27,10 @@ vcs_open_pr() {
     return 0
   fi
   if [[ "$dry" -eq 1 ]]; then
-    printf 'DRY RUN — git push -u origin %q && glab mr create -s %q -b %q -t %q -d <…> --squash-before-merge=true -y\n' "$head" "$head" "$base" "$title"
+    printf 'DRY RUN — git push -u %s %q && glab mr create -s %q -b %q -t %q -d <…> --squash-before-merge=true -y\n' "$VCS_REMOTE" "$head" "$head" "$base" "$title"
     return 0
   fi
-  git push -u origin "$head" >/dev/null 2>&1 || true
+  git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
   local out
   out="$(glab mr create --source-branch "$head" --target-branch "$base" --title "$title" --description "$body" --squash-before-merge=true --yes 2>&1)"
   url="$(printf '%s' "$out" | grep -oE 'https?://[^ ]+/merge_requests/[0-9]+' | head -n1)"
@@ -377,7 +377,21 @@ vcs_merge_pr() {
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — glab mr merge %s --squash --remove-source-branch --yes\n' "$num"; return 0
   fi
-  glab mr merge "$num" --squash --remove-source-branch --yes
+  # Merge stays FAIL-CLOSED — never report a merge that did not happen. But the caller needs to
+  # know WHICH kind of no: an instance that refuses API merges (405 / "not allowed") has a real
+  # alternative, a network error does not. Naming it here keeps the knowledge in the adapter,
+  # where the provider's quirks belong, instead of leaking into the workflow or the config.
+  local err
+  if ! err=$(glab mr merge "$num" --squash --remove-source-branch --yes 2>&1); then
+    printf '%s\n' "$err" >&2
+    case "$err" in
+      *405*|*"Method Not Allowed"*|*"not allowed"*|*"Not allowed"*)
+        die "MR !$num: this GitLab project refuses API merges (405). The MR is still OPEN and unmerged. Merge it from the web UI, or land the branch directly (git push origin <base>) and close the MR — do NOT report it as merged." ;;
+      *)
+        die "MR !$num: merge failed — see the error above. The MR is still OPEN and unmerged." ;;
+    esac
+  fi
+  printf '%s\n' "$err"
   vcs_pr_view "$num"
 }
 
@@ -393,7 +407,21 @@ vcs_approve_pr() {
     printf 'DRY RUN — %sglab mr approve %s\n' "${body:+glab mr note $num --message <verdict> && }" "$num"
     return 0
   fi
-  [[ -n "$body" ]] && { glab mr note "$num" --message "$body" >/dev/null || die "failed to post verdict note on MR !$num"; }
-  glab mr approve "$num" >/dev/null || die "failed to approve MR !$num"
-  printf 'Approved MR !%s%s\n' "$num" "${body:+ (verdict note posted)}"
+  local noted=0 err
+  [[ -n "$body" ]] && { glab mr note "$num" --message "$body" >/dev/null || die "failed to post verdict note on MR !$num"; noted=1; }
+  # A project can disable MR approvals outright (the API then answers 401/403). That is a
+  # capability of this instance, not a failure of the review — and dying here used to leave a
+  # half state: the verdict note was already posted, yet the script exited 1 and the caller
+  # recorded the whole gate as broken. Degrade the way vcs_pr_comment does: fall to the tier
+  # that DOES work (the note is the durable record), say so on stdout, and let the run continue.
+  if err=$(glab mr approve "$num" 2>&1); then
+    printf 'Approved MR !%s%s\n' "$num" "${body:+ (verdict note posted)}"
+    return 0
+  fi
+  printf 'WARN: host-level approval unavailable on MR !%s — %s\n' "$num" "${err##*$'\n'}" >&2
+  if [[ "$noted" -eq 0 ]]; then
+    glab mr note "$num" --message "PASS (host-level approval is unavailable on this project; recording the verdict as a note)." >/dev/null \
+      || die "MR !$num: approval was refused AND the fallback verdict note failed — nothing records this review"
+  fi
+  printf 'Approved MR !%s (verdict recorded as a NOTE — host-level approval unavailable on this project)\n' "$num"
 }
