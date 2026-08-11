@@ -16,19 +16,23 @@ vcs_open_pr() {
   local base="$1" head="$2" title="$3" body="$4" dry="${5:-0}"
   # Reuse an open PR for this head branch (avoid duplicates).
   local existing num
-  existing="$(gh pr list --head "$head" --state open --json url -q '.[0].url' 2>/dev/null || true)"
+  # Name the repo explicitly. gh otherwise infers it from the cwd's `origin`, which is the WRONG
+  # repo whenever VCS_REMOTE names an upstream (see _gh_nwo) — and inferring also fails outright
+  # when the cwd is not inside a checkout of the target.
+  local nwo; nwo="$(_gh_nwo)"
+  existing="$(gh pr list --repo "$nwo" --head "$head" --state open --json url -q '.[0].url' 2>/dev/null || true)"
   if [[ -n "$existing" ]]; then
-    num="$(gh pr list --head "$head" --state open --json number -q '.[0].number' 2>/dev/null)"
+    num="$(gh pr list --repo "$nwo" --head "$head" --state open --json number -q '.[0].number' 2>/dev/null)"
     printf '%s\nnumber=%s\n' "$existing" "$num"
     return 0
   fi
   if [[ "$dry" -eq 1 ]]; then
-    printf 'DRY RUN — git push -u origin %q && gh pr create --base %q --head %q --title %q --body <…>\n' "$head" "$base" "$head" "$title"
+    printf 'DRY RUN — git push -u %s %q && gh pr create --repo %q --base %q --head %q --title %q --body <…>\n' "$VCS_REMOTE" "$head" "$nwo" "$base" "$head" "$title"
     return 0
   fi
-  git push -u origin "$head" >/dev/null 2>&1 || true
+  git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
   local url
-  url="$(gh pr create --base "$base" --head "$head" --title "$title" --body "$body")"
+  url="$(gh pr create --repo "$nwo" --base "$base" --head "$head" --title "$title" --body "$body")"
   num="${url##*/}" # gh prints the PR URL; the number is the trailing path segment
   printf '%s\nnumber=%s\n' "$url" "$num"
 }
@@ -227,10 +231,25 @@ vcs_close_pr() {
 # would bake into the repo). Images at a release-download URL render inline in markdown; video
 # shows as a download link — GitHub only inline-plays its own web uploads, so a link is honest.
 # Asset names are namespaced "<KEY>-<file>" and uploaded with --clobber so re-runs overwrite.
-# owner/repo for building a release-download URL: ask gh, falling back to parsing the
-# origin remote (so a --dry-run preview works offline, before auth or a real repo exists).
+# owner/repo for the API calls and for building a release-download URL.
+#
+# VCS_REMOTE FIRST. When the caller named a remote other than `origin`, that remote IS the
+# target — the whole point of VCS_REMOTE is contributing to an UPSTREAM repo from a clone whose
+# `origin` points somewhere else entirely (a different host, even a different provider). Asking
+# `gh repo view` there answers from `origin`, so the PR would be aimed at the wrong repository
+# while the branch was pushed to the right one. Resolve from the named remote's own URL instead.
+# Otherwise: ask gh, falling back to parsing `origin` (so a --dry-run preview works offline,
+# before auth or a real repo exists).
 _gh_nwo() {
   local nwo url
+  if [[ "${VCS_REMOTE:-origin}" != origin ]]; then
+    url="$(git remote get-url "$VCS_REMOTE" 2>/dev/null || true)"; url="${url%.git}"
+    case "$url" in
+      *github.com[:/]*) printf '%s' "${url#*github.com[:\/]}"; return 0 ;;
+      "") die "VCS_REMOTE=$VCS_REMOTE is not a remote of this repo (git remote get-url $VCS_REMOTE failed)" ;;
+      *) die "VCS_REMOTE=$VCS_REMOTE points at '$url', which is not a github.com remote — set VCS_PROVIDER to match it" ;;
+    esac
+  fi
   nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
   [[ -n "$nwo" ]] && { printf '%s' "$nwo"; return 0; }
   url="$(git remote get-url origin 2>/dev/null || true)"; url="${url%.git}"
@@ -272,8 +291,20 @@ vcs_merge_pr() {
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — gh pr merge %s --squash --subject %q\n' "$num" "$subject"; return 0
   fi
-  # --admin can be added if branch protection blocks a self-merge.
-  gh pr merge "$num" --squash --subject "$subject"
+  # Merge stays FAIL-CLOSED — never report a merge that did not happen. Branch protection is the
+  # usual refusal here, and it has a real alternative, so the adapter names it rather than
+  # letting the caller guess. (--admin can be added above if a self-merge must be forced.)
+  local err
+  if ! err=$(gh pr merge "$num" --squash --subject "$subject" 2>&1); then
+    printf '%s\n' "$err" >&2
+    case "$err" in
+      *"protected"*|*"Protected"*|*"not authorized"*|*"required status"*|*"review is required"*)
+        die "PR #$num: branch protection refuses this merge. The PR is still OPEN and unmerged. Satisfy the protection rule (reviews / checks) or merge from the web UI — do NOT report it as merged." ;;
+      *)
+        die "PR #$num: merge failed — see the error above. The PR is still OPEN and unmerged." ;;
+    esac
+  fi
+  printf '%s\n' "$err"
   vcs_pr_view "$num"
 }
 
@@ -288,10 +319,16 @@ vcs_approve_pr() {
     printf 'DRY RUN — gh pr review %s --approve%s\n' "$num" "${body:+ --body <verdict>}"
     return 0
   fi
-  if [[ -n "$body" ]]; then
-    gh pr review "$num" --approve --body "$body" || die "failed to approve PR #$num"
-  else
-    gh pr review "$num" --approve || die "failed to approve PR #$num"
+  # Approvals can be refused by the repo's own rules (and GitHub always refuses a self-approval).
+  # That is a capability of this repo, not a failed review: degrade to a comment carrying the
+  # same verdict rather than exiting 1 and leaving the gate recorded as broken.
+  local err
+  if err=$(gh pr review "$num" --approve ${body:+--body "$body"} 2>&1); then
+    printf 'Approved PR #%s\n' "$num"
+    return 0
   fi
-  printf 'Approved PR #%s\n' "$num"
+  printf 'WARN: host-level approval unavailable on PR #%s — %s\n' "$num" "${err##*$'\n'}" >&2
+  gh pr comment "$num" --body "${body:-PASS} (host-level approval is unavailable on this repository; recording the verdict as a comment.)" >/dev/null \
+    || die "PR #$num: approval was refused AND the fallback verdict comment failed — nothing records this review"
+  printf 'Approved PR #%s (verdict recorded as a COMMENT — host-level approval unavailable on this repository)\n' "$num"
 }

@@ -558,15 +558,23 @@ check_artifacts_contract() {
   [[ "$repokind" == "test-suite" ]] || return 0
   local dir="$ROOT/${reldir:-$key}"
   [[ -x "$dir/scripts/dev.sh" ]] || return 0        # no harness at all — step 10 already said so
-  local out rc=0
-  out="$( cd "$dir" && ./scripts/dev.sh artifacts 2>&1 )" || rc=$?
-  # rc 2 is "unknown command". rc 1 with a message ("no test run yet") is a healthy
-  # subcommand on a repo that simply hasn't run — that is a pass, not a finding.
-  if [[ "$rc" -eq 2 ]] || printf '%s' "$out" | grep -qiE 'unknown (sub)?command'; then
+  # stdout and stderr are kept APART on purpose. The rows are the stdout contract; the
+  # diagnostics ("no test run yet", "cannot parse run timestamp") go to stderr, and folding
+  # the two together made every diagnostic look like a malformed row.
+  local out err rc=0 errf
+  errf="$(mktemp)" || return 0
+  out="$( cd "$dir" && ./scripts/dev.sh artifacts 2>"$errf" )" || rc=$?
+  err="$(<"$errf")"; rm -f "$errf"
+  # rc 2 is "unknown command" — the subcommand is genuinely missing.
+  if [[ "$rc" -eq 2 ]] || printf '%s' "$err$out" | grep -qiE 'unknown (sub)?command'; then
     warn "$key: scripts/dev.sh has no 'artifacts' subcommand — QA reports on this repo will attach no evidence (see .claude/skills/report-test-results/SKILL.md §3)"
     return 0
   fi
-  # It answered. If it printed rows, every row must be the 3-column contract.
+  # Any OTHER non-zero exit is the healthy "nothing captured yet" answer, and it is what a
+  # FRESH CLONE always gives: no run log exists, so both the k6 and the Cypress harness say
+  # so on stderr and return 1. There are no rows to validate — a pass, not a finding.
+  [[ "$rc" -eq 0 ]] || return 0
+  # It answered with rows. Every row must be the 3-column contract.
   if [[ -n "$out" ]] && ! printf '%s' "$out" | awk -F'\t' 'NF!=3{bad=1} END{exit bad?1:0}'; then
     warn "$key: 'dev.sh artifacts' rows are not '<id><TAB><kind><TAB><path>' — QA reports cannot join them to scenarios"
   fi
@@ -634,14 +642,29 @@ reconcile_mani_registry() {
   }
 
   # repo_name → owning products[].id (from config). Used to strip misplaced keys.
-  local -A repo_owner=()
+  #
+  # A FLAT "<key>\037<product>" table, deliberately not an associative array: macOS still
+  # ships bash 3.2 as /bin/bash, and `#!/usr/bin/env bash` takes whatever is first on PATH.
+  # There `local -A` is `invalid option`, so the name stays a plain string — and then
+  # `repo_owner[$key]=` evaluates the subscript as ARITHMETIC, which turns a hyphenated repo
+  # name into a subtraction of variable names and kills the run under `set -u`
+  # (`your-batch-job` → `your: unbound variable`). Keep this 3.2-clean.
+  local repo_owner=''
   local prod url kind lang dist path desc key
   while IFS=$'\037' read -r prod url kind lang dist path desc; do
     [[ -n "$url" ]] || continue
     key="${url%.git}"; key="${key##*/}"; key="${key##*:}"
     # Mani project keys are always the URL-derived repo name (path: is only the clone dir).
-    [[ -n "$key" && -n "$prod" ]] && repo_owner["$key"]="$prod"
+    [[ -n "$key" && -n "$prod" ]] && repo_owner="${repo_owner}${key}"$'\037'"${prod}"$'\n'
   done < <(parse_repos)
+
+  owner_of() {  # $1=repo-key → its products[].id on stdout; empty when the config knows no such key
+    local k v
+    while IFS=$'\037' read -r k v; do
+      [[ "$k" == "$1" ]] && { printf '%s' "$v"; return 0; }
+    done <<< "$repo_owner"
+    return 1
+  }
 
   strip_mani_project() {  # $1=file $2=repo-key — drop `  <key>:` + indented fields
     local file="$1" repo="$2"
@@ -675,7 +698,7 @@ reconcile_mani_registry() {
     # Strip project keys that config assigns to a DIFFERENT product (rename / move leftovers).
     while IFS= read -r repo; do
       [[ -n "$repo" ]] || continue
-      owner="${repo_owner[$repo]:-}"
+      owner="$(owner_of "$repo" || true)"
       [[ -n "$owner" && "$owner" != "$base" ]] || continue
       if [[ "$DRY" -eq 1 ]]; then
         printf '    %swould strip project %s from mani.d/%s.yaml (owned by products[].id=%s)%s\n' \

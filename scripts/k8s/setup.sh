@@ -42,7 +42,13 @@ fi
 
 # Targets, derived the same way the MCP derives them: from each context's CLUSTER reference
 # (gke_<project>_<region>_<cluster>), never from the context's personal alias.
-mapfile -t ROWS < <(kubectl config view -o json 2>/dev/null | python3 -c '
+# Read with a while-loop, not `mapfile` — that builtin arrived in bash 4 and macOS ships 3.2
+# as /bin/bash (see the interpreter note in scripts/aiworks).
+ROWS=(); NROWS=0
+while IFS= read -r _row || [[ -n "$_row" ]]; do   # `|| [[ -n ]]` keeps a last line with no trailing \n
+  [[ -n "$_row" ]] || continue
+  ROWS+=("$_row"); NROWS=$((NROWS+1))
+done < <(kubectl config view -o json 2>/dev/null | python3 -c '
 import json, sys
 try: d = json.load(sys.stdin)
 except Exception: sys.exit(0)
@@ -60,16 +66,16 @@ for c in d.get("contexts") or []:
             break
 ' | sort -u)
 
-if [[ ${#ROWS[@]} -eq 0 ]]; then
+if [[ $NROWS -eq 0 ]]; then
   [[ $QUIET -eq 1 ]] || dim "no GKE clusters in this kubeconfig — nothing to check"
   exit 0
 fi
 
 say ""
-say "Kubernetes triage — $((${#ROWS[@]})) target(s) derived from kubeconfig"
+say "Kubernetes triage — $NROWS target(s) derived from kubeconfig"
 
 problems=0
-for row in "${ROWS[@]}"; do
+for row in "${ROWS[@]+"${ROWS[@]}"}"; do
   IFS=$'\t' read -r PRODUCT ENV PROJECT CLUSTER ALIAS <<<"$row"
   SA="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
   say ""
@@ -102,6 +108,20 @@ for row in "${ROWS[@]}"; do
   else
     warn "identity exists but cannot read (RBAC bindings missing in this cluster)"
     dim "an owner runs:  scripts/k8s/bootstrap-sa.sh --context $ALIAS$([[ $ENV == prod ]] && echo ' --allow-prod')"
+    problems=$((problems + 1))
+  fi
+
+  # The same identity also carries Cloud Monitoring (docs/adr/0010). Checked here rather than in a
+  # second doctor: one identity, one place that says whether it is whole. Without this a project
+  # bootstrapped before 0010 reports "ready" while every monitoring_triage read returns 403.
+  if gcloud projects get-iam-policy "$PROJECT" --flatten="bindings[].members" \
+       --filter="bindings.members:serviceAccount:$SA AND bindings.role:roles/monitoring.viewer" \
+       --format="value(bindings.role)" 2>/dev/null | grep -q .; then
+    ok "roles/monitoring.viewer granted — Cloud Monitoring triage ready"
+  else
+    warn "roles/monitoring.viewer is MISSING — monitoring_triage will 403 on every read"
+    dim "an owner of $PROJECT re-runs:  scripts/k8s/bootstrap-sa.sh --context $ALIAS$([[ $ENV == prod ]] && echo ' --allow-prod')"
+    dim "  (it skips what is already granted, so a re-run only adds the new role)"
     problems=$((problems + 1))
   fi
 

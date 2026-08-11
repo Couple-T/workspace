@@ -23,6 +23,15 @@ The end-to-end delivery Workflow for a single ticket: plan → build → PR/MR �
 **prd** / **brd**:
 Workflows that produce a Product / Business Requirements Document from a brief.
 
+**Reference ticket**:
+A ticket the board has already finished (status *done*). It counts as coverage and as the
+estimation calibration set, and agents read it freely — but no automated run rewrites,
+re-parents, re-sprints or re-estimates one. Shipped work is a record, not a work item.
+
+**Writable ticket**:
+A ticket an automated run may write to: any covering ticket that is not a **reference ticket**,
+plus a key a human named explicitly. The distinction is enforced in code, not by instruction.
+
 **Skill**:
 A packaged, named instruction set (`.claude/skills/`) invoked to do one kind of task the repo's
 way — the reusable procedure a Workflow or agent steps through.
@@ -94,6 +103,25 @@ summarized instead, and the model gets the last word on the work.
 spend). It does not reach the Slack voice note (`voice.notify_voice.enabled`, audio for the team) or
 dictation. There is deliberately no automatic call detection: a browser meeting has no process to
 find, so an auto-detect would cover some calls and silently miss others.
+
+**triage server**:
+One of the four read-only MCPs over a DEPLOYED environment — `pg_triage`, `redis_triage`,
+`k8s_triage`, `monitoring_triage`. All four share one production gate (`triage.prod`, per machine)
+and one teardown habit (`disconnect`). The first three read what **we** produce: our rows, our
+keys, our cluster objects. The fourth reads what the **cloud provider** measures for us.
+
+**plateau**:
+The tell that an investigation has reached the infrastructure boundary: our own instrumentation
+says the operation executed in microseconds while the caller waited hundreds of milliseconds, and
+the surrounding spans never moved. The gap is invisible to the thing that was waiting — it is
+scheduling, queueing or throttling — so no amount of further tracing explains it. A plateau is
+what sends you to `monitoring-triage`.
+
+**saturation metric**:
+A metric whose type reads as a utilization or a ratio, and which must therefore be aligned with
+the **maximum**, never the mean. A resource pinned at its ceiling for twenty minutes of a one-hour
+window averages out to comfortable, which is the exact opposite of the finding. `monitoring_triage`
+derives this from the metric descriptor rather than trusting a caller to remember it.
 
 ## Repos
 

@@ -206,6 +206,31 @@ triage:
                                    #   The pre-0005 key `prod_triage.enabled` is REMOVED and never
                                    #   honoured; `scripts/triage-mcp.sh status` reports a leftover.
 
+# ── Cloud Monitoring scopes (read-only monitoring_triage) ──────────────────────
+# WHICH cloud projects the monitoring-triage MCP may read, as `<product>/<env>: <project-id>`.
+# Unlike the Kubernetes server — which DERIVES its targets from the kubeconfig, because the cluster
+# reference is written identically on every machine — a Cloud Monitoring scope is just a project
+# id, discoverable from nothing. So it is declared here, once, as ORG data: the same on every
+# teammate's machine, unlike the per-person `triage:` keys above.
+#
+# The `<env>` half of each key is load-bearing, not decoration: it is what the PRODUCTION gate
+# reads. An `.../prod` target is refused until `triage.prod` is true on this machine; a
+# `.../staging` target needs no opt-in. There is no second flag — `triage.prod` governs every
+# triage server (docs/adr/0005, docs/adr/0010).
+#
+# One project commonly holds both environments; two keys pointing at the same id is normal and
+# correct — they still gate differently. Omit the block and the server starts, then reports
+# "no targets declared" rather than guessing at a project.
+#
+# Declare one entry per project you may need to READ, not per cluster: `roles/monitoring.viewer`
+# is granted at the project level, so one `scripts/k8s/bootstrap-sa.sh` run per project covers
+# every environment in it. A service and the managed resource it talks to can live in DIFFERENT
+# projects — miss one and its metrics are simply invisible, with no error to say so.
+monitoring:
+  targets:
+    app/staging: my-project-123456   # <product>/<env>: <cloud-project-id>
+    app/prod: my-project-123456
+
 # ── Artifacts (publishing an interactive doc as a shareable Claude Artifact) ────
 artifacts:
   enabled: false                   # MASTER switch (default OFF). false → an interactive doc
@@ -603,7 +628,19 @@ products:
   - id: <product-id>                          # → mani.d/<product-id>.yaml
     repos:
       - url: git@github.com:your-org/your-app.git   # ← all you must provide
-        kind: frontend                              # any dev-context label; test-suite = QA archetype
+        kind: frontend                              # any dev-context label. Three ARCHETYPES:
+                                                    #   test-suite            → the QA pipeline (below)
+                                                    #   document|fixture|mock → a SOURCELESS repo: the
+                                                    #     deliverable is prose, fixtures or mock
+                                                    #     responses. Still planned, built and reviewed
+                                                    #     by a human, but the static-analysis (guard)
+                                                    #     and performance gates are OFF — a scanner has
+                                                    #     nothing to scan and a profiler nothing to
+                                                    #     profile, so leaving them on does not add
+                                                    #     rigour, it adds a gate that cannot pass on
+                                                    #     its own terms.
+                                                    #   <anything else>       → a code repo: full
+                                                    #     plan→build→review with guard + perf on.
         desc: The mobile app — offline-first, UI only.   # one-line repo responsibility (anatomy at a glance)
         lang: dart                                  # the TECH lives here; else auto-detected from the clone.
                                                     #   Several stacks in one repo → a comma-separated list,
@@ -618,6 +655,21 @@ products:
         # path: your-app                            # optional — clone dir (default: the repo name)
         # green: "<keep-it-green check, e.g. lint + unit tests>"   # optional override (else from kind)
         # guardian_focus: "<secrets, data-protection, perms…>"     # optional override (else from kind)
+        # known_false_reds: "<this repo's environment reds that are not real failures>"
+                                                    # optional. The failures THIS repo's harness
+                                                    #   produces that LOOK like a real red — a port
+                                                    #   already in use, a persistent test DB left
+                                                    #   dirty by an earlier run, a shared fixture that
+                                                    #   makes the suite order-dependent, a formatter
+                                                    #   fighting a generated file. The code-reviewer
+                                                    #   and the test gates read this BEFORE calling a
+                                                    #   red real, so a known environment failure costs
+                                                    #   a re-run instead of a review round. It never
+                                                    #   excuses a red: it names which ones to re-check
+                                                    #   in isolation against the base branch first.
+                                                    #   Declare it per repo, here — a framework file
+                                                    #   listing your repos' flakes would be carrying
+                                                    #   knowledge it cannot maintain.
       - url: git@github.com:your-org/your-tests.git
         kind: test-suite                            # the cross-repo QA suite (E2E / API / load)
         desc: Android/iOS E2E UI tests for the app.      # one-line repo responsibility
