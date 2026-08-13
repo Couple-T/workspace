@@ -16,11 +16,11 @@
 # Usage:
 #   find-traces.sh [filters] [--by <key>] [--interval 1h] [--list] [--since 7d] [--limit 20] [--raw]
 #
-#   --service <name>    span's service (e.g. APISIX, agent-webservice)
+#   --service <name>    span's service (e.g. web, auth, backend)
 #   --status <code>     HTTP response status (e.g. 502)
 #   --error             only spans marked as errors
 #   --operation <name>  span name / operation
-#   --tag k=v           any span attribute; repeatable (e.g. --tag http.target=/AMBPG/PGSOFT/settleBets)
+#   --tag k=v           any span attribute; repeatable (e.g. --tag http.target=/api/v1/resource)
 #   --min-duration <ms> only spans slower than this
 #   --since <when>      -Nm/-Nh/-Nd, epoch ms, or ISO-8601 CARRYING ITS OFFSET. Default -7d.
 #   --until <when>      same formats. Default now.
