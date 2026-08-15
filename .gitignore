@@ -109,3 +109,11 @@ workspace.config.local.yaml
 /.claude/skills/ponytail-review
 # <<< aiworks cursor: plugin-skill links
 /feeed-cs/
+
+# >>> aiworks sync: obsidian (generated — do not edit by hand)
+# Obsidian vault — commit shared settings; keep personal UI layout local.
+# See docs/agents/obsidian.md.
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/graph.json
+# <<< aiworks sync: obsidian
