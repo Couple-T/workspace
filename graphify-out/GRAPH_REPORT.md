@@ -5,18 +5,24 @@
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2180 nodes · 2027 edges · 181 communities (175 shown, 6 thin omitted)
+- 2194 nodes · 2039 edges · 183 communities (177 shown, 6 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e2a39f7e`
+- Built from commit: `c69d0dc9`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - FeeedMe visual system — mood: **cozy**
 - Language (output-localization convention)
+- CLAUDE.md — {{ORG_NAME}} Organization workspace
+- The load-test gate — equal-or-better, or it does not ship
+- Code minimalism is a plugin, scoped by agent, not a prompt
+- Code minimalism (ponytail)
+- Cursor gets a generated mirror of the Claude config, built from symlinks
+- Obsidian — shared vault settings for the workspace meta-repo
 - Tailwind CSS Utility Reference
 - Brand Guidelines v1.0
 - Voice adapter (`scripts/voice/`)
@@ -113,7 +119,6 @@
 - Report test results
 - Update a ticket
 - Cloud Monitoring triage adapter
-- scripts/redis — production Redis, read-only
 - graphic-designer.md
 - oncall.md
 - performance-engineer.md
@@ -132,7 +137,6 @@
 - Image generation (graphic-designer asset pipeline)
 - PII provenance — redact what PRODUCTION gave us, and only that
 - Plan artifacts — where a plan lives, and why it is never committed
-- scripts/db — deployed Postgres (staging + production), read-only
 - Coding standards
 - Coding standards
 - guardian-engineer.md
@@ -166,9 +170,7 @@
 - Editing an existing doc (Mode B — partial update)
 - Triage MCPs cover every deployed environment; only production is gated
 - Figma (design authoring & reading convention)
-- Issue tracker conventions
 - scripts/stagehand
-- Tracker adapter
 - Brand Guidelines Template
 - monitoring-triage/SKILL.md
 - Notify (review request)
@@ -201,12 +203,12 @@
 2. `UI Styling Skill` - 17 edges
 3. `Component library` - 16 edges
 4. `Design` - 15 edges
-5. `Tailwind CSS Utility Reference` - 14 edges
-6. `Tailwind CSS Customization` - 14 edges
+5. `Tailwind CSS Customization` - 14 edges
+6. `Tailwind CSS Utility Reference` - 14 edges
 7. `Interactive Debugger` - 13 edges
-8. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
-9. `Tailwind CSS Responsive Design` - 13 edges
-10. `Voice — spoken output and dictation` - 12 edges
+8. `Tailwind CSS Responsive Design` - 13 edges
+9. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
+10. `Token Architecture` - 12 edges
 
 ## Surprising Connections (you probably didn't know these)
 - None detected - all connections are within the same source files.
@@ -214,7 +216,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (181 total, 6 thin omitted)
+## Communities (183 total, 6 thin omitted)
 
 ### Community 0 - "FeeedMe visual system — mood: **cozy**"
 Cohesion: 0.33
@@ -223,6 +225,30 @@ Nodes (5): Craft cues (carry the mood), FeeedMe visual system — mood: **cozy**
 ### Community 1 - "Language (output-localization convention)"
 Cohesion: 0.33
 Nodes (6): 1. `language` — the workspace-wide output language (default **`en`**), 2. The rule — English spine, Thai prose, 3. Which surface gets which language, 4. How it's enforced, Language (output-localization convention), The case-report exception
+
+### Community 2 - "CLAUDE.md — {{ORG_NAME}} Organization workspace"
+Cohesion: 0.22
+Nodes (8): CLAUDE.md — {{ORG_NAME}} Organization workspace, Configuration (read these first), DO NOT, Language, compression and code, Notifications, Product, Provider adapters, Speaking and showing
+
+### Community 3 - "The load-test gate — equal-or-better, or it does not ship"
+Cohesion: 0.25
+Nodes (8): Metrics, Never fail open, On a fail: attribute first, fix second, Reading the result, The baseline cache, The load-test gate — equal-or-better, or it does not ship, Three verdicts, and why the third exists, What arms it
+
+### Community 4 - "Code minimalism is a plugin, scoped by agent, not a prompt"
+Cohesion: 0.29
+Nodes (7): Code minimalism is a plugin, scoped by agent, not a prompt, What ponytail offers, What was rejected, Why not on every agent, Why the level is pinned, Why the plugin rather than our own prose, Why three carve-outs, and only three
+
+### Community 5 - "Code minimalism (ponytail)"
+Cohesion: 0.29
+Nodes (7): Code minimalism (ponytail), Commands, How it reaches each spawn path, Installing it, The ladder, Where it stops, Who gets it, and why not everyone
+
+### Community 6 - "Cursor gets a generated mirror of the Claude config, built from symlinks"
+Cohesion: 0.40
+Nodes (5): A root session gets each repo re-globbed, Cursor gets a generated mirror of the Claude config, built from symlinks, Mirror rather than rely on Cursor's third-party import, Symlinks, not copies — the frontmatter carries both vocabularies, The hook shim is the one deliberate copy
+
+### Community 7 - "Obsidian — shared vault settings for the workspace meta-repo"
+Cohesion: 0.40
+Nodes (4): Commit vs keep local, Gotchas, Obsidian — shared vault settings for the workspace meta-repo, What `aiworks sync` does
 
 ### Community 14 - "Tailwind CSS Utility Reference"
 Cohesion: 0.05
@@ -341,8 +367,8 @@ Cohesion: 0.11
 Nodes (18): 1. Wordmark (Logotype), 2. Lettermark (Monogram), 3. Pictorial Mark (Brand Mark), 4. Abstract Mark, 5. Mascot, 6. Emblem, 7. Combination Mark, Aesthetic Styles (+10 more)
 
 ### Community 95 - "Deferred scope does not stop a run"
-Cohesion: 0.06
-Nodes (30): Consequences, Deferred scope does not stop a run, No ticket is filed, The cost we accepted, and what pays for it, The floor, What that cost, Why not simply proceed on `partial`, Why not stop at the PR, short of the gate (+22 more)
+Cohesion: 0.25
+Nodes (8): Consequences, Deferred scope does not stop a run, No ticket is filed, The cost we accepted, and what pays for it, The floor, What that cost, Why not simply proceed on `partial`, Why not stop at the PR, short of the gate
 
 ### Community 96 - "Headroom — input-side context compression"
 Cohesion: 0.11
@@ -445,8 +471,8 @@ Cohesion: 0.14
 Nodes (13): Card Styles, Component Variants, CSS Structures, Feature Grid (3 columns), Layout Decision Flow, Layout Patterns, Layout Selection by Use Case, Metric Styles (+5 more)
 
 ### Community 166 - "README.md"
-Cohesion: 0.14
-Nodes (12): 🚀 First run, 🔄 Keeping the tooling current, 📚 Learn more, 🗂️ Managing repos, ✅ Prerequisites, 🔍 Production triage (optional), 🎫 Run a ticket, 📦 What's inside (+4 more)
+Cohesion: 0.05
+Nodes (37): Issue tracker conventions, Notes, Status lifecycle, The adapter is the only entry point, This workspace's settings, 🚀 First run, 🔄 Keeping the tooling current, 📚 Learn more (+29 more)
 
 ### Community 167 - "0003-personal-runtime-config-overrides.md"
 Cohesion: 0.15
@@ -465,8 +491,8 @@ Cohesion: 0.15
 Nodes (12): Categories, Dark Mode, File Organization, Layer 1: Primitive Tokens, Layer 2: Semantic Tokens, Layer 3: Component Tokens, Layer Overview, Migration from Flat Tokens (+4 more)
 
 ### Community 171 - "CONTEXT.md"
-Cohesion: 0.17
-Nodes (9): A root session gets each repo re-globbed, Cursor gets a generated mirror of the Claude config, built from symlinks, Mirror rather than rely on Cursor's third-party import, Symlinks, not copies — the frontmatter carries both vocabularies, The hook shim is the one deliberate copy, How it reaches each spawn path, In Cursor the skill is `/caveman`, Output compression (caveman) (+1 more)
+Cohesion: 0.20
+Nodes (4): How it reaches each spawn path, In Cursor the skill is `/caveman`, Output compression (caveman), The boundary: compression is an OUTPUT rule
 
 ### Community 178 - "Primitive Tokens"
 Cohesion: 0.17
@@ -608,10 +634,6 @@ Nodes (8): 1. Resolve the ticket, 2. Properties & status — `upsert-ticket-deta
 Cohesion: 0.22
 Nodes (8): Checks, Cloud Monitoring triage adapter, Related, Targets are configured, not derived, The catalog, The correctness contract, Where it sits among the triage servers, Why it shares the Kubernetes identity
 
-### Community 267 - "scripts/redis — production Redis, read-only"
-Cohesion: 0.22
-Nodes (8): Local repro — `replay_shape.py`, Safety model (all layers are client-side — deliberately), scripts/redis — production Redis, read-only, Setup (one-time, per machine), Targets, The production gate, Tools, Verifying it
-
 ### Community 268 - "graphic-designer.md"
 Cohesion: 0.25
 Nodes (7): Asset rules, Bar, Company constraints — budget-tight, follow STRICTLY, Delivery to Figma (the Assets page), Main skill, Return contract (per asset — be honest, never paper over a gap), Step 0 — availability gate (do this BEFORE accepting an asset request)
@@ -683,10 +705,6 @@ Nodes (7): Honest limits, Knobs, Pieces, PII provenance — redact what PRODUCTI
 ### Community 286 - "Plan artifacts — where a plan lives, and why it is never committed"
 Cohesion: 0.25
 Nodes (7): Enforcement, Gates, History, Never committed, Plan artifacts — where a plan lives, and why it is never committed, The paths, Why per repo, not one file
-
-### Community 295 - "scripts/db — deployed Postgres (staging + production), read-only"
-Cohesion: 0.25
-Nodes (7): Environments and targets, Repro seeding — `prod_repro_seed.py`, Safety model (layered), scripts/db — deployed Postgres (staging + production), read-only, Setup (one-time, per machine), Tools, Verifying it
 
 ### Community 296 - "Coding standards"
 Cohesion: 0.25
@@ -820,17 +838,9 @@ Nodes (5): Staging is not the thing that needs authorizing, Staging Postgres get
 Cohesion: 0.33
 Nodes (5): 1. `design.enabled` — the workspace-wide Figma switch (default **OFF**), 2. `design.figma_file_key` — the org's ONE canonical design file, 3. Per-role behavior, 4. How it's enforced, Figma (design authoring & reading convention)
 
-### Community 340 - "Issue tracker conventions"
-Cohesion: 0.33
-Nodes (5): Issue tracker conventions, Notes, Status lifecycle, The adapter is the only entry point, This workspace's settings
-
 ### Community 355 - "scripts/stagehand"
 Cohesion: 0.33
 Nodes (5): Adding a trigger, Run it by hand, scripts/stagehand, Test, Turning it off
-
-### Community 356 - "Tracker adapter"
-Cohesion: 0.33
-Nodes (5): Layout, Notes / limitations, Setup, Tracker adapter, Usage
 
 ### Community 358 - "Brand Guidelines Template"
 Cohesion: 0.40
@@ -913,17 +923,17 @@ Cohesion: 0.50
 Nodes (3): Adding a self-hosted provider later, Backend: mermaid.ink / mermaid.live, Diagram adapter
 
 ## Knowledge Gaps
-- **1605 isolated node(s):** `Configuration (read these first)`, `Provider adapters`, `Language, compression and code`, `Speaking and showing`, `Notifications` (+1600 more)
+- **1615 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration`, ``/handoff` discipline`, `Keep the technical group parallel & idle-free` (+1610 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `AI Workspace` connect `AI Workspace` to `CONTEXT.md`?**
+- **Why does `Cursor gets a generated mirror of the Claude config, built from symlinks` connect `Cursor gets a generated mirror of the Claude config, built from symlinks` to `CONTEXT.md`?**
   _High betweenness centrality (0.001) - this node is a cross-community bridge._
-- **What connects `Configuration (read these first)`, `Provider adapters`, `Language, compression and code` to the rest of the system?**
-  _1605 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration` to the rest of the system?**
+  _1615 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Tailwind CSS Utility Reference` be split into smaller, more focused modules?**
   _Cohesion score 0.045454545454545456 - nodes in this community are weakly interconnected._
 - **Should `Brand Guidelines v1.0` be split into smaller, more focused modules?**
