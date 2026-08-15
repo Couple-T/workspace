@@ -71,6 +71,24 @@ t "push -o merge_request.create blocked"  2 pretool-git-guard.sh "$(j 'git push 
 t "push --push-option= blocked"           2 pretool-git-guard.sh "$(j 'git push --push-option=merge_request.create origin x')"
 t "plain push -u allowed"                 0 pretool-git-guard.sh "$(j 'git push -u origin feature/APP-1')"
 t "add -f past .gitignore blocked"        2 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f agent_logs/APP-1-svc-plan.md")"
+# Untracking a file that JUST became ignored is the one flow the ignored-path commit
+# check must not block: `git rm --cached` stages a DELETION, which removes the path
+# from the index rather than committing it. Before --diff-filter=d the guard saw the
+# staged path, matched it against .gitignore, and made the untrack commit impossible.
+# Its own repo, not svc: these two cases MUTATE the index, and a shared fixture would
+# leak that state into whatever case runs next.
+IGN="$TMP/ignoretrack"
+mkdir -p "$IGN/agent_logs" && git -C "$IGN" init -q
+printf 'agent_logs/\n' > "$IGN/.gitignore"
+git -C "$IGN" add .gitignore && git -C "$IGN" commit -q -m base
+: > "$IGN/agent_logs/legacy.md"
+git -C "$IGN" add -f agent_logs/legacy.md && git -C "$IGN" commit -q -m "tracked before the rule"
+git -C "$IGN" rm -q --cached agent_logs/legacy.md
+t "untrack of a newly-ignored path allowed"  0 pretool-git-guard.sh "$(j "git -C $IGN commit -m untrack")"
+# ...while ADDING an ignored path is still blocked, which is what the guard is for.
+: > "$IGN/agent_logs/fresh.md"
+git -C "$IGN" add -f agent_logs/fresh.md
+t "commit that ADDS an ignored path blocked" 2 pretool-git-guard.sh "$(j "git -C $IGN commit -m add-ignored")"
 t "add -f past info/exclude allowed"      0 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f localonly/wrapper.sh")"
 t "add -f mixed (one ignored) blocked"    2 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f localonly/wrapper.sh agent_logs/APP-1-svc-plan.md")"
 t "add -f . blocked (too broad)"          2 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f .")"
@@ -214,9 +232,9 @@ t "gh pr create blocked"                      2 pretool-agent-brief-guard.sh "$(
 t "glab mr create blocked"                    2 pretool-agent-brief-guard.sh "$(ja qa-runner 'Then glab mr create --source-branch x.')"
 
 echo "--- pretool-env-guard ---"
-# This guard had no cases at all, which is how `rtk read <.env>` walked past it:
-# the suite only ever proved the verbs someone had already thought of. The .env
-# literals are assembled from $E so that editing this file through a shell
+# This guard once had no cases at all, which is how a renamed reading verb walked
+# past it: the suite only ever proved the verbs someone had already thought of. The
+# .env literals are assembled from $E so that editing this file through a shell
 # heredoc cannot trip the guard on the suite's own text.
 E='.env'
 t "cat .env blocked"                2 pretool-env-guard.sh "$(j "cat scripts/tracker/$E")"
@@ -226,21 +244,106 @@ t "grep -q .env allowed (no print)" 0 pretool-env-guard.sh "$(j "grep -q '^SLACK
 t "Read of .env blocked"            2 pretool-env-guard.sh "$(jr "$TMP/svc/$E")"
 t ".env.example readable"           0 pretool-env-guard.sh "$(jr "$TMP/svc/$E.example")"
 t "bash -x near scripts/ blocked"   2 pretool-env-guard.sh "$(j 'bash -x scripts/tracker/get-ticket-details.sh APP-1')"
-# rtk renames the reading verbs; the rtk hook rewrites `cat X` into `rtk read X`,
-# so these are shapes the model reads back out of its own transcript.
-t "rtk read .env blocked"           2 pretool-env-guard.sh "$(j "rtk read scripts/tracker/$E")"
-t "rtk pipe < .env blocked"         2 pretool-env-guard.sh "$(j "rtk pipe < scripts/tracker/$E")"
-t "rtk diff of two .env blocked"    2 pretool-env-guard.sh "$(j "rtk diff scripts/tracker/$E scripts/notify/$E")"
-t "rtk read with a flag blocked"    2 pretool-env-guard.sh "$(j "rtk --ultra-compact read scripts/tracker/$E")"
-t "rtk read .env.example allowed"   0 pretool-env-guard.sh "$(j "rtk read scripts/tracker/$E.example")"
 # Names-only verbs stay allowed: over-blocking them buys no secrecy and the first
 # person a guard annoys is the person who turns it off.
-t "rtk find by name allowed"        0 pretool-env-guard.sh "$(j "rtk find . -name '*$E'")"
-t "rtk ls of the dir allowed"       0 pretool-env-guard.sh "$(j 'rtk ls -la scripts/tracker')"
-t "rtk wc of .env allowed"          0 pretool-env-guard.sh "$(j "rtk wc scripts/tracker/$E")"
+t "find by name allowed"            0 pretool-env-guard.sh "$(j "find . -name '*$E'")"
+t "ls of the dir allowed"           0 pretool-env-guard.sh "$(j 'ls -la scripts/tracker')"
+t "wc of .env allowed"              0 pretool-env-guard.sh "$(j "wc -l scripts/tracker/$E")"
 # `read` and `diff` unanchored are ordinary words — blocking them would be noise.
 t "bare diff of .env.example ok"    0 pretool-env-guard.sh "$(j "diff a/$E.example b/$E.example")"
-t "unrelated rtk read allowed"      0 pretool-env-guard.sh "$(j 'rtk read src/main.rs')"
+# hcat is the headroom plugin's compress-at-the-source reader: a RENAMED cat, and exactly the
+# case the comment above warns about. It needs its OWN alternative because `\bcat\b` cannot
+# match "hcat" — the leading h is a word character, so there is no boundary before "cat".
+t "hcat .env blocked"               2 pretool-env-guard.sh "$(j "hcat scripts/tracker/$E")"
+t "hcat quoted .env blocked"        2 pretool-env-guard.sh "$(j "hcat \"scripts/notify/$E\"")"
+t "hcat .env after && blocked"      2 pretool-env-guard.sh "$(j "cd /tmp && hcat $E")"
+t "hcat .env.example allowed"       0 pretool-env-guard.sh "$(j "hcat scripts/tracker/$E.example")"
+t "hcat of ordinary json allowed"   0 pretool-env-guard.sh "$(j 'hcat build/report.json')"
+# A word merely ENDING in cat must not inherit the verb match in either direction.
+t "whcat is not a reading verb"     0 pretool-env-guard.sh "$(j "./whcat report.json")"
+# A template is any path ENDING in .example, not just the exact `.env.example`.
+# Real files here: .env.amb.example and .env.local.example — both were blocked as
+# secrets by an exemption that matched one literal string. They hold no values, and
+# over-blocking is how a guard gets switched off. `.env.example.bak` is NOT a
+# template (it does not end in .example) and must stay blocked.
+t "hcat .env.amb.example allowed"    0 pretool-env-guard.sh "$(j "hcat dev-script/x/$E.amb.example")"
+t "hcat .env.local.example allowed"  0 pretool-env-guard.sh "$(j "hcat app/$E.local.example")"
+t "cat .env.local.example allowed"   0 pretool-env-guard.sh "$(j "cat app/$E.local.example")"
+t "Read .env.amb.example allowed"    0 pretool-env-guard.sh "$(jr "$TMP/svc/$E.amb.example")"
+t "Read .env.local.example allowed"  0 pretool-env-guard.sh "$(jr "$TMP/svc/$E.local.example")"
+t "proxy.env.example allowed"        0 pretool-env-guard.sh "$(jr "$TMP/svc/proxy${E#.}.example")"
+t "env.config.example.json allowed"  0 pretool-env-guard.sh "$(jr "$TMP/svc/${E#.}.config.example.json")"
+# ...and the variants they were confused with are still secrets.
+t "hcat .env.amb blocked"            2 pretool-env-guard.sh "$(j "hcat dev-script/x/$E.amb")"
+t "Read .env.local blocked"          2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.local")"
+t "Read .env.example.bak blocked"    2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.example.bak")"
+
+echo "--- pretool-hcat-size-guard ---"
+# hcat has no upper bound of its own, and headroom passes content through UNCHANGED when
+# compression would not help — measured on a 250 MB log: 0.0% saved, 262 MB printed, 80s.
+# The size guard is the ceiling. Fixtures are sparse files so the suite stays instant.
+mkdir -p "$TMP/big"
+: > "$TMP/big/small.json"; printf '{"a":1}' > "$TMP/big/small.json"
+dd if=/dev/zero of="$TMP/big/huge.log" bs=1 count=0 seek=3145728 2>/dev/null   # 3 MiB > the 2 MiB cap
+jc() { jq -cn --arg c "$1" --arg d "$TMP/big" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+t "hcat of a 3 MiB file blocked"    2 pretool-hcat-size-guard.sh "$(jc "hcat $TMP/big/huge.log")"
+t "hcat quoted huge blocked"        2 pretool-hcat-size-guard.sh "$(jc "hcat \"$TMP/big/huge.log\"")"
+t "hcat huge relative to cwd blocked" 2 pretool-hcat-size-guard.sh "$(jc 'hcat huge.log')"
+t "hcat huge after && blocked"      2 pretool-hcat-size-guard.sh "$(jc "cd /tmp && hcat $TMP/big/huge.log")"
+t "hcat of a small file allowed"    0 pretool-hcat-size-guard.sh "$(jc "hcat $TMP/big/small.json")"
+# Scope is the verb this workspace introduced. A bare `cat` of a huge file is pre-existing
+# behaviour that posttool-output-warden.sh already reports on.
+t "plain cat of huge allowed"       0 pretool-hcat-size-guard.sh "$(jc "cat $TMP/big/huge.log")"
+t "missing file fails open"         0 pretool-hcat-size-guard.sh "$(jc 'hcat /nonexistent/x.json')"
+t "the word hcat alone allowed"     0 pretool-hcat-size-guard.sh "$(jc 'echo hcat')"
+t "non-Bash tool ignored"           0 pretool-hcat-size-guard.sh "$(jr "$TMP/big/huge.log")"
+
+echo "--- pretool-hrun-pipe-guard ---"
+# hrun prints a RENDERING, not data: above its threshold the output carries hcat's receipt header
+# and may be a compressed body. Measured: `hrun cat t.json > y.json` yields a y.json no JSON parser
+# accepts, silently. hrun cannot detect this itself — under the Bash tool stdout is never a TTY
+# whether the output is about to be read or about to be swallowed — so the shape is judged here.
+t "hrun bare allowed"                  0 pretool-hrun-pipe-guard.sh "$(j 'hrun cargo test')"
+t "hrun redirected to a file blocked"  2 pretool-hrun-pipe-guard.sh "$(j 'hrun cat t.json > y.json')"
+t "hrun appended to a file blocked"    2 pretool-hrun-pipe-guard.sh "$(j 'hrun ls >> out.txt')"
+t "hrun piped blocked"                 2 pretool-hrun-pipe-guard.sh "$(j 'hrun git diff | head -20')"
+t "hrun in \$() blocked"                2 pretool-hrun-pipe-guard.sh "$(j 'X=$(hrun cat f.json)')"
+# Backticks are an ACCEPTED MISS, not an oversight. When they counted, the guard blocked its own
+# commit — the message quoted the hazard in backticks. Prose about the verb outnumbers legacy
+# backtick substitution of it, and a guard that blocks writing about a tool gets switched off.
+t "backtick substitution is a known miss" 0 pretool-hrun-pipe-guard.sh "$(j 'X=`hrun cat f.json`')"
+t "prose quoting hrun in backticks ok"    0 pretool-hrun-pipe-guard.sh "$(j 'git commit -m "explains `hrun x > y` is unsafe"')"
+t "modern \$() substitution still blocked" 2 pretool-hrun-pipe-guard.sh "$(j 'X=$(scripts/hrun cat f.json)')"
+# stdin going INTO hrun is untouched passthrough — it is hrun's own stdout that must not be eaten.
+t "piping INTO hrun allowed"           0 pretool-hrun-pipe-guard.sh "$(j 'cat f | hrun grep needle')"
+# hrun merges stderr into stdout itself, so a numbered redirect changes nothing — denying it would
+# be a false positive, and a guard that cries wolf gets switched off.
+t "numbered redirect allowed"          0 pretool-hrun-pipe-guard.sh "$(j 'hrun cargo test 2>/dev/null')"
+t "the word hrun alone allowed"        0 pretool-hrun-pipe-guard.sh "$(j 'echo hrun')"
+t "hrunner is not hrun"                0 pretool-hrun-pipe-guard.sh "$(j 'hrunner --list | head')"
+# MENTION vs CALL. `\bhrun\b` matches inside "pretool-hrun-pipe-guard.sh", so grepping for this
+# guard's own filename got blocked for "piping hrun" — the first real command after it was written.
+# Command position is the test; a hyphen after the name is not whitespace, so a filename cannot
+# qualify. Same failure class as the adapter pipe guard's.
+t "grep for the guard's filename ok"   0 pretool-hrun-pipe-guard.sh "$(j 'grep -n "hrun-pipe-guard" scripts/aiworks-add.sh | head')"
+# hrun ships at scripts/hrun and is documented to be called that way, so a bare-name-only rule
+# left this guard inert on every real invocation. Found by piping scripts/hrun in its own test.
+t "path-prefixed hrun piped blocked"   2 pretool-hrun-pipe-guard.sh "$(j 'scripts/hrun cat big.log | head -1')"
+t "./-prefixed hrun redirect blocked"  2 pretool-hrun-pipe-guard.sh "$(j './scripts/hrun ls > out.txt')"
+t "absolute-path hrun piped blocked"   2 pretool-hrun-pipe-guard.sh "$(j '/usr/local/bin/hrun ls | wc -l')"
+t "path-prefixed hrun bare allowed"    0 pretool-hrun-pipe-guard.sh "$(j 'scripts/hrun cargo test')"
+t "ls of the guard file ok"            0 pretool-hrun-pipe-guard.sh "$(j 'ls .claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh | head -1')"
+t "hrun quoted inside echo ok"         0 pretool-hrun-pipe-guard.sh "$(j 'echo "run hrun bare, never hrun x | y"')"
+# The escape hatch has to be read off the command string: a VAR=1 prefix never reaches this hook's
+# own environment, so an env-only check would document a hatch that does not work.
+t "inline HRUN_ALLOW_PIPE opts out"    0 pretool-hrun-pipe-guard.sh "$(j 'HRUN_ALLOW_PIPE=1 hrun ls | head')"
+t "non-Bash tool ignored"              0 pretool-hrun-pipe-guard.sh "$(jr /tmp/x.json)"
+
+echo "--- pretool-env-guard: hrun is a reading verb too ---"
+# hrun runs ANY command and prints what it printed, so `hrun cat .env` leaks exactly as `cat .env`
+# does — and unlike hcat its name contains no "cat" for the existing alternation to catch.
+t "hrun cat .env blocked"              2 pretool-env-guard.sh "$(j 'hrun cat scripts/notify/.env')"
+t "hrun cat .env.example allowed"      0 pretool-env-guard.sh "$(j 'hrun cat scripts/notify/.env.example')"
 
 echo "== pretool-agent-context: the spawn brief carries the resolved language =="
 # This hook REWRITES rather than blocks, so exit-code cases prove nothing on their own —
@@ -298,6 +401,44 @@ else fail=$((fail+1)); printf 'FAIL %s (got %s)\n' "rewrite preserves subagent_t
 t "agent-context never blocks"      0 pretool-agent-context.sh "$(ja general-purpose 'anything at all')"
 t "agent-context on empty prompt"   0 pretool-agent-context.sh "$(ja general-purpose '')"
 has "unknown agent type treated as def-less" yes "$(ac th no-such-agent 'Find X.')" 'CAVEMAN_DIRECTIVE'
+
+echo "== pretool-agent-context: ponytail carve-outs reach the code-shaping agents only =="
+# The LADDER is the ponytail plugin's own SubagentStart injection and is not this hook's job.
+# What is asserted here is the workspace half: who gets the carve-outs, and who must not.
+for r in th en; do
+  printf 'skills:\n  - caveman:caveman\n' > "$TMP/$r/.claude/agents/ponytailagent.md"
+  printf 'PONYTAIL_GUARDRAILS carried inline by this definition.\n' >> "$TMP/$r/.claude/agents/ponytailagent.md"
+  printf 'skills:\n  - caveman:caveman\nRun /ponytail-review on the diff.\n' > "$TMP/$r/.claude/agents/reviewmention.md"
+done
+PT_M='^(developer|ponytailagent|reviewmention)$|cavecrew-builder'
+
+acm() { # acm <root> <matcher> <subagent_type> <prompt> -> the rewritten prompt
+  jq -cn --arg a "$3" --arg p "$4" \
+    '{tool_name:"Agent",tool_input:{subagent_type:$a,description:"d",prompt:$p}}' \
+  | PONYTAIL_SUBAGENT_MATCHER="$2" CLAUDE_PROJECT_DIR="$TMP/$1" "$H/pretool-agent-context.sh" 2>/dev/null \
+  | jq -r '.hookSpecificOutput.updatedInput.prompt // ""' 2>/dev/null
+}
+
+has "matcher: code-shaping type gets carve-outs" yes "$(acm th "$PT_M" developer 'Build X.')" 'PONYTAIL_GUARDRAILS'
+# The cost lever. An oncall/designer/planner spawn receives no ladder from the plugin, so
+# handing it carve-outs for a ladder it never got is pure tokens — and the two must agree.
+has "matcher: non-code type gets none"           no  "$(acm th "$PT_M" oncall 'Investigate X.')" 'PONYTAIL_GUARDRAILS'
+has "matcher: plugin agent type matches"         yes "$(acm th "$PT_M" 'caveman:cavecrew-builder' 'Edit X.')" 'PONYTAIL_GUARDRAILS'
+# Unset matcher = the plugin injects into every subagent, so the carve-outs follow it there.
+has "no matcher: everyone gets carve-outs"       yes "$(acm th '' documentor 'Write X.')" 'PONYTAIL_GUARDRAILS'
+# A regex grep cannot parse must fail OPEN: carve-outs where they were not needed cost
+# tokens, a money path built without them costs more.
+has "unparseable matcher fails open"             yes "$(acm th '*[' developer 'Build X.')" 'PONYTAIL_GUARDRAILS'
+# Idempotence — dev-cycle bakes its own copy into the plan/build/pr-fix prompts.
+has "already-injected brief untouched (ponytail)" no "$(acm th "$PT_M" developer 'X PONYTAIL_GUARDRAILS — …')" 'ponytail (`/ponytail:ponytail`'
+# Opt-out is the literal TOKEN, never the word: a definition naming /ponytail-review as a
+# review lens is asking for MORE ponytail, not waiving the carve-outs.
+has "definition carrying the token opts out"     no  "$(acm th "$PT_M" ponytailagent 'Do X.')" 'PONYTAIL_GUARDRAILS —'
+has "mentioning /ponytail-review does not"       yes "$(acm th "$PT_M" reviewmention 'Review X.')" 'PONYTAIL_GUARDRAILS'
+# Language and compression are unaffected by any of it.
+out=$(acm th "$PT_M" developer 'Build X.')
+has "carve-outs coexist with language"           yes "$out" 'OUTPUT LANGUAGE = th'
+has "original brief still intact"                yes "$out" 'Build X.'
 
 echo "--- pretool-submodule-guard ---"
 #

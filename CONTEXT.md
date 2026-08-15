@@ -32,6 +32,14 @@ re-parents, re-sprints or re-estimates one. Shipped work is a record, not a work
 A ticket an automated run may write to: any covering ticket that is not a **reference ticket**,
 plus a key a human named explicitly. The distinction is enforced in code, not by instruction.
 
+**Deferred scope**:
+Part of a ticket's scope that a repo's build cannot finish because it belongs to another owner — a
+repo outside this workspace, or an access only a person holds. It is not unfinished work: what the
+repo owns is green. A build that reports it hands back **deferred**, and the run carries on to
+review and the test gate, naming the deferral on the PR/MR and the ticket rather than merging over
+it in silence. Unfinished work of the repo's own is **partial**, and that still stops the repo. The
+distinction is enforced in code, not by instruction.
+
 **Skill**:
 A packaged, named instruction set (`.claude/skills/`) invoked to do one kind of task the repo's
 way — the reusable procedure a Workflow or agent steps through.
@@ -40,6 +48,22 @@ way — the reusable procedure a Workflow or agent steps through.
 The roles that run the pipeline (CEO, CPO, CTO, developer, code-reviewer, QA, …); each is a
 `.claude/agents/*.md` definition reused by *both* the Agent tool and the headless Workflows.
 → `.claude/agents/`
+
+**Code-shaping agent**:
+The subset of the agent team whose output becomes code — planner, developer, reviewer, guardian,
+qa-runner, and the def-less builders. The only spawns **ponytail** is injected into; named by
+`PONYTAIL_SUBAGENT_MATCHER`. → `docs/agents/ponytail.md`
+
+**Ponytail** / **the ladder**:
+The code-minimalism baseline (`ponytail:ponytail`; `/ponytail` in Cursor). Before writing code an
+agent stops at the first rung that holds: YAGNI → reuse → stdlib → native platform feature →
+installed dependency → one line → minimum that works. Governs *what gets built*, as **caveman**
+governs *what gets said*. → `docs/agents/ponytail.md`
+
+**Carve-out** (ponytail):
+One of the three places this workspace overrides ponytail — a repo's own **test suite**, a ticket's
+**acceptance criteria**, and the provider **adapters**. Injected beside the ladder on every spawn
+path; the ladder shortens the implementation, never the requirement.
 
 **mani**:
 The cross-repo CLI (`sync` · `list projects` · `exec` · `run`) driven by the generated
@@ -199,6 +223,17 @@ each of which **must** carry `-p $CLAUDE_PROJECT_DIR/<repo>` as an absolute path
 because a relative one resolves against a cwd that persists between tool calls and
 makes codegraph answer from the wrong repo with exit 0. Enforced by
 `pretool-codegraph-guard.sh`; kept current by `posttool-codegraph-sync.sh`.
+Reads code only — never shell or prose, which is the **doc graph**'s half.
+→ [ADR-0013](docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md)
+
+**Doc graph**:
+This repo's graph over prose — `docs/`, `docs/adr/`, and the markdown under
+`.claude/` and `scripts/`. Concept and rationale nodes joined by cross-document
+edges, carrying no source text: it answers *where a thing is decided*, never
+*what a symbol contains*. The codegraph index's counterpart, for the shell and
+markdown the code index does not read.
+_Avoid_: knowledge graph, graphify index
+→ [ADR-0013](docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md)
 
 ## Editors
 

@@ -26,7 +26,8 @@
 #    4 per-repo     scripts/dev.sh · CLAUDE.md budget · .claude/ · adapter symlinks
 #                   (tracker + vcs — the two `aiworks add` links) · .codegraph/ index ·
 #                   skills-lock.json · a rules file scoped with `globs:` and no `paths:`
-#    5 agent-cfg    every hook in .claude/settings.json exists and is executable · AGENTS.md
+#    5 agent-cfg    every hook in .claude/settings.json exists and is executable · every declared
+#                   plugin is actually INSTALLED (sync only declares it) · AGENTS.md
 #                   and .cursor/ present per repo (CURSOR DRIFT is --deep: the real detector,
 #                   `aiworks cursor --check`, walks every repo and takes ~8s)
 #    6 tooling      the prerequisite binaries are on PATH, each missing one named with the
@@ -82,7 +83,7 @@ ROOT="$(cd "$DIR/.." && pwd)"
 
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 
-ALL_GROUPS="workspace repos adapters per-repo agent-cfg tooling voice triage mcp services credentials disk"
+ALL_GROUPS="workspace repos adapters per-repo agent-cfg tooling voice headroom triage mcp services credentials disk"
 DEEP_GROUPS="mcp services credentials disk"
 
 # ── args ──────────────────────────────────────────────────────────────────────────
@@ -322,7 +323,8 @@ check_workspace() {
   # deliberate one. Every feature switch is checked the same way.
   local sw
   for sw in voice.enabled stagehand.enabled diagrams.enabled artifacts.enabled \
-            figma.enabled image_generation.enabled loadtest.enabled; do
+            figma.enabled image_generation.enabled loadtest.enabled \
+            headroom.enabled headroom.statusline; do
     local raw; raw="$(cfg "$sw")"
     [[ -z "$raw" ]] && continue
     cfg_bool "$sw"
@@ -345,6 +347,27 @@ check_workspace() {
     fi
   else
     warn $g "no root CLAUDE.md" "agents start this workspace with no instructions"
+  fi
+
+  # This repo's doc graph (graphify — prose only, docs/adr/0013). The workspace's own half
+  # of the index: codegraph covers the product repos' code and indexes neither shell nor
+  # markdown, which is most of what lives here. graph.json is committed, so a fresh clone
+  # should already have one — an absent graph means either the commit is missing or someone
+  # ran `graphify uninstall --purge`. Never offer a rebuild as a cheap fix: the semantic
+  # pass is the most expensive step in the toolchain and it is serialised, so the owner
+  # command is deliberately the explicit one.
+  if [[ ! -f "$ROOT/.graphifyignore" ]]; then
+    warn $g "no .graphifyignore" "the doc graph would index shell, config and generated mirrors" \
+         "\$EDITOR .graphifyignore"
+  elif [[ -f "$ROOT/graphify-out/graph.json" ]]; then
+    # Count "norm_label", not "label": every node carries norm_label and nothing else does,
+    # whereas "label" also appears on community labels and hyperedges (it over-counted by 40
+    # on a 750-node graph).
+    local dn; dn="$(grep -o '"norm_label"' "$ROOT/graphify-out/graph.json" 2>/dev/null | grep -c . || true)"
+    pass $g "doc graph" "${dn:-0} nodes"
+  else
+    warn $g "no doc graph" "prose queries answer from nothing — codegraph indexes no shell and no markdown" \
+         "graphify extract . --backend claude-cli" slow
   fi
 }
 
@@ -792,7 +815,7 @@ EOF
     # physical (`cd … && pwd`) while the registry stores whatever path the session was opened
     # with — on macOS a /var/… symlink of /private/var/… is the same directory spelled two ways,
     # and a string compare silently matches nothing. Caught by the selftest, not by inspection.
-    local pkey projscoped="" dup=0 uv pv ep ev rootp
+    local pkey projscoped="" missing="" dup=0 uv pv ep ev rootp
     rootp="$(cd "$ROOT" 2>/dev/null && pwd -P)" || rootp="$ROOT"
     while IFS= read -r pkey; do
       [[ -z "$pkey" ]] && continue
@@ -806,9 +829,31 @@ $(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "pro
 INNER
       [[ -n "$pv" ]] && dup=$((dup+1))
       [[ -n "$uv" && -n "$pv" && "$uv" != "$pv" ]] && projscoped="${projscoped:+$projscoped }$pkey"
+      # DECLARED BUT NOT INSTALLED. `$uv` is already the user-scope version, so its absence IS
+      # the test — no second registry read, no second loop.
+      [[ -z "$uv" ]] && missing="${missing:+$missing }$pkey"
     done <<EOF
 $(jq -r '(.enabledPlugins // {}) | keys[]' "$settings" 2>/dev/null)
 EOF
+    # "Declared" reads as done and is not. `aiworks sync` converges enabledPlugins +
+    # extraKnownMarketplaces into the root and every declared repo, and stops there — the install is
+    # `ensure_claude_plugins` in .superset/lib.sh, which ONLY setup.sh calls. Nothing else
+    # reports the gap, and nothing looks broken while it is open: the skills still resolve,
+    # because `aiworks cursor` vendors and links them independently of the plugin. What is
+    # silently absent is the plugin's HOOKS — which for caveman and ponytail is the entire
+    # point, since that is how the ruleset reaches a session and its subagents at all.
+    # Reported separately from the scope block below: a machine can be missing one plugin while
+    # another has drifted, and collapsing them would hide whichever lost the branch.
+    if [[ -n "$missing" ]]; then
+      # The owner is ensure_claude_plugins, not a hand-written pair of claude commands: it
+      # already adds the marketplace from extraKnownMarketplaces BEFORE installing, and a bare
+      # `claude plugin install` without that step fails with "not found in marketplace" —
+      # measured 2026-08-13. Sourcing lib.sh keeps the write in the one script that owns it.
+      warn $g "declared plugin(s) not installed" \
+           "$missing — declaring is not installing: no SessionStart/SubagentStart hooks on this machine" \
+           "bash -c '. .superset/lib.sh && ensure_claude_plugins'" slow
+    fi
+
     if [[ -n "$projscoped" ]]; then
       # The uninstall ALSO deletes the plugin's line from the committed settings.json, which is
       # the very file lib.sh reads to install it user-scope everywhere — so the restore is part
@@ -821,7 +866,9 @@ EOF
            "for p in $projscoped; do claude plugin uninstall \"\$p\" -s project -y; done; git checkout -- .claude/settings.json"
     elif [[ $dup -gt 0 ]]; then
       pass $g "plugin scope" "$dup project-scope duplicate(s), all matching user scope"
-    else
+    elif [[ -z "$missing" ]]; then
+      # Only claim this when every declared plugin is actually there — a "user-scope only" pass
+      # beside a not-installed warn would read as the plugins being fine.
       pass $g "plugin scope" "declared plugins are user-scope only"
     fi
   fi
@@ -875,7 +922,8 @@ tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning 
     node)                      printf 'see: nvm install --lts --reinstall-packages-from=current (a node switch moves the global bin dir)' ;;
     docker)                    printf 'see: install Docker Desktop — https://docker.com/products/docker-desktop' ;;
     claude)                    printf 'see: https://claude.com/claude-code — then re-run aiworks update --only claude' ;;
-    codegraph|rtk)             printf 'see: %s is installed outside this workspace; reinstall it the way you first did' "$1" ;;
+    codegraph)                 printf 'see: %s is installed outside this workspace; reinstall it the way you first did' "$1" ;;
+    graphify)                  printf 'uv tool install --python 3.12 "graphifyy[leiden,svg,sql]"' ;;
     *)                         printf 'see: install %s' "$1" ;;
   esac
 }
@@ -883,7 +931,7 @@ tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning 
 check_tooling() {
   local g=tooling b
   local hard="git jq curl awk mani"
-  local soft="node pnpm docker claude codegraph dap rtk k6 yq"
+  local soft="node pnpm docker claude codegraph graphify dap k6 yq"
 
   local miss=""
   for b in $hard; do command -v "$b" >/dev/null 2>&1 || miss="${miss:+$miss }$b"; done
@@ -920,7 +968,7 @@ check_tooling() {
   else
     local behind
     behind="$(brew outdated --quiet 2>/dev/null \
-              | grep -xE 'mani|glab|gh|jq|dap|rtk|k6|pnpm|ngrok' | tr '\n' ' ' | sed 's/ *$//')"
+              | grep -xE 'mani|glab|gh|jq|dap|k6|pnpm|ngrok' | tr '\n' ' ' | sed 's/ *$//')"
     if [[ -n "$behind" ]]; then
       warn $g "brew-owned tool(s) behind" "$behind" "aiworks update --only brew" slow
     else
@@ -952,7 +1000,226 @@ check_voice() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 8 · triage
+# 8 · headroom
+# ══════════════════════════════════════════════════════════════════════════════════
+# Input-side context compression: `hcat <file>` renders a big structured file compressed so its
+# raw bytes never enter context, and a PreToolUse gate redirects an oversized Read there once.
+# The plugin ships the hooks and the badge; the ENGINE is a separate binary everything shells
+# out to. Both halves fail OPEN by design — a missing engine means no compression, no badge and
+# no error — so "silently doing nothing" is exactly the shape this group exists to make visible.
+#
+# The env-guard item is the one that is not about savings. `hcat` is a RENAMED `cat`: it prints
+# any file it is given, so it is a .env read the guard must recognise. `\bcat\b` cannot match
+# "hcat" (no word boundary after the leading h), so the coverage is a separate alternative that
+# a future edit to that alternation could drop without any test going red here. Asserted at the
+# root AND in the per-repo copies, because the guard is mirrored into every declared repo by aiworks-add's
+# WIRED_HOOKS and a stale copy is a live hole in that repo only.
+# Does the configured statusLine actually render our badge? EXECUTED, not parsed. A chain bridge
+# keeps the command it replaced in its own cache file, so following the string generalises to
+# nothing — one vendor's stash key is not the next one's. Running it is the cheap honest answer:
+# Claude Code runs this exact command once a second, and the probe is kept inert — no
+# `transcript_path`, so the badge's compute-and-cache path never runs, and a throwaway
+# HEADROOM_STATE_DIR so a probe can never write into the real ledger. Bounded at ~5s: a doctor
+# that hangs on somebody's bar is worse than one that misses a finding.
+badge_renders() {  # badge_renders <statusline-command>
+  local cmd="$1" tmp state pid rc=1 i=0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/aiworks-badge.XXXXXX" 2>/dev/null)" || return 1
+  state="$(mktemp -d "${TMPDIR:-/tmp}/aiworks-badge-state.XXXXXX" 2>/dev/null)" || { rm -f "$tmp"; return 1; }
+  (
+    printf '{"session_id":"aiworks-doctor-probe","model":{"id":"aiworks-doctor-probe"}}' \
+      | HEADROOM_STATE_DIR="$state" bash -c "$cmd" >"$tmp" 2>/dev/null
+  ) &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [[ $i -lt 50 ]]; do sleep 0.1; i=$((i+1)); done
+  kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  grep -qi 'headroom' "$tmp" && rc=0
+  rm -rf "$tmp" "$state"
+  return $rc
+}
+
+check_headroom() {
+  local g=headroom
+  cfg_bool headroom.enabled true
+  case $? in
+    1) skip $g "headroom" "headroom.enabled is false"; return ;;
+    2) warn $g "headroom.enabled is not a boolean" "resolved to the default (on)" \
+            "\$EDITOR workspace.config.yaml" ;;
+  esac
+
+  # ── the two guards hcat needs (root + every mirrored per-repo copy) ──
+  # Checked FIRST and independent of whether headroom is installed: the holes are in OUR hooks,
+  # and they are open the moment anyone on the team has hcat, not the moment this machine does.
+  local hooks_rel=".claude/hooks/dev-wrapper" stale rp
+  local env_rel="$hooks_rel/pretool-env-guard.sh" size_rel="$hooks_rel/pretool-hcat-size-guard.sh"
+
+  # A workspace with no dev-wrapper hooks at all is a different SHAPE, not a regression — and
+  # "the guard settings.json wires is missing" is already group 5's (agent-cfg) finding. Skipping
+  # here keeps this group about hcat and keeps a fixture/foreign workspace from reading as broken.
+  if [[ ! -d "$ROOT/$hooks_rel" ]]; then
+    skip $g "hcat guards" "no .claude/hooks/dev-wrapper in this workspace"
+  elif [[ ! -f "$ROOT/$env_rel" ]]; then
+    skip $g "hcat guards" "no dev-wrapper env guard to extend"
+  elif ! grep -q 'hcat' "$ROOT/$env_rel"; then
+    fail $g "env guard does not cover hcat" \
+         "hcat prints any file it is given, so it is a .env read — and \\bcat\\b cannot match it" \
+         "see: restore the hcat alternative in $env_rel (see docs/agents/headroom.md)" slow
+  else
+    stale=0
+    for rp in $SELECTED; do
+      repo_ready "$rp" || continue
+      [[ -f "$ROOT/$rp/$env_rel" ]] || continue
+      grep -q 'hcat' "$ROOT/$rp/$env_rel" || stale=$((stale+1))
+    done
+    if [[ $stale -gt 0 ]]; then
+      fail $g "$stale repo(s) carry a pre-hcat .env guard" \
+           "the mirrored copy is stale, so hcat can dump a .env in those repos" "aiworks sync" slow
+    else
+      pass $g "env guard covers hcat" "root + mirrored copies"
+    fi
+  fi
+
+  # The size guard is the ceiling the headroom plugin's own gate does not have. Measured: hcat on
+  # a 250 MB .log passed the content through unchanged and printed 262 MB in 80s — the gate turns
+  # a `cat` of that file INTO that, so without this hook the protection is the flood.
+  if [[ ! -d "$ROOT/$hooks_rel" ]]; then
+    :                                    # same shape reason as above; already reported once
+  elif [[ ! -f "$ROOT/$size_rel" ]]; then
+    fail $g "hcat size guard missing" \
+         "hcat has no upper bound of its own — a huge file is passed through in full" \
+         "aiworks sync" slow
+  else
+    stale=0
+    for rp in $SELECTED; do
+      repo_ready "$rp" || continue
+      [[ -f "$ROOT/$rp/$size_rel" ]] || stale=$((stale+1))
+    done
+    if [[ $stale -gt 0 ]]; then
+      fail $g "$stale repo(s) have no hcat size guard" "the mirrored copy is missing" "aiworks sync" slow
+    else
+      pass $g "hcat size guard present" "root + mirrored copies"
+    fi
+  fi
+
+  # ── the engine ──
+  if command -v headroom >/dev/null 2>&1; then
+    pass $g "headroom engine" "$(headroom --version 2>/dev/null | head -1)"
+  else
+    # [mcp], not [all]: we run no proxy and headroom passes code through, so the ML/proxy extras
+    # are install time and disk for nothing. See docs/agents/headroom.md.
+    local inst
+    if command -v uv >/dev/null 2>&1; then
+      inst="uv tool install --python 3.13 'headroom-ai[mcp]'"
+    elif command -v pipx >/dev/null 2>&1; then
+      inst="pipx install 'headroom-ai[mcp]'"
+    else
+      inst="see: install uv (brew install uv), then uv tool install --python 3.13 'headroom-ai[mcp]'"
+    fi
+    warn $g "headroom engine not installed" \
+         "hcat, the headroom MCP and the savings badge all fail open without it" "$inst" slow
+  fi
+
+  # ── the plugin (hooks + badge) ──
+  local key="headroom-usage-indicator@headroom-tools"
+  local reg="$HOME/.claude/plugins/installed_plugins.json"
+  if ! command -v jq >/dev/null 2>&1; then
+    skip $g "headroom plugin" "jq not on PATH — cannot read the plugin registry"
+  elif [[ -f "$reg" ]] && jq -e --arg k "$key" \
+         '(((.plugins // .)[$k]) // []) | any(.scope == "user")' "$reg" >/dev/null 2>&1; then
+    pass $g "headroom plugin" "installed at user scope"
+  else
+    warn $g "headroom plugin not installed" \
+         "declared in .claude/settings.json enabledPlugins, but declaring is not installing" \
+         "claude plugin install $key -s user" slow
+  fi
+
+  # ── the savings badge (per-person: it edits a MACHINE-GLOBAL user settings file) ──
+  cfg_bool headroom.statusline true
+  if [[ $? == 1 ]]; then
+    skip $g "savings badge" "headroom.statusline is false"
+    return
+  fi
+  local user_settings="$HOME/.claude/settings.json" sl=""
+  if ! command -v jq >/dev/null 2>&1; then
+    skip $g "savings badge" "jq not on PATH — cannot read the statusLine"
+    return
+  fi
+  [[ -f "$user_settings" ]] && sl="$(jq -r '.statusLine.command // empty' "$user_settings" 2>/dev/null)"
+  # Two ways to be wired, and the lib check below covers BOTH — a chained badge with no attribution
+  # lib is exactly as blind as a directly-wired one — so establishing *that* the badge renders is
+  # kept separate from asking whether it counts.
+  local wired=""
+  if printf '%s' "$sl" | grep -q 'headroom-statusline'; then
+    wired="into the user statusLine"
+  elif [[ -n "$sl" ]] && badge_renders "$sl"; then
+    # Someone else's bar chained OURS. A chain bridge stores the command it replaced in its own
+    # cache file and re-runs it, so the settings.json string no longer names headroom while the
+    # badge still renders every second — a grep for the literal path reports "not wired" and sends
+    # a person to re-run the plugin's doctor, which would then chain the bridge and nest them two
+    # deep. Following the string is a losing game (each vendor stashes the original somewhere
+    # else), so the question is answered the only way that stays true: render the bar and look.
+    wired="through a chained statusLine command"
+  fi
+  if [[ -n "$wired" ]]; then
+    # Wired is not the same as counting. The flat copy resolves attribution.jq BESIDE itself and its
+    # compute() opens with `[ -n "$JQ_LIB" ] || return 0`, so without the lib the badge reads
+    # "idle (not compressing yet)" forever, every session cache records n=0 saved=0 missed=0, and no
+    # .totals is ever written — the all-time total is then unrecoverable for those sessions. The
+    # plugin's own doctor copies scripts/statusline.sh there but never scripts/lib/, and still scores
+    # the copy "current", so a green plugin doctor is NOT evidence the badge measures anything.
+    local miss="" f lib
+    for f in attribution.jq headroom-state.sh; do
+      [[ -f "$HOME/.claude/$f" ]] || miss="$miss $f"
+    done
+    if [[ -z "$miss" ]]; then
+      pass $g "savings badge" "wired $wired, attribution lib beside the copy"
+    else
+      # -t, not a version sort: BSD ls has no -v and a lexical sort puts 2.7.0 above 2.10.0.
+      lib="$(ls -dt "$HOME"/.claude/plugins/cache/*/headroom-usage-indicator/*/scripts/lib 2>/dev/null | head -1)"
+      if [[ -n "$lib" ]]; then
+        warn $g "savings badge measures nothing" \
+             "missing beside ~/.claude/headroom-statusline.sh:$miss — compute() bails, so the badge stays idle however much hcat runs" \
+             "cp '$lib/attribution.jq' '$lib/headroom-state.sh' ~/.claude/" slow
+      else
+        warn $g "savings badge measures nothing" \
+             "missing beside ~/.claude/headroom-statusline.sh:$miss, and no plugin scripts/lib to copy from" \
+             "see: reinstall the headroom plugin, then re-run aiworks doctor --only headroom" slow
+      fi
+    fi
+  else
+    # The plugin's own doctor owns this: its merge is the one that chains an EXISTING statusLine
+    # command and keeps the original under _headroomStatusLineBackup (with a .bak). Hand-editing
+    # ~/.claude/settings.json here would fight it and lose whatever bar is already installed.
+    warn $g "savings badge not wired" \
+         "no headroom badge in the user statusLine — compression would run unmeasured" \
+         "see: run /headroom-usage-indicator:doctor in Claude Code and accept the statusLine fix" slow
+  fi
+
+  # ── the badge's price table ──
+  # The badge turns tokens into money with a per-model INPUT $/MTok looked up by substring in a
+  # data file. A model absent from that table is not an error anywhere: the badge drops the money
+  # segment, writes $0.000000 into that session's .totals, and the "all-time" figure stays at zero
+  # however much the team actually compresses — the one number that would justify the feature is
+  # the one a missing row silently zeroes. Detected from the ledger the badge itself wrote (tokens
+  # saved with no dollars against them) rather than from a model id, because the id this machine
+  # runs is not knowable from a shell script — and because that ledger is the symptom itself.
+  # The remedy is `see:` on purpose: the framework does not carry a copy of Anthropic's price list.
+  local state_dir="${HEADROOM_STATE_DIR:-$HOME/.claude/headroom-indicator}" unpriced
+  unpriced=$(cat "$state_dir"/session-*.totals 2>/dev/null \
+    | LC_ALL=C awk '$1+0 > 0 && $2+0 == 0 { n++ } END { print n+0 }')
+  if [[ ! -d "$state_dir" ]]; then
+    skip $g "badge price table" "no headroom ledger on this machine yet"
+  elif [[ "${unpriced:-0}" -gt 0 ]]; then
+    warn $g "$unpriced session(s) saved tokens the badge could not price" \
+         "the model is missing from the badge's price table, so the badge shows no \$ and the all-time total can never leave 0" \
+         "see: add that model's input \$/MTok to ~/.claude/headroom-model-prices.json (docs/agents/headroom.md)" slow
+  else
+    pass $g "badge price table" "every recorded saving is priced"
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 9 · triage
 # ══════════════════════════════════════════════════════════════════════════════════
 # Deployed-environment triage is the one capability workspace bring-up deliberately does NOT
 # install: `aiworks sync` only reports it, and the identity behind k8s_triage can be created
@@ -1181,7 +1448,7 @@ run_group() {
   # A repo-narrowed run has nothing to say about machine-wide groups. Checked BEFORE the
   # --deep skip, because "you asked about one repo" is the more specific reason of the two.
   if [[ $NARROWED == 1 ]]; then
-    case "$g" in tooling|voice|triage|mcp|services|credentials|disk)
+    case "$g" in tooling|voice|headroom|triage|mcp|services|credentials|disk)
       skip "$g" "$g" "not repo-scoped"; return 0 ;;
     esac
   fi
@@ -1194,6 +1461,7 @@ run_group() {
     agent-cfg)   check_agent_cfg ;;
     tooling)     check_tooling ;;
     voice)       check_voice ;;
+    headroom)    check_headroom ;;
     triage)      check_triage ;;
     mcp)         check_mcp ;;
     services)    check_services ;;

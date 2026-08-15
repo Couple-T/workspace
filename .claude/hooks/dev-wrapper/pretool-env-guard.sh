@@ -18,9 +18,16 @@ tool=$(printf '%s' "$input" | jq -r '.tool_name // ""' 2>/dev/null)
 
 is_env_path() {
   # $1 = path/string to test. True (0) if it looks like a real secret .env
-  # file (.env or .env.<suffix>) and NOT .env.example.
+  # file (.env or .env.<suffix>) and NOT a template.
+  #
+  # A trailing `.example` is the template marker, wherever it sits: the workspace
+  # carries .env.example, .env.amb.example and .env.local.example, and only the
+  # first was recognised while the other two were blocked as secrets. They hold
+  # no values by definition. Matching the SUFFIX rather than the exact string
+  # covers every `.env.<variant>.example`, and something like `.env.example.bak`
+  # still reads as a secret because it does not end in `.example`.
   case "$1" in
-    *.env.example) return 1 ;;
+    *.example) return 1 ;;
     *.env|*.env.*) return 0 ;;
   esac
   return 1
@@ -65,24 +72,20 @@ case "$tool" in
       [ -z "$seg" ] && continue
       # segment must name a .env; a .env.example segment is a safe template.
       printf '%s' "$seg" | grep -Eq "$ENV_TOKEN" || continue
-      printf '%s' "$seg" | grep -Eq '\.env\.example\b' && continue
+      # `.env.<variant>.example` is a template too — .env.amb.example and
+      # .env.local.example both exist here and were blocked by an exemption that
+      # only matched the exact `.env.example`. Same suffix rule as is_env_path.
+      printf '%s' "$seg" | grep -Eq '\.env[A-Za-z0-9_.-]*\.example\b' && continue
 
-      # cat/head/tail/less/more/sed -n always print file contents.
-      if printf '%s' "$seg" | grep -Eq "\\b(cat|head|tail|less|more|sed[[:space:]]+-n)\\b[^|;&]*$ENV_TOKEN"; then
+      # cat/head/tail/less/more/sed -n always print file contents. `hcat` is
+      # the headroom plugin's compress-at-the-source reader: a RENAMED `cat`,
+      # so it needs its own alternative — `\bcat\b` cannot match "hcat" (the
+      # leading h is a word char, so there is no boundary before "cat").
+      # `hrun` is the same hazard one level out: it runs ANY command and prints
+      # what that command printed, so `hrun cat .env` leaks exactly as `cat
+      # .env` does — and its own name contains no "cat" to match on.
+      if printf '%s' "$seg" | grep -Eq "\\b(hrun|hcat|cat|head|tail|less|more|sed[[:space:]]+-n)\\b[^|;&]*$ENV_TOKEN"; then
         deny "command dumps a .env file: $cmd"
-      fi
-      # rtk renames the reading verbs, and a renamed verb dumps just the same.
-      # This is not hypothetical: the rtk PreToolUse hook rewrites `cat X` into
-      # `rtk read X`, so `rtk read` is a shape the model sees in its own
-      # transcript all day and will type directly — at which point none of the
-      # verbs above match and the file goes to the transcript in full.
-      # Measured against a throwaway key=value file: `rtk read` and `rtk pipe`
-      # print it verbatim, `rtk diff` prints every changed line with its value.
-      # (`rtk smart`/`rtk log`/`rtk wc` emit only a summary and `rtk ls|tree|find`
-      # list names, so they stay allowed.) The verb is anchored to `rtk` on
-      # purpose: bare `read` and `diff` are far too ordinary to block on sight.
-      if printf '%s' "$seg" | grep -Eq "\\brtk\\b([[:space:]]+-[^[:space:]]+)*[[:space:]]+(read|pipe|diff)\\b[^|;&]*$ENV_TOKEN"; then
-        deny "rtk would print .env contents: $cmd"
       fi
       # grep prints matching lines (leaks values) UNLESS it is quiet:
       # -q/--quiet/--silent only sets the exit code, printing nothing —

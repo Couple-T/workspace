@@ -315,35 +315,16 @@ render_glance() {
 # Accumulates TOK_*. Returns claude's (or timeout's) rc.
 claude_run() {
   local prompt="$1"; shift
-  # rtk's own PreToolUse hook (see rtk RTK.md / this repo's .claude/settings.json) rewrites
-  # plain commands it recognizes (ls, find, grep, git, gh, ...) into `rtk <cmd>` but never sets
-  # "permissionDecision":"allow" in its hook output — so Claude Code always demands a fresh
-  # interactive approval for the rewritten command, ignoring permissions.allow AND
-  # --dangerously-skip-permissions/--permission-mode. Headless has no one to approve it, so the
-  # run hangs on the first ls/find it makes. Confirmed via isolated repro: identical `ls -la`
-  # call denied with rtk on PATH, allowed instantly with rtk off PATH. Shadow rtk with a no-op
-  # stub (prepended ahead of the real one on PATH) for just this subprocess, so its hook's own
-  # `command -v rtk || exit 0` guard finds a binary but the hook body does nothing — real
-  # rtk-adjacent tools (timeout, gtimeout, ...) stay reachable since we only shadow the one
-  # name, not the whole directory. Interactive sessions (real rtk first on PATH there) are
-  # unaffected.
-  local run_path="$PATH"
-  if have rtk; then
-    local shim_dir; shim_dir="$(mktemp -d -t aiworks-rtk-shim.XXXXXX)"
-    printf '#!/bin/sh\nexit 0\n' > "$shim_dir/rtk"
-    chmod +x "$shim_dir/rtk"
-    run_path="$shim_dir:$PATH"
-  fi
   # `env` carries PATH plus is a harmless no-op prefix so the array is never empty (set -u
   # safe); swap in timeout/gtimeout when present and a positive CLAUDE_TIMEOUT is set.
   # CLAUDE_UNDER_TIMEOUT records whether the child runs under `timeout` so the caller's
   # classify_rc can tell a timeout grace-kill (124 / 137 / 143) apart from a real crash (other
   # 128+sig).
-  local -a TO=(env "PATH=$run_path")
+  local -a TO=(env "PATH=$PATH")
   CLAUDE_UNDER_TIMEOUT=0
   if [[ "${CLAUDE_TIMEOUT:-0}" -gt 0 ]]; then
-    if   have timeout;  then TO=(env "PATH=$run_path" timeout  -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1
-    elif have gtimeout; then TO=(env "PATH=$run_path" gtimeout -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1; fi
+    if   have timeout;  then TO=(env "PATH=$PATH" timeout  -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1
+    elif have gtimeout; then TO=(env "PATH=$PATH" gtimeout -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1; fi
   fi
   # stdin ← /dev/null: a headless `claude -p` must never read the terminal, or it eats the
   # keystrokes meant for our own prompts (step 7) and muddies Ctrl+C handling.
@@ -978,7 +959,7 @@ else skip "8. /setup-matt-pocock-skills $(claude_fail_hint 'auth? was step 6 abl
 # ── 9. hooks + permissions baseline (HARDCODED, sonar-free) ────────────────────
 # No reference repo: the hooks come from the workspace's own .claude/hooks (the dev-wrapper,
 # modeled on a Flutter app baseline minus sonar) and settings.json is written from a hardcoded, stack-
-# agnostic, rtk-guarded baseline. We jq-MERGE settings so any plugin enablement added by
+# agnostic baseline. We jq-MERGE settings so any plugin enablement added by
 # steps 5/6 is preserved (never clobbered).
 step "9. Seed Claude hooks + settings (hardcoded baseline, sonar-free)"
 mkdir -p "$REPO_DIR/.claude"
@@ -998,7 +979,7 @@ mkdir -p "$REPO_DIR/.claude"
 # A COPY, not a symlink: each repo is an independent clone, so a link up to the
 # workspace root dangles for anyone who clones the repo on its own. Same call as
 # the Cursor hook-shim (see scripts/cursor/hook-shim.template.sh).
-WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh)
+WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh pretool-hcat-size-guard.sh pretool-hrun-pipe-guard.sh)
 if [[ -d "$ROOT/.claude/hooks/dev-wrapper" ]]; then
   mkdir -p "$REPO_DIR/.claude/hooks/dev-wrapper"
   hooks_new=(); hooks_upd=()
@@ -1023,15 +1004,26 @@ SETTINGS_FILE="$REPO_DIR/.claude/settings.json"
 read -r -d '' BASE_SETTINGS <<'JSON'
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "HCAT_GATE_BYTES": "65536",
+    "HCAT_GATE_NO_SNIFF": "1",
+    "DANGI_NUDGE_BYTES": "32768",
+    "DANGI_NO_NOTIFY": "1",
+    "HEADROOM_UPDATE_CHECK": "off",
+    "HF_HUB_OFFLINE": "1",
+    "PONYTAIL_DEFAULT_MODE": "full",
+    "PONYTAIL_SUBAGENT_MATCHER": "^(developer|development-planner|qa-runner|code-reviewer|guardian-engineer|general-purpose|claude|plan)$|cavecrew-builder"
+  },
   "enabledMcpjsonServers": ["codegraph"],
   "permissions": {
     "defaultMode": "acceptEdits",
     "allow": [
       "Read", "Grep", "Glob", "WebSearch", "WebFetch", "Write", "Edit",
-      "Bash(git *)", "Bash(scripts/dev.sh *)", "Bash(mkdir *)", "Bash(rtk *)"
+      "Bash(git *)", "Bash(scripts/dev.sh *)", "Bash(mkdir *)", "Bash(hcat *)"
     ],
     "deny": [
+      "Bash(hcat *.env)", "Bash(hcat *.env.*)",
       "Bash(rm -rf *)", "Bash(rm -fr *)",
       "Bash(git push --force *)", "Bash(git push -f *)",
       "Bash(git reset --hard *)", "Bash(git clean -fdx *)",
@@ -1039,27 +1031,32 @@ read -r -d '' BASE_SETTINGS <<'JSON'
     ]
   },
   "enabledPlugins": {
-    "caveman@caveman": true
+    "caveman@caveman": true,
+    "ponytail@ponytail": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
       "source": { "source": "github", "repo": "JuliusBrussee/caveman" }
+    },
+    "ponytail": {
+      "source": { "source": "github", "repo": "DietrichGebert/ponytail" }
     }
   },
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
-      { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
+      { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v codegraph >/dev/null 2>&1 || exit 0; codegraph sync" } ] },
+      { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v codegraph >/dev/null 2>&1 || exit 0; codegraph sync" } ] },
       { "matcher": "Bash",  "hooks": [
-          { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk hook claude" },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hcat-size-guard.sh", "timeout": 10 },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh", "timeout": 30 }
       ] },
       { "matcher": "Read",  "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 } ] }
     ],
     "PostToolUse": [
-      { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
-      { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
+      { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v codegraph >/dev/null 2>&1 || exit 0; codegraph sync" } ] },
+      { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v codegraph >/dev/null 2>&1 || exit 0; codegraph sync" } ] },
       { "matcher": "Bash",  "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-output-warden.sh", "timeout": 30 } ] }
     ]
   }
@@ -1080,12 +1077,12 @@ if have jq; then
   # On an EXISTING settings.json the baseline asserts only the keys that are meant to
   # CONVERGE workspace-wide. It used to assert everything, which made the first
   # content-aware sync also push the baseline's `permissions` into every onboarded repo — quietly
-  # granting Write/Edit and Bash(rtk *) wherever a repo had chosen a narrower set. Hooks
+  # granting Write/Edit and Bash(mkdir *) wherever a repo had chosen a narrower set. Hooks
   # are the shared safety net and SHOULD converge; permissions are that repo's own call.
   #
   # `enabledPlugins` + `extraKnownMarketplaces` converge for the same reason as hooks: a
-  # repo-only session is a first-class way to work here, and caveman (output compression) is
-  # supposed to hold in one. These two keys DECLARE and enable the plugin; they do NOT
+  # repo-only session is a first-class way to work here, and caveman (output compression) plus
+  # ponytail (code minimalism) are supposed to hold in one. These two keys DECLARE and enable the plugin; they do NOT
   # install it — measured, because the opposite reads as working: a repo carrying both keys
   # still answered NOT-FOUND for `caveman:caveman` while the workspace root answered
   # AVAILABLE under the same probe. The install is a machine-local step, done once at USER
@@ -1094,13 +1091,50 @@ if have jq; then
   # a repo that enables its own plugins keeps them and gains caveman. (Arrays, by
   # contrast, are replaced wholesale — which is precisely why `permissions` stays out.)
   # A repo with no settings.json yet still gets the whole baseline (the `else` below).
+  #
+  # `env` converges for its HEADROOM knobs ONLY, by key prefix. Those knobs are part of the same
+  # shared safety net as the hooks: HCAT_GATE_BYTES/NO_SNIFF tune the headroom plugin's
+  # PreToolUse gate, and at the plugin's own defaults that gate denies a Read of any structured
+  # file over 16 KB — which in this workspace means a repo-only session gets its settings.json
+  # and lockfiles redirected to a LOSSY rendering of a file it may need to edit exactly. The rest
+  # of `env` does not converge: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is a baseline for a NEW repo,
+  # not something to switch on across 21 existing ones. `env` is an OBJECT, so `*` deep-merges it
+  # and a repo's own variables survive.
+  #
+  # `PONYTAIL_` converges for the same reason. Those two knobs are not preferences: DEFAULT_MODE
+  # pins the benchmarked `full` level so a stray ~/.config/ponytail/config.json on one machine
+  # cannot quietly hand a money path the `ultra` persona, and SUBAGENT_MATCHER is the cost lever —
+  # unset, the plugin injects its ~1.5 KB ruleset into EVERY subagent, including the read-only ones
+  # that never write a line of code. Both have to hold in a repo-only session too, or the pinning
+  # holds in the workspace root and nowhere else. See docs/agents/ponytail.md.
   if [[ -f "$SETTINGS_FILE" ]]; then
-    base_for_merge="$(printf '%s' "$BASE_SETTINGS" | jq '{hooks, enabledPlugins, extraKnownMarketplaces}')"
+    base_for_merge="$(printf '%s' "$BASE_SETTINGS" | jq '
+      {hooks, enabledPlugins, extraKnownMarketplaces}
+      + {env: ((.env // {}) | with_entries(select(.key | test("^(HCAT_|DANGI_|HEADROOM_|HF_HUB_OFFLINE|PONYTAIL_)"))))}
+    ')"
   else
     base_for_merge="$BASE_SETTINGS"
   fi
   existing="{}"; [[ -f "$SETTINGS_FILE" ]] && existing="$(cat "$SETTINGS_FILE")"
-  if merged="$(printf '%s\n%s\n' "$existing" "$base_for_merge" | jq -s '.[0] * .[1]' 2>/dev/null)"; then
+  # `hcat` permissions are UNIONED in after the `*` merge, never merged through it. Arrays are
+  # REPLACED wholesale by `*`, which is exactly why `permissions` stays out of base_for_merge —
+  # pushing the baseline's arrays would overwrite whatever narrower set a repo chose. A union
+  # adds only what is missing and preserves the repo's own entries and their order.
+  #
+  # Why these two rules travel with the hooks rather than being each repo's call: `hcat` is the
+  # headroom plugin's reader, and the plugin is installed at USER scope, so it is live in a
+  # repo-only session whether or not that repo knows about it. The deny half is the one that
+  # matters — it is defense in depth beside pretool-env-guard.sh for the same reason
+  # Read(**/.env) is denied even though the hook already blocks it. The allow half only buys
+  # determinism over the auto-mode classifier.
+  hcat_allow='["Bash(hcat *)"]'
+  hcat_deny='["Bash(hcat *.env)","Bash(hcat *.env.*)"]'
+  if merged="$(printf '%s\n%s\n' "$existing" "$base_for_merge" \
+        | jq -s --argjson ha "$hcat_allow" --argjson hd "$hcat_deny" '
+            (.[0] * .[1])
+            | .permissions.allow = ((.permissions.allow // []) as $a | $a + ($ha - $a))
+            | .permissions.deny  = ((.permissions.deny  // []) as $d | $d + ($hd - $d))
+          ' 2>/dev/null)"; then
     if [[ -f "$SETTINGS_FILE" ]] && [[ "$merged" == "$(cat "$SETTINGS_FILE")" ]]; then
       skip "9. .claude/settings.json already matches the baseline"
     elif printf '%s\n' "$merged" > "$SETTINGS_FILE"; then

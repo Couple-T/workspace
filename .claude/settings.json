@@ -5,6 +5,7 @@
     "postgres_secondary",
     "sonarqube",
     "redis",
+    "graphify_docs",
     "mcp-image"
   ],
   "permissions": {
@@ -20,9 +21,9 @@
       "Edit",
       "Write",
       "Bash(git *)",
-      "Bash(rtk *)",
       "Bash(mkdir *)",
       "Bash(codegraph *)",
+      "Bash(graphify *)",
       "Bash(npm ci)",
       "Bash(npm install)",
       "Bash(npm run *)",
@@ -49,6 +50,7 @@
       "Bash(*scripts/vcs/pr-approve.sh*)",
       "Bash(*git remote get-url*)",
       "mcp__codegraph",
+      "mcp__graphify_docs",
       "mcp__sonarqube",
       "mcp__postgres_secondary",
       "mcp__postgres_main",
@@ -66,9 +68,12 @@
       "Bash(curl https://localhost:*)",
       "Bash(curl https://127.0.0.1:*)",
       "Bash(scripts/vcs/merge-pr.sh:*)",
-      "Bash(../scripts/vcs/merge-pr.sh:*)"
+      "Bash(../scripts/vcs/merge-pr.sh:*)",
+      "Bash(hcat *)"
     ],
     "deny": [
+      "Bash(hcat *.env)",
+      "Bash(hcat *.env.*)",
       "Bash(sudo *)",
       "Bash(rm -rf /*)",
       "Bash(rm -rf ~*)",
@@ -133,10 +138,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk hook claude"
-          },
-          {
-            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh",
             "timeout": 30
           },
@@ -148,6 +149,16 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hcat-size-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh",
             "timeout": 10
           },
           {
@@ -429,7 +440,9 @@
     "skill-creator@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
     "caveman@caveman": true,
-    "debugging-code@debug-skill-marketplace": true
+    "ponytail@ponytail": true,
+    "debugging-code@debug-skill-marketplace": true,
+    "headroom-usage-indicator@headroom-tools": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
@@ -443,6 +456,28 @@
         "source": "github",
         "repo": "AlmogBaku/debug-skill"
       }
+    },
+    "headroom-tools": {
+      "source": {
+        "source": "github",
+        "repo": "Ship-Wright/headroom-plugin"
+      }
+    },
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
     }
+  },
+  "env": {
+    "HCAT_GATE_BYTES": "65536",
+    "HCAT_GATE_NO_SNIFF": "1",
+    "DANGI_NUDGE_BYTES": "32768",
+    "DANGI_NO_NOTIFY": "1",
+    "HEADROOM_UPDATE_CHECK": "off",
+    "HF_HUB_OFFLINE": "1",
+    "PONYTAIL_DEFAULT_MODE": "full",
+    "PONYTAIL_SUBAGENT_MATCHER": "^(developer|development-planner|qa-runner|code-reviewer|guardian-engineer|general-purpose|claude|plan)$|cavecrew-builder"
   }
 }

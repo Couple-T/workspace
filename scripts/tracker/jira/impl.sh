@@ -220,14 +220,21 @@ tracker_upsert() {
   # already in it must be carried across a rewrite or they are lost for good (APP-1952).
   # Fetch the existing description's media blocks first; re-appended below. Only relevant
   # when we are actually rewriting the body (--body / --body-file).
+  # `--no-carry-media` turns the net off, for the one case it works against: DELIBERATELY
+  # replacing or dropping an embedded image. With the net on, the image the new body no
+  # longer references is re-appended from the old description — so a re-rendered diagram
+  # leaves its predecessor sitting under the divider, and writing the body again cannot
+  # clear it (the carry-over reads the description it just wrote).
   local existing_media='[]'
-  if [[ -n "$body_md" ]]; then
+  if [[ -n "$body_md" ]] && [[ "$(printf '%s' "$fields" | jq -r '.no_carry_media // empty')" != "true" ]]; then
     local _cur
     _cur="$(jira_api GET "/rest/api/3/issue/$key?fields=description" 2>/dev/null || true)"
     existing_media="$(printf '%s' "$_cur" | jq -L "$JIRA_IMPL_DIR" -c 'include "jira"; ((.fields.description // {}) | adf_media_blocks)' 2>/dev/null || echo '[]')"
     [[ -n "$existing_media" && "$existing_media" != "null" ]] || existing_media='[]'
     local _nm; _nm="$(printf '%s' "$existing_media" | jq 'length' 2>/dev/null || echo 0)"
-    [[ "${_nm:-0}" -gt 0 ]] && echo "Carrying over $_nm image/attachment node(s) from the existing description." >&2
+    # This counts what the OLD description held; one the new body re-embeds itself (its
+    # `![alt](attachment:<id>)` line kept) stays in place instead of being appended again.
+    [[ "${_nm:-0}" -gt 0 ]] && echo "Existing description holds $_nm image/attachment node(s) — any the new body does not re-embed are appended under \"Attachments (carried over)\"." >&2
   fi
 
   # Map the abstract field set (minus status) to a Jira `fields` object. Jira has one
@@ -545,6 +552,33 @@ tracker_edit_comment() {
 # endpoint 302s to `https://api.media.atlassian.com/file/<uuid>/binary`, so resolve it
 # here — at the one place that already knows a file was just uploaded — rather than
 # leaving every caller to discover the distinction the hard way.
+# An image's pixel size as "@<W>x<H>", or "" when it is not an image / the size cannot
+# be read. The ADF media node needs it or the renderer falls back to a 250x200 box and a
+# full-page screenshot lands as an unreadable stamp (see jira.jq's media section), so it
+# is resolved HERE — the one place that still has the local file — and carried in the
+# embed token. `sips` is macOS-native and `file` is everywhere; neither is a new
+# dependency, and an unreadable size degrades to a full-width (letterboxed) image rather
+# than an error.
+jira_image_dims() {
+  local f="$1" wh=""
+  case "$(file -b --mime-type "$f" 2>/dev/null)" in image/*) ;; *) return 0 ;; esac
+  if command -v sips >/dev/null 2>&1; then
+    wh="$(sips -g pixelWidth -g pixelHeight "$f" 2>/dev/null \
+          | awk '/pixelWidth:/{w=$2} /pixelHeight:/{h=$2} END{if (w>0 && h>0) print w"x"h}')"
+  fi
+  # `file -b` reports "PNG image data, 1859 x 1053, …"; a JPEG prints its DENSITY
+  # (72x72) before the real size, so there only take the size after "precision".
+  if [[ -z "$wh" ]]; then
+    wh="$(file -b "$f" 2>/dev/null | awk '
+      match($0, /PNG image data, [0-9]+ x [0-9]+/) || match($0, /precision [0-9]+, [0-9]+x[0-9]+/) ||
+      match($0, /GIF image data, version [0-9a-z]+, [0-9]+ x [0-9]+/) {
+        s = substr($0, RSTART, RLENGTH); n = split(s, p, /[^0-9]+/)
+        print p[n-1] "x" p[n]; exit }')"
+  fi
+  [[ -n "$wh" ]] && printf '@%s' "$wh"
+  return 0
+}
+
 jira_attachment_media_uuid() {
   local att_id="$1" loc
   loc="$(curl -sS -o /dev/null -D - -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
@@ -554,7 +588,7 @@ jira_attachment_media_uuid() {
 }
 
 tracker_add_attachment() {
-  local ticket="$1" dry="$2" file="$3" id_only="${4:-0}" embed_only="${5:-0}" key tmp err http filename att_id media_id
+  local ticket="$1" dry="$2" file="$3" id_only="${4:-0}" embed_only="${5:-0}" key tmp err http filename att_id media_id dims
   [[ -f "$file" ]] || die "no such file: $file"
   key="$(jira_key "$ticket")"
   filename="$(basename "$file")"
@@ -582,15 +616,16 @@ tracker_add_attachment() {
   rm -f "$tmp"
   [[ -n "$att_id" ]] || die "attachment uploaded to $key but the response carried no id"
   media_id="$(jira_attachment_media_uuid "$att_id")"
+  dims="$(jira_image_dims "$file")"
 
   if [[ "$id_only" -eq 1 ]]; then printf '%s\n' "$att_id"; return 0; fi
   if [[ "$embed_only" -eq 1 ]]; then
     [[ -n "$media_id" ]] || die "attached $filename to $key (id $att_id) but could not resolve its media uuid — it cannot be embedded; use the Attachments panel"
-    printf '%s\n' "$media_id"; return 0
+    printf '%s%s\n' "$media_id" "$dims"; return 0
   fi
   if [[ -n "$media_id" ]]; then
-    printf 'Attached %s to %s  [id %s · embed with ![%s](attachment:%s)]\n' \
-           "$filename" "$key" "$att_id" "$filename" "$media_id"
+    printf 'Attached %s to %s  [id %s · embed with ![%s](attachment:%s%s)]\n' \
+           "$filename" "$key" "$att_id" "$filename" "$media_id" "$dims"
   else
     printf 'Attached %s to %s  [id %s · media uuid unresolved — cannot be embedded inline]\n' \
            "$filename" "$key" "$att_id"
@@ -600,18 +635,37 @@ tracker_add_attachment() {
 # List a ticket's attachments (filename, id, size, mime type) — the ground truth for
 # what a consumer (e.g. the CPO in /prd) must fetch and view before treating a ticket
 # as understood. This is the top-level `attachment` field (separate downloadable
-# files), NOT the inline `[image/attachment]` markers adf_to_text prints for images
-# pasted into the description body (those are covered by tracker_get_details' own
+# files), NOT the inline `![alt](attachment:<id>)` tokens adf_to_text prints for images
+# embedded in the description body (those are covered by tracker_get_details' own
 # "embedded image" warning) — a ticket can carry either or both.
 tracker_get_attachments() {
-  local key issue
+  local key issue embeds att_id media_id
   key="$(jira_key "$1")"
   issue="$(jira_api GET "/rest/api/3/issue/$key?fields=attachment")"
-  printf '%s' "$issue" | jq -r '
+  # Resolve each IMAGE's Media Services UUID so an already-attached file can still be
+  # embedded in a body/description/comment. `![alt](attachment:<id>)` needs that uuid,
+  # a disjoint id space from the REST attachment id printed here (see
+  # jira_attachment_media_uuid), and only the upload path (--embed-id) used to hand it
+  # back — so a diagram or screenshot attached by an earlier step could never be moved
+  # in-body without re-uploading it. Images only: they are what gets embedded, and each
+  # uuid costs one extra request. The token printed here carries no `@<W>x<H>` size —
+  # Jira's attachment metadata does not report pixel dimensions and the file is not local
+  # — so it renders full-width but letterboxed; upload with --embed-id (or append the
+  # size by hand) when the exact fit matters.
+  embeds='{}'
+  for att_id in $(printf '%s' "$issue" | jq -r '
+      (.fields.attachment // [])[] | select((.mimeType // "") | startswith("image/")) | .id'); do
+    media_id="$(jira_attachment_media_uuid "$att_id")"
+    [[ -n "$media_id" ]] && embeds="$(printf '%s' "$embeds" | jq -c --arg i "$att_id" --arg u "$media_id" '.[$i] = $u')"
+  done
+  printf '%s' "$issue" | jq -r --argjson embeds "$embeds" '
     (.fields.attachment // []) as $a
     | if ($a | length) == 0 then "No attachments on this issue."
       else "Attachments (\($a | length)):\n"
-        + ( $a | map("  " + .filename + "  [id " + (.id|tostring) + ", " + (.mimeType // "?") + ", " + ((.size // 0)|tostring) + " bytes]") | join("\n") )
+        + ( $a | map("  " + .filename + "  [id " + (.id|tostring) + ", " + (.mimeType // "?") + ", " + ((.size // 0)|tostring) + " bytes]"
+                     + ( ($embeds[(.id|tostring)] // "") as $u
+                         | if $u == "" then "" else "\n      embed in a body or comment with: ![" + .filename + "](attachment:" + $u + ")" end ))
+              | join("\n") )
         + "\n\nDownload one with: download-ticket-attachment.sh '"$key"' <filename-or-id> <local-path>"
       end'
 }

@@ -10,7 +10,7 @@
 # skips (never fights) a tool that came from somewhere else.
 #
 # Groups — all run by default; narrow with --only / --skip:
-#   brew       the brew-owned prerequisites: mani, glab, gh, jq, dap, rtk, k6, pnpm (+ the ngrok
+#   brew       the brew-owned prerequisites: mani, glab, gh, jq, dap, k6, pnpm (+ the ngrok
 #              cask). Each is upgraded ONLY if brew actually owns it here, so a jq from /usr/bin or
 #              a pnpm from nvm is left alone rather than shadowed by a second copy. The list is the
 #              one `aiworks doctor` reports currency for, so the command it names can actually fix
@@ -21,6 +21,7 @@
 #   gcloud     gcloud components update.
 #   claude     claude update — the Claude Code CLI.
 #   codegraph  codegraph upgrade — the per-repo code index CLI.
+#   graphify   uv tool upgrade graphifyy — this repo's doc-graph CLI (prose only).
 #   plugins    claude plugin marketplace update, then `claude plugin update` for every plugin in
 #              .claude/settings.json enabledPlugins. Needs a Claude Code restart to take effect.
 #   skills     npx skills update -p — the third-party Agent Skills declared in skills-lock.json
@@ -75,7 +76,7 @@ cd "$ROOT"
 # shellcheck source=/dev/null
 . "$ROOT/.superset/lib.sh"
 
-ALL_GROUPS="brew rust pnpm gcloud claude codegraph plugins skills mcp"
+ALL_GROUPS="brew rust pnpm gcloud claude codegraph graphify plugins skills mcp"
 
 # ── args ─────────────────────────────────────────────────────────────────────────
 DRY=0 CHECK_DEPS=0 ONLY="" SKIP=""
@@ -169,7 +170,7 @@ conclude "aiworks update — $ROOT"
 # at `aiworks update --only brew`, so a name it flags but this list omits is a warn no command can
 # clear (gh and pnpm were both in that hole). A tool absent from this machine is skipped by
 # brew_owns, so listing one costs nothing.
-BREW_FORMULAE="mani glab gh jq dap rtk k6 pnpm"
+BREW_FORMULAE="mani glab gh jq dap k6 pnpm"
 BREW_CASKS="ngrok"
 if want brew; then
   if ! command -v brew >/dev/null 2>&1; then
@@ -242,6 +243,22 @@ if want codegraph; then
     upgrade "codegraph upgrade" "codegraph" codegraph upgrade
   else
     record "codegraph" "skipped" "absent" "-"
+  fi
+fi
+
+# ── graphify ─────────────────────────────────────────────────────────────────────
+# Unlike codegraph, graphify has no self-update subcommand — it is a uv tool, so the
+# upgrade goes through uv. `--python 3.12` is NOT repeated here: uv keeps the interpreter
+# the tool was installed with, and graphify's Leiden clustering still needs < 3.13.
+# After an upgrade the git hooks must be reinstalled: `graphify hook install` embeds the
+# interpreter path at install time, so a version bump silently breaks the post-commit
+# rebuild until they are refreshed.
+if want graphify; then
+  if command -v graphify >/dev/null 2>&1; then
+    upgrade "uv tool upgrade graphifyy" "graphify" uv tool upgrade graphifyy
+    command -v graphify >/dev/null 2>&1 && graphify hook install >/dev/null 2>&1 || true
+  else
+    record "graphify" "skipped" "absent" "-"
   fi
 fi
 
