@@ -39,7 +39,7 @@ const DESIGN_FIGMA_FILE_KEY = 'y63FiPwVieelbKp5DYzNDX' // from workspace.config.
 const DESIGN_PAGE_NAMING = '{work_key} / {feature}'  // from workspace.config.yaml design.page_naming; tokens {work_key} {feature}
 const IMAGE_GEN_ENABLED = true     // from workspace.config.yaml image_generation.enabled; false ⇒ graphic-designer generates no images (assets 'unavailable')
 const IMAGE_GEN_QUALITY = 'balanced' // from workspace.config.yaml image_generation.quality (fast|balanced|quality)
-const IMAGE_GEN_MAX_PER_REQUEST = 2        // from workspace.config.yaml image_generation.max_per_request; the graphic-designer's per-request budget cap
+const IMAGE_GEN_MAX_PER_REQUEST = 3        // from workspace.config.yaml image_generation.max_per_request; the graphic-designer's per-request budget cap
 // <<< AIWORKS:CONFIG END >>>
 
 // Workspace output language (language). When 'th', every prose-producing prompt (recon, intake,
