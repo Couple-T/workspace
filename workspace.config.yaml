@@ -54,7 +54,7 @@ planning:
   to_html: false
 
 triage:
-  enabled: true                  
+  enabled: false
   prod: false                     
 
 monitoring:
@@ -86,6 +86,7 @@ diagrams:
   provider: mermaid-ink
   theme: default
   max_per_ticket: 2
+
 stagehand:
   enabled: false
   placement: halves
