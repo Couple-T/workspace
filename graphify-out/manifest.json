@@ -699,19 +699,14 @@
     "ast_hash": "8f21022784bee7ef529eab3cd5b856e8",
     "semantic_hash": ""
   },
-  "2026-08-15.md": {
-    "mtime": 1786767506.5467746,
-    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
-    "semantic_hash": ""
-  },
   "AGENTS.md": {
-    "mtime": 1786767529.893978,
-    "ast_hash": "c1c14d46c89940858b5b5b36a34bba76",
+    "mtime": 1786768059.9006503,
+    "ast_hash": "753da3c82013b7b37de536b35e0f1611",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1786767529.893978,
-    "ast_hash": "c1c14d46c89940858b5b5b36a34bba76",
+    "mtime": 1786768059.9006503,
+    "ast_hash": "753da3c82013b7b37de536b35e0f1611",
     "semantic_hash": ""
   },
   "CONTEXT.md": {
@@ -997,6 +992,11 @@
   "docs/agents/design-system.md": {
     "mtime": 1786767902.3688755,
     "ast_hash": "3c6dc3d119889a03ce2b6df41272ab8c",
+    "semantic_hash": ""
+  },
+  "docs/agents/obsidian.md": {
+    "mtime": 1786767951.710656,
+    "ast_hash": "13295118a08905c66bc76e06e0829ba5",
     "semantic_hash": ""
   }
 }

@@ -2,6 +2,15 @@ org:
   name: Couple-T
   product: "feeed-me"
 
+language: en
+
+case_report_language: th
+
+observability:
+  enabled: false
+  provider: signoz
+  base_url: ""                  
+
 vcs:
   provider: github
   auto_merge: true
@@ -33,17 +42,119 @@ quality_gate:
 review:
   level: thorough
 
+loadtest:
+  tolerance_pct: 10                  
+  noise_runs: 2      
+  noise_ceiling_multiple: 2
+  max_fix_rounds: 2
+  baseline_cache: ~/.cache/aiworks/loadtest-baselines
+
 planning:
   auto_approve: true
   to_html: false
 
+triage:
+  enabled: true                  
+  prod: false                     
+
+monitoring:
+  targets:
+    feeed-me/staging: gen-lang-client-0088446822
+    feeed-me/prod: gen-lang-client-0088446822
+
+diagrams:
+  enabled: true
+
+artifacts:
+  enabled: false
+
+headroom:
+  enabled: true
+  statusline: true
+
 design:
   enabled: true
   figma_file_key: "y63FiPwVieelbKp5DYzNDX"
+
 image_generation:
   enabled: true
   quality: balanced
-  max_per_request: 2
+  max_per_request: 3
+
+diagrams:
+  enabled: true
+  provider: mermaid-ink
+  theme: default
+  max_per_ticket: 2
+stagehand:
+  enabled: false
+  placement: halves
+  displays: external
+  protected_half: left
+  rectangle_action: right-half
+  editor: cursor   
+  editor_process: Cursor
+  browser: chrome
+  browser_process: Google Chrome
+  browser_account: ""
+  browser_profile: ""
+  protect_process: iTerm2
+  max_tabs: 8
+  follow_max: 3
+  interact: true
+  debounce_seconds: 2
+  url_hosts: "atlassian.net gitlab.com github.com slack.com signoz sonar figma.com mermaid.live localhost 127.0.0.1"
+  triggers:
+    code: true
+    browser: true
+    narration: true
+
+voice:
+  enabled: false
+  tts:
+    provider: elevenlabs
+    voice:
+      elevenlabs: "EXAVITQu4vr4xnSDxMaL"
+      cartesia: "ccc7bb22-dcd0-42e4-822e-0731b950972f"
+      gemini: "Leda"
+      openai: "sage"
+    loudness: -16
+  stt:
+    provider: openai
+  summarizer:
+    provider: openai
+    model:
+      openai: gpt-4o-mini
+      gemini: gemini-2.5-flash
+      claude: claude-haiku-4-5-20251001
+  sfx:
+    provider: elevenlabs
+  autoplay:
+    enabled: false
+    ack: true
+    milestones: true
+    narrate: true
+    narrate_source: say
+    narrate_intent: true
+    narrate_gap: 0
+    narrate_max_per_turn: 0
+    thresholds: true
+    long_turn_seconds: 300
+    gates: true
+    milestone_every_turn: true
+    chattiness: terse
+  notify_voice:
+    enabled: false
+  push_to_talk:
+    enabled: false
+    hotkey: "left_cmd+right_cmd"
+    mic: default
+    preview:
+      provider: elevenlabs
+      window_seconds: 12
+    auto_send: true
+  cache:
+    max_mb: 500
 
 products:
   - id: feeed-me-app

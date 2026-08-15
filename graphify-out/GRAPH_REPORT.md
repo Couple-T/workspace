@@ -1,16 +1,16 @@
 # Graph Report - workspace  (2026-08-15)
 
 ## Corpus Check
-- 200 files · ~216,795 words
+- 200 files · ~216,123 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2181 nodes · 2027 edges · 182 communities (176 shown, 6 thin omitted)
+- 2180 nodes · 2027 edges · 181 communities (175 shown, 6 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c457d933`
+- Built from commit: `e2a39f7e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -201,12 +201,12 @@
 2. `UI Styling Skill` - 17 edges
 3. `Component library` - 16 edges
 4. `Design` - 15 edges
-5. `Tailwind CSS Customization` - 14 edges
-6. `Tailwind CSS Utility Reference` - 14 edges
+5. `Tailwind CSS Utility Reference` - 14 edges
+6. `Tailwind CSS Customization` - 14 edges
 7. `Interactive Debugger` - 13 edges
-8. `Tailwind CSS Responsive Design` - 13 edges
-9. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
-10. `Token Architecture` - 12 edges
+8. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
+9. `Tailwind CSS Responsive Design` - 13 edges
+10. `Voice — spoken output and dictation` - 12 edges
 
 ## Surprising Connections (you probably didn't know these)
 - None detected - all connections are within the same source files.
@@ -214,7 +214,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (182 total, 6 thin omitted)
+## Communities (181 total, 6 thin omitted)
 
 ### Community 0 - "FeeedMe visual system — mood: **cozy**"
 Cohesion: 0.33
@@ -913,18 +913,16 @@ Cohesion: 0.50
 Nodes (3): Adding a self-hosted provider later, Backend: mermaid.ink / mermaid.live, Diagram adapter
 
 ## Knowledge Gaps
-- **1605 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration`, ``/handoff` discipline`, `Keep the technical group parallel & idle-free` (+1600 more)
+- **1605 isolated node(s):** `Configuration (read these first)`, `Provider adapters`, `Language, compression and code`, `Speaking and showing`, `Notifications` (+1600 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Working this workspace from Cursor` connect `Working this workspace from Cursor` to `CONTEXT.md`?**
-  _High betweenness centrality (0.001) - this node is a cross-community bridge._
 - **Why does `AI Workspace` connect `AI Workspace` to `CONTEXT.md`?**
   _High betweenness centrality (0.001) - this node is a cross-community bridge._
-- **What connects `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration` to the rest of the system?**
+- **What connects `Configuration (read these first)`, `Provider adapters`, `Language, compression and code` to the rest of the system?**
   _1605 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Tailwind CSS Utility Reference` be split into smaller, more focused modules?**
   _Cohesion score 0.045454545454545456 - nodes in this community are weakly interconnected._
@@ -933,4 +931,6 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `Voice adapter (`scripts/voice/`)` be split into smaller, more focused modules?**
   _Cohesion score 0.05263157894736842 - nodes in this community are weakly interconnected._
 - **Should `Design` be split into smaller, more focused modules?**
+  _Cohesion score 0.05555555555555555 - nodes in this community are weakly interconnected._
+- **Should `Canvas Design System` be split into smaller, more focused modules?**
   _Cohesion score 0.05555555555555555 - nodes in this community are weakly interconnected._
