@@ -90,6 +90,16 @@ workspace.config.local.yaml
 /feeedme-app/
 /feeedme-appium/
 
+/feeed-cs/
+
+# >>> aiworks sync: obsidian (generated — do not edit by hand)
+# Obsidian vault — commit shared settings; keep personal UI layout local.
+# See docs/agents/obsidian.md.
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/graph.json
+# <<< aiworks sync: obsidian
+
 # >>> aiworks cursor: plugin-skill links (generated — do not edit by hand)
 # Symlinks into ~/.claude/plugins — absolute, per-machine paths, so committing one
 # gives every teammate a dangling skill dir. Cursor still READS an ignored skill
@@ -102,18 +112,11 @@ workspace.config.local.yaml
 /.claude/skills/caveman-review
 /.claude/skills/frontend-design
 /.claude/skills/skill-creator
+/.claude/skills/doctor
+/.claude/skills/headroom-usage-indicator
 /.claude/skills/ponytail-audit
 /.claude/skills/ponytail-debt
 /.claude/skills/ponytail-gain
 /.claude/skills/ponytail-help
 /.claude/skills/ponytail-review
 # <<< aiworks cursor: plugin-skill links
-/feeed-cs/
-
-# >>> aiworks sync: obsidian (generated — do not edit by hand)
-# Obsidian vault — commit shared settings; keep personal UI layout local.
-# See docs/agents/obsidian.md.
-.obsidian/workspace.json
-.obsidian/workspace-mobile.json
-.obsidian/graph.json
-# <<< aiworks sync: obsidian

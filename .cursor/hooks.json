@@ -8,10 +8,6 @@
         "matcher": "Read"
       },
       {
-        "command": "./.cursor/hooks/hook-shim.sh 'command -v rtk >/dev/null 2>&1 || exit 0; rtk hook claude'",
-        "matcher": "Shell"
-      },
-      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh'",
         "timeout": 30,
         "matcher": "Shell"
@@ -23,6 +19,16 @@
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hcat-size-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh'",
         "timeout": 10,
         "matcher": "Shell"
       },
@@ -70,6 +76,11 @@
         "matcher": "Write|Edit|NotebookEdit"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-adapter-edit-guard.sh'",
+        "timeout": 10,
+        "matcher": "Write|Edit|NotebookEdit"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-repo-context.sh'",
         "timeout": 10,
         "matcher": "Read|Write|Edit"
@@ -111,6 +122,10 @@
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-workflow-compile.sh'",
+        "matcher": "Write|Edit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-bash-portability.sh'",
         "matcher": "Write|Edit"
       },
       {
