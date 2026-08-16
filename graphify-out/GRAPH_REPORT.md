@@ -1,39 +1,34 @@
 # Graph Report - workspace  (2026-08-16)
 
 ## Corpus Check
-- 205 files · ~250,440 words
+- 205 files · ~226,002 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2975 nodes · 2820 edges · 192 communities (186 shown, 6 thin omitted)
+- 2276 nodes · 2121 edges · 183 communities (177 shown, 6 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `bb951b91`
+- Built from commit: `77cdab8c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - FeeedMe visual system — mood: **cozy**
 - Language (output-localization convention)
+- Business Requirements Document: App Launcher Logo
+- Business Requirements Document: Splash Screen
+- BRD: Dashboard Page (Single Home, No Separate Landing)
 - CLAUDE.md — {{ORG_NAME}} Organization workspace
-- The load-test gate — equal-or-better, or it does not ship
-- Code minimalism is a plugin, scoped by agent, not a prompt
-- Code minimalism (ponytail)
 - Cursor gets a generated mirror of the Claude config, built from symlinks
 - Obsidian — shared vault settings for the workspace meta-repo
 - Thai register (address mode)
 - Codegraph keeps the code, graphify maps the prose
 - The live workspace config carries no comments
-- Workspace output localization uses an English spine, not full translation
-- Communities (466 total, 52 thin omitted)
-- Communities (187 total, 6 thin omitted)
+- Resuming a workflow after the config changed
+- A case report is localized for its reader, not for the session
 - Tailwind CSS Utility Reference
-- Communities (181 total, 6 thin omitted)
-- Graph Report - workspace  (2026-08-15)
-- Graph Report - workspace  (2026-08-16)
-- Graph Report - workspace  (2026-08-16)
 - Brand Guidelines v1.0
 - Voice adapter (`scripts/voice/`)
 - Design
@@ -62,7 +57,6 @@
 - Asset Organization Guide
 - Primary Color Meanings
 - Core Logo Types
-- Deferred scope does not stop a run
 - Headroom — input-side context compression
 - 4. Test scenarios
 - Brand Consistency Checklist
@@ -89,11 +83,10 @@
 - Tailwind Integration
 - Layout Patterns
 - README.md
-- 0003-personal-runtime-config-overrides.md
 - update.md
 - Logo Design Reference
 - Token Architecture
-- CONTEXT.md
+- Deferred scope does not stop a run
 - Primitive Tokens
 - Process
 - Working this workspace from Cursor
@@ -115,8 +108,7 @@
 - Slide Strategies
 - to-prd/SKILL.md
 - Diagrams — pick the kind that fits the content
-- 0001-headless-workflow-config-mirror.md
-- graphify — operating the doc graph
+- CONTEXT.md
 - `aiworks doctor` — what is missing, and the command that fixes it
 - Worktree GC — reclaiming disk without serializing builds
 - Kubernetes triage adapter
@@ -197,7 +189,6 @@
 - Decomposition piece-spec templates
 - test-plan-template.md
 - QA sub-task — worked example
-- Tips for Better Results
 - Vendored plugin skills — where they came from
 - Diagram adapter
 - Vendored assets
@@ -208,16 +199,16 @@
 - hrun
 
 ## God Nodes (most connected - your core abstractions)
-1. `Communities (466 total, 52 thin omitted)` - 386 edges
-2. `Communities (187 total, 6 thin omitted)` - 181 edges
-3. `Communities (181 total, 6 thin omitted)` - 175 edges
-4. `Voice adapter (`scripts/voice/`)` - 22 edges
-5. `UI Styling Skill` - 17 edges
-6. `Component library` - 16 edges
-7. `Design` - 15 edges
-8. `Tailwind CSS Customization` - 14 edges
-9. `Tailwind CSS Utility Reference` - 14 edges
-10. `Interactive Debugger` - 13 edges
+1. `Voice adapter (`scripts/voice/`)` - 22 edges
+2. `UI Styling Skill` - 17 edges
+3. `Component library` - 16 edges
+4. `Design` - 15 edges
+5. `Tailwind CSS Customization` - 14 edges
+6. `Tailwind CSS Utility Reference` - 14 edges
+7. `Business Requirements Document: App Launcher Logo` - 14 edges
+8. `Interactive Debugger` - 13 edges
+9. `Tailwind CSS Responsive Design` - 13 edges
+10. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
 - None detected - all connections are within the same source files.
@@ -225,7 +216,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (192 total, 6 thin omitted)
+## Communities (183 total, 6 thin omitted)
 
 ### Community 0 - "FeeedMe visual system — mood: **cozy**"
 Cohesion: 0.33
@@ -235,21 +226,21 @@ Nodes (5): Craft cues (carry the mood), FeeedMe visual system — mood: **cozy**
 Cohesion: 0.33
 Nodes (6): 1. `language` — the workspace-wide output language (default **`en`**), 2. The rule — English spine, Thai prose, 3. Which surface gets which language, 4. How it's enforced, Language (output-localization convention), The case-report exception
 
-### Community 2 - "CLAUDE.md — {{ORG_NAME}} Organization workspace"
+### Community 2 - "Business Requirements Document: App Launcher Logo"
+Cohesion: 0.07
+Nodes (29): Approvals & Sign-Off, Business Goals, Business Requirements Document: App Launcher Logo, Competitive Benchmarks, Dependencies & Blockers, Feature 1: Branded Launcher Icon — Platform Parity, Feature 2: 1024×1024 Master Mark — Single Bold Key Element, 60px-Legible, Feature 3: Generated Platform Coverage via `flutter_launcher_icons` (+21 more)
+
+### Community 3 - "Business Requirements Document: Splash Screen"
+Cohesion: 0.08
+Nodes (25): Approach (CTO Assessment), Business Goals & Success Metrics, Business Requirements Document: Splash Screen, Competitive Landscape, Cross-Repo Impact, Differentiation, Feature 1: Modern Native Splash (Android 12+ SplashScreen API + iOS launch), Feature 2: Mask-Not-Fake Dismiss-on-Init (+17 more)
+
+### Community 4 - "BRD: Dashboard Page (Single Home, No Separate Landing)"
+Cohesion: 0.10
+Nodes (19): 1. Overview & Business Context, 2. Business Goals & Success Metrics, 3. Scope, 4. Feature Set: User Value, Priority, Unit Economics, 5. Technical Feasibility & Risks, 6. Resolved Decisions, 7. Roadmap Fit, 8. Glossary & Cross-Links (+11 more)
+
+### Community 5 - "CLAUDE.md — {{ORG_NAME}} Organization workspace"
 Cohesion: 0.22
 Nodes (8): CLAUDE.md — {{ORG_NAME}} Organization workspace, Configuration (read these first), DO NOT, Language, compression and code, Notifications, Product, Provider adapters, Speaking and showing
-
-### Community 3 - "The load-test gate — equal-or-better, or it does not ship"
-Cohesion: 0.25
-Nodes (8): Metrics, Never fail open, On a fail: attribute first, fix second, Reading the result, The baseline cache, The load-test gate — equal-or-better, or it does not ship, Three verdicts, and why the third exists, What arms it
-
-### Community 4 - "Code minimalism is a plugin, scoped by agent, not a prompt"
-Cohesion: 0.29
-Nodes (7): Code minimalism is a plugin, scoped by agent, not a prompt, What ponytail offers, What was rejected, Why not on every agent, Why the level is pinned, Why the plugin rather than our own prose, Why three carve-outs, and only three
-
-### Community 5 - "Code minimalism (ponytail)"
-Cohesion: 0.29
-Nodes (7): Code minimalism (ponytail), Commands, How it reaches each spawn path, Installing it, The ladder, Where it stops, Who gets it, and why not everyone
 
 ### Community 6 - "Cursor gets a generated mirror of the Claude config, built from symlinks"
 Cohesion: 0.40
@@ -264,44 +255,24 @@ Cohesion: 0.18
 Nodes (11): 1. The one rule — a message to a person is written in address mode, 2. Who is speaking — three voices, and they are not interchangeable, 3. Second person: `คุณ` is banned by default, 4. The officialese table, read backwards, 5. Ordering — the one thing mode does not decide, 6. Reporting a problem to an outside team, 7. Warmth is in the framing, never in the finding, 8. Where it stops (+3 more)
 
 ### Community 9 - "Codegraph keeps the code, graphify maps the prose"
-Cohesion: 0.20
-Nodes (10): Codegraph keeps the code, graphify maps the prose, Consequences, The cost we accepted, The gate it failed, The scope graphify gets, Two things measurement corrected, What the doc graph does not do, What was proposed (+2 more)
+Cohesion: 0.10
+Nodes (18): Codegraph keeps the code, graphify maps the prose, Consequences, The cost we accepted, The gate it failed, The scope graphify gets, Two things measurement corrected, What the doc graph does not do, What was proposed (+10 more)
 
 ### Community 10 - "The live workspace config carries no comments"
+Cohesion: 0.22
+Nodes (7): Neither live file carries a comment, The workspace config files, Consequences, Enforcement (four places, because a written-down rule gets forgotten), Rejected alternatives, The live workspace config carries no comments, Why
+
+### Community 11 - "Resuming a workflow after the config changed"
 Cohesion: 0.40
-Nodes (5): Consequences, Enforcement (four places, because a written-down rule gets forgotten), Rejected alternatives, The live workspace config carries no comments, Why
+Nodes (5): History, Never hand-edit the persisted script, Resuming a workflow after the config changed, The rule, Two snapshots, not one
 
-### Community 11 - "Workspace output localization uses an English spine, not full translation"
-Cohesion: 0.67
-Nodes (3): Refinement (2026-07-17): `.md` is English, `.html` localizes, Rejected alternatives, Workspace output localization uses an English spine, not full translation
-
-### Community 12 - "Communities (466 total, 52 thin omitted)"
-Cohesion: 0.01
-Nodes (386): Communities (466 total, 52 thin omitted), Community 0 - "pet_collection.dart", Community 100 - "review_body.dart", Community 101 - "4. Test scenarios", Community 102 - "Brand Consistency Checklist", Community 103 - "CIP Mockup Prompt Engineering", Community 104 - "Color Semantics", Community 105 - "dart:io" (+378 more)
-
-### Community 13 - "Communities (187 total, 6 thin omitted)"
-Cohesion: 0.01
-Nodes (181): Communities (187 total, 6 thin omitted), Community 0 - "FeeedMe visual system — mood: **cozy**", Community 102 - "4. Test scenarios", Community 104 - "Brand Consistency Checklist", Community 105 - "CIP Mockup Prompt Engineering", Community 106 - "Color Semantics", Community 107 - "Voice — spoken output and dictation", Community 10 - "The live workspace config carries no comments" (+173 more)
+### Community 12 - "A case report is localized for its reader, not for the session"
+Cohesion: 0.50
+Nodes (4): A case report is localized for its reader, not for the session, Consequences, Considered options, Decision
 
 ### Community 14 - "Tailwind CSS Utility Reference"
 Cohesion: 0.05
 Nodes (43): Arbitrary Values, Aspect Ratio, Background Colors, Border Color, Border Radius, Border Style, Border Width, Borders (+35 more)
-
-### Community 15 - "Communities (181 total, 6 thin omitted)"
-Cohesion: 0.01
-Nodes (175): Communities (181 total, 6 thin omitted), Community 0 - "FeeedMe visual system — mood: **cozy**", Community 102 - "4. Test scenarios", Community 104 - "Brand Consistency Checklist", Community 105 - "CIP Mockup Prompt Engineering", Community 106 - "Color Semantics", Community 107 - "Voice — spoken output and dictation", Community 114 - "Interactive Debugger" (+167 more)
-
-### Community 16 - "Graph Report - workspace  (2026-08-15)"
-Cohesion: 0.18
-Nodes (10): Community Hubs (Navigation), Corpus Check, God Nodes (most connected - your core abstractions), Graph Freshness, Graph Report - workspace  (2026-08-15), Import Cycles, Knowledge Gaps, Suggested Questions (+2 more)
-
-### Community 17 - "Graph Report - workspace  (2026-08-16)"
-Cohesion: 0.18
-Nodes (10): Community Hubs (Navigation), Corpus Check, God Nodes (most connected - your core abstractions), Graph Freshness, Graph Report - workspace  (2026-08-16), Import Cycles, Knowledge Gaps, Suggested Questions (+2 more)
-
-### Community 18 - "Graph Report - workspace  (2026-08-16)"
-Cohesion: 0.18
-Nodes (10): Community Hubs (Navigation), Corpus Check, God Nodes (most connected - your core abstractions), Graph Freshness, Graph Report - workspace  (2026-08-16), Import Cycles, Knowledge Gaps, Suggested Questions (+2 more)
 
 ### Community 19 - "Brand Guidelines v1.0"
 Cohesion: 0.05
@@ -415,10 +386,6 @@ Nodes (18): Accessibility Considerations, Analogous, Black, Blue, Color Combinat
 Cohesion: 0.11
 Nodes (18): 1. Wordmark (Logotype), 2. Lettermark (Monogram), 3. Pictorial Mark (Brand Mark), 4. Abstract Mark, 5. Mascot, 6. Emblem, 7. Combination Mark, Aesthetic Styles (+10 more)
 
-### Community 95 - "Deferred scope does not stop a run"
-Cohesion: 0.25
-Nodes (8): Consequences, Deferred scope does not stop a run, No ticket is filed, The cost we accepted, and what pays for it, The floor, What that cost, Why not simply proceed on `partial`, Why not stop at the PR, short of the gate
-
 ### Community 96 - "Headroom — input-side context compression"
 Cohesion: 0.11
 Nodes (17): Compression is explicit and file-scoped, Corollary, The consequence that is not about tokens, What headroom offers, What this rules in, What this rules out, Why not the proxy, Config (+9 more)
@@ -464,8 +431,8 @@ Cohesion: 0.12
 Nodes (15): 22 Art Direction Styles, Banner Sizes & Art Direction Styles Reference, Complete Banner Sizes, CTA Rules, Design Principles, Pinterest Research Queries, Print, Print Specs (+7 more)
 
 ### Community 127 - "0002-workspace-output-localization.md"
-Cohesion: 0.24
-Nodes (6): A case report is localized for its reader, not for the session, Consequences, Considered options, Decision, Rejected alternatives, Thai register is address mode, and the speaker decides the pronoun
+Cohesion: 0.27
+Nodes (5): Refinement (2026-07-17): `.md` is English, `.html` localizes, Rejected alternatives, Workspace output localization uses an English spine, not full translation, Rejected alternatives, Thai register is address mode, and the speaker decides the pronoun
 
 ### Community 135 - "legitimate cross-repo (app + backend) ticket."
 Cohesion: 0.13
@@ -523,10 +490,6 @@ Nodes (13): Card Styles, Component Variants, CSS Structures, Feature Grid (3 col
 Cohesion: 0.05
 Nodes (37): Issue tracker conventions, Notes, Status lifecycle, The adapter is the only entry point, This workspace's settings, 🚀 First run, 🔄 Keeping the tooling current, 📚 Learn more (+29 more)
 
-### Community 167 - "0003-personal-runtime-config-overrides.md"
-Cohesion: 0.25
-Nodes (5): Neither live file carries a comment, The workspace config files, Consequences, Personal config overrides apply at runtime only, never in the committed mirror, Rejected alternatives
-
 ### Community 168 - "update.md"
 Cohesion: 0.15
 Nodes (12): Color Presets, Examples, Files Modified, Important, Overview, Skills Used, Step 1: Gather Brand Input, Step 2: Update Brand Guidelines (+4 more)
@@ -539,9 +502,9 @@ Nodes (12): Available Styles, Color Psychology, Commands, Design Brief (Start He
 Cohesion: 0.15
 Nodes (12): Categories, Dark Mode, File Organization, Layer 1: Primitive Tokens, Layer 2: Semantic Tokens, Layer 3: Component Tokens, Layer Overview, Migration from Flat Tokens (+4 more)
 
-### Community 171 - "CONTEXT.md"
-Cohesion: 0.20
-Nodes (4): How it reaches each spawn path, In Cursor the skill is `/caveman`, Output compression (caveman), The boundary: compression is an OUTPUT rule
+### Community 171 - "Deferred scope does not stop a run"
+Cohesion: 0.05
+Nodes (34): Consequences, Deferred scope does not stop a run, No ticket is filed, The cost we accepted, and what pays for it, The floor, What that cost, Why not simply proceed on `partial`, Why not stop at the PR, short of the gate (+26 more)
 
 ### Community 178 - "Primitive Tokens"
 Cohesion: 0.17
@@ -627,13 +590,9 @@ Nodes (9): Further Notes, Implementation Decisions, Out of Scope, Output languag
 Cohesion: 0.20
 Nodes (9): Choose by the shape of the idea, Diagrams — pick the kind that fits the content, Don't let it break — the two rules that bite, Keep diagrams legible, Make the diagram interactive, Recipes, The export island (so the diagram survives export), Theming the diagram (+1 more)
 
-### Community 221 - "0001-headless-workflow-config-mirror.md"
+### Community 221 - "CONTEXT.md"
 Cohesion: 0.20
-Nodes (8): Consequences, Headless workflows read config from a generated mirror, not the file, Rejected alternatives, History, Never hand-edit the persisted script, Resuming a workflow after the config changed, The rule, Two snapshots, not one
-
-### Community 222 - "graphify — operating the doc graph"
-Cohesion: 0.20
-Nodes (8): Adding docs to the graph, `graphify install` overreaches — review before committing, ⚠️ graphify needs no API key. The skill IS the LLM., graphify — operating the doc graph, It is TWO installs, and the second is the one people miss, ⚠️ Labels are positional — regenerate the `.sig`, ⚠️ Remove the post-checkout hook, What is committed, and what is not
+Nodes (6): Consequences, Headless workflows read config from a generated mirror, not the file, Rejected alternatives, Consequences, Personal config overrides apply at runtime only, never in the committed mirror, Rejected alternatives
 
 ### Community 224 - "`aiworks doctor` — what is missing, and the command that fixes it"
 Cohesion: 0.20
@@ -912,8 +871,8 @@ Cohesion: 0.40
 Nodes (4): Input, Output, Steps, Ticket kickoff
 
 ### Community 364 - "Prerequisites"
-Cohesion: 0.40
-Nodes (5): Available Domains, Available Stacks, Output Formats, Prerequisites, Search Reference
+Cohesion: 0.22
+Nodes (9): Available Domains, Available Stacks, Common Sticking Points, Output Formats, Pre-Delivery Checklist, Prerequisites, Query Strategy, Search Reference (+1 more)
 
 ### Community 365 - "Common Rules for Professional UI"
 Cohesion: 0.40
@@ -955,10 +914,6 @@ Nodes (3): TC001 — {{ Short descriptive title }}, TC002 — {{ Short descripti
 Cohesion: 0.50
 Nodes (3): Example (E2E), QA sub-task — worked example, The pattern is universal
 
-### Community 392 - "Tips for Better Results"
-Cohesion: 0.50
-Nodes (4): Common Sticking Points, Pre-Delivery Checklist, Query Strategy, Tips for Better Results
-
 ### Community 393 - "Vendored plugin skills — where they came from"
 Cohesion: 0.50
 Nodes (3): Keeping the copies honest, Vendored plugin skills — where they came from, Why a copy at all
@@ -968,24 +923,24 @@ Cohesion: 0.50
 Nodes (3): Adding a self-hosted provider later, Backend: mermaid.ink / mermaid.live, Diagram adapter
 
 ## Knowledge Gaps
-- **2384 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration`, ``/handoff` discipline`, `Keep the technical group parallel & idle-free` (+2379 more)
+- **1673 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration`, ``/handoff` discipline`, `Keep the technical group parallel & idle-free` (+1668 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Communities (466 total, 52 thin omitted)` connect `Communities (466 total, 52 thin omitted)` to `Graph Report - workspace  (2026-08-16)`?**
-  _High betweenness centrality (0.024) - this node is a cross-community bridge._
-- **Why does `Communities (187 total, 6 thin omitted)` connect `Communities (187 total, 6 thin omitted)` to `Graph Report - workspace  (2026-08-16)`?**
-  _High betweenness centrality (0.004) - this node is a cross-community bridge._
-- **Why does `Graph Report - workspace  (2026-08-16)` connect `Graph Report - workspace  (2026-08-16)` to `Communities (466 total, 52 thin omitted)`?**
-  _High betweenness centrality (0.003) - this node is a cross-community bridge._
+- **Why does `Working this workspace from Cursor` connect `Working this workspace from Cursor` to `CONTEXT.md`?**
+  _High betweenness centrality (0.001) - this node is a cross-community bridge._
+- **Why does `AI Workspace` connect `AI Workspace` to `CONTEXT.md`?**
+  _High betweenness centrality (0.001) - this node is a cross-community bridge._
 - **What connects `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration` to the rest of the system?**
-  _2384 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Communities (466 total, 52 thin omitted)` be split into smaller, more focused modules?**
-  _Cohesion score 0.0051813471502590676 - nodes in this community are weakly interconnected._
-- **Should `Communities (187 total, 6 thin omitted)` be split into smaller, more focused modules?**
-  _Cohesion score 0.011049723756906077 - nodes in this community are weakly interconnected._
-- **Should `Tailwind CSS Utility Reference` be split into smaller, more focused modules?**
-  _Cohesion score 0.045454545454545456 - nodes in this community are weakly interconnected._
+  _1673 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Business Requirements Document: App Launcher Logo` be split into smaller, more focused modules?**
+  _Cohesion score 0.06666666666666667 - nodes in this community are weakly interconnected._
+- **Should `Business Requirements Document: Splash Screen` be split into smaller, more focused modules?**
+  _Cohesion score 0.07692307692307693 - nodes in this community are weakly interconnected._
+- **Should `BRD: Dashboard Page (Single Home, No Separate Landing)` be split into smaller, more focused modules?**
+  _Cohesion score 0.1 - nodes in this community are weakly interconnected._
+- **Should `Codegraph keeps the code, graphify maps the prose` be split into smaller, more focused modules?**
+  _Cohesion score 0.1 - nodes in this community are weakly interconnected._
