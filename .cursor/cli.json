@@ -9,6 +9,7 @@
       "Mcp(claude_ai_Figma:search_design_system)",
       "Mcp(codegraph:*)",
       "Mcp(graphify_docs:*)",
+      "Mcp(n8n-mcp:*)",
       "Mcp(pg_triage:*)",
       "Mcp(postgres_main:*)",
       "Mcp(postgres_secondary:*)",
