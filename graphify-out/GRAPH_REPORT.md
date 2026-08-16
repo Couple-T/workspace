@@ -1,16 +1,16 @@
 # Graph Report - workspace  (2026-08-16)
 
 ## Corpus Check
-- 202 files · ~219,767 words
+- 205 files · ~250,440 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2209 nodes · 2056 edges · 187 communities (181 shown, 6 thin omitted)
+- 2975 nodes · 2820 edges · 192 communities (186 shown, 6 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f438ac91`
+- Built from commit: `bb951b91`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -27,7 +27,13 @@
 - Codegraph keeps the code, graphify maps the prose
 - The live workspace config carries no comments
 - Workspace output localization uses an English spine, not full translation
+- Communities (466 total, 52 thin omitted)
+- Communities (187 total, 6 thin omitted)
 - Tailwind CSS Utility Reference
+- Communities (181 total, 6 thin omitted)
+- Graph Report - workspace  (2026-08-15)
+- Graph Report - workspace  (2026-08-16)
+- Graph Report - workspace  (2026-08-16)
 - Brand Guidelines v1.0
 - Voice adapter (`scripts/voice/`)
 - Design
@@ -114,7 +120,6 @@
 - `aiworks doctor` — what is missing, and the command that fixes it
 - Worktree GC — reclaiming disk without serializing builds
 - Kubernetes triage adapter
-- CLAUDE.md — {{ORG_NAME}} Organization workspace
 - ceo.md
 - code-reviewer.md
 - development-planner.md
@@ -203,16 +208,16 @@
 - hrun
 
 ## God Nodes (most connected - your core abstractions)
-1. `Voice adapter (`scripts/voice/`)` - 22 edges
-2. `UI Styling Skill` - 17 edges
-3. `Component library` - 16 edges
-4. `Design` - 15 edges
-5. `Tailwind CSS Utility Reference` - 14 edges
-6. `Tailwind CSS Customization` - 14 edges
-7. `Interactive Debugger` - 13 edges
-8. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
-9. `Tailwind CSS Responsive Design` - 13 edges
-10. `Voice — spoken output and dictation` - 12 edges
+1. `Communities (466 total, 52 thin omitted)` - 386 edges
+2. `Communities (187 total, 6 thin omitted)` - 181 edges
+3. `Communities (181 total, 6 thin omitted)` - 175 edges
+4. `Voice adapter (`scripts/voice/`)` - 22 edges
+5. `UI Styling Skill` - 17 edges
+6. `Component library` - 16 edges
+7. `Design` - 15 edges
+8. `Tailwind CSS Customization` - 14 edges
+9. `Tailwind CSS Utility Reference` - 14 edges
+10. `Interactive Debugger` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
 - None detected - all connections are within the same source files.
@@ -220,7 +225,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (187 total, 6 thin omitted)
+## Communities (192 total, 6 thin omitted)
 
 ### Community 0 - "FeeedMe visual system — mood: **cozy**"
 Cohesion: 0.33
@@ -270,9 +275,33 @@ Nodes (5): Consequences, Enforcement (four places, because a written-down rule g
 Cohesion: 0.67
 Nodes (3): Refinement (2026-07-17): `.md` is English, `.html` localizes, Rejected alternatives, Workspace output localization uses an English spine, not full translation
 
+### Community 12 - "Communities (466 total, 52 thin omitted)"
+Cohesion: 0.01
+Nodes (386): Communities (466 total, 52 thin omitted), Community 0 - "pet_collection.dart", Community 100 - "review_body.dart", Community 101 - "4. Test scenarios", Community 102 - "Brand Consistency Checklist", Community 103 - "CIP Mockup Prompt Engineering", Community 104 - "Color Semantics", Community 105 - "dart:io" (+378 more)
+
+### Community 13 - "Communities (187 total, 6 thin omitted)"
+Cohesion: 0.01
+Nodes (181): Communities (187 total, 6 thin omitted), Community 0 - "FeeedMe visual system — mood: **cozy**", Community 102 - "4. Test scenarios", Community 104 - "Brand Consistency Checklist", Community 105 - "CIP Mockup Prompt Engineering", Community 106 - "Color Semantics", Community 107 - "Voice — spoken output and dictation", Community 10 - "The live workspace config carries no comments" (+173 more)
+
 ### Community 14 - "Tailwind CSS Utility Reference"
 Cohesion: 0.05
 Nodes (43): Arbitrary Values, Aspect Ratio, Background Colors, Border Color, Border Radius, Border Style, Border Width, Borders (+35 more)
+
+### Community 15 - "Communities (181 total, 6 thin omitted)"
+Cohesion: 0.01
+Nodes (175): Communities (181 total, 6 thin omitted), Community 0 - "FeeedMe visual system — mood: **cozy**", Community 102 - "4. Test scenarios", Community 104 - "Brand Consistency Checklist", Community 105 - "CIP Mockup Prompt Engineering", Community 106 - "Color Semantics", Community 107 - "Voice — spoken output and dictation", Community 114 - "Interactive Debugger" (+167 more)
+
+### Community 16 - "Graph Report - workspace  (2026-08-15)"
+Cohesion: 0.18
+Nodes (10): Community Hubs (Navigation), Corpus Check, God Nodes (most connected - your core abstractions), Graph Freshness, Graph Report - workspace  (2026-08-15), Import Cycles, Knowledge Gaps, Suggested Questions (+2 more)
+
+### Community 17 - "Graph Report - workspace  (2026-08-16)"
+Cohesion: 0.18
+Nodes (10): Community Hubs (Navigation), Corpus Check, God Nodes (most connected - your core abstractions), Graph Freshness, Graph Report - workspace  (2026-08-16), Import Cycles, Knowledge Gaps, Suggested Questions (+2 more)
+
+### Community 18 - "Graph Report - workspace  (2026-08-16)"
+Cohesion: 0.18
+Nodes (10): Community Hubs (Navigation), Corpus Check, God Nodes (most connected - your core abstractions), Graph Freshness, Graph Report - workspace  (2026-08-16), Import Cycles, Knowledge Gaps, Suggested Questions (+2 more)
 
 ### Community 19 - "Brand Guidelines v1.0"
 Cohesion: 0.05
@@ -618,10 +647,6 @@ Nodes (9): Automatic sweeping, Classification, Git safety, Source of truth, The 
 Cohesion: 0.20
 Nodes (9): Admin runbook — one cluster at a time, Checks, CRD drift, Kubernetes triage adapter, Production, Targets are derived, never configured, Teammate setup, What it creates (+1 more)
 
-### Community 236 - "CLAUDE.md — {{ORG_NAME}} Organization workspace"
-Cohesion: 0.22
-Nodes (8): CLAUDE.md — {{ORG_NAME}} Organization workspace, Configuration (read these first), DO NOT, Language, compression and code, Notifications, Product, Provider adapters, Speaking and showing
-
 ### Community 237 - "ceo.md"
 Cohesion: 0.22
 Nodes (8): Bar, `/handoff` discipline, Hard rule — conductor only, never the hands, Inputs, Keep the technical group parallel & idle-free, Output language — resolve BEFORE writing (do this FIRST, before your role), Team & collaboration, What you do
@@ -943,24 +968,24 @@ Cohesion: 0.50
 Nodes (3): Adding a self-hosted provider later, Backend: mermaid.ink / mermaid.live, Diagram adapter
 
 ## Knowledge Gaps
-- **1625 isolated node(s):** `Configuration (read these first)`, `Provider adapters`, `Language, compression and code`, `Speaking and showing`, `Notifications` (+1620 more)
+- **2384 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration`, ``/handoff` discipline`, `Keep the technical group parallel & idle-free` (+2379 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Working this workspace from Cursor` connect `Working this workspace from Cursor` to `CONTEXT.md`?**
-  _High betweenness centrality (0.001) - this node is a cross-community bridge._
-- **Why does `Thai register (address mode)` connect `Thai register (address mode)` to `0002-workspace-output-localization.md`?**
-  _High betweenness centrality (0.001) - this node is a cross-community bridge._
-- **Why does `Deferred scope does not stop a run` connect `Deferred scope does not stop a run` to `CONTEXT.md`?**
-  _High betweenness centrality (0.001) - this node is a cross-community bridge._
-- **What connects `Configuration (read these first)`, `Provider adapters`, `Language, compression and code` to the rest of the system?**
-  _1625 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `Communities (466 total, 52 thin omitted)` connect `Communities (466 total, 52 thin omitted)` to `Graph Report - workspace  (2026-08-16)`?**
+  _High betweenness centrality (0.024) - this node is a cross-community bridge._
+- **Why does `Communities (187 total, 6 thin omitted)` connect `Communities (187 total, 6 thin omitted)` to `Graph Report - workspace  (2026-08-16)`?**
+  _High betweenness centrality (0.004) - this node is a cross-community bridge._
+- **Why does `Graph Report - workspace  (2026-08-16)` connect `Graph Report - workspace  (2026-08-16)` to `Communities (466 total, 52 thin omitted)`?**
+  _High betweenness centrality (0.003) - this node is a cross-community bridge._
+- **What connects `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration` to the rest of the system?**
+  _2384 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Communities (466 total, 52 thin omitted)` be split into smaller, more focused modules?**
+  _Cohesion score 0.0051813471502590676 - nodes in this community are weakly interconnected._
+- **Should `Communities (187 total, 6 thin omitted)` be split into smaller, more focused modules?**
+  _Cohesion score 0.011049723756906077 - nodes in this community are weakly interconnected._
 - **Should `Tailwind CSS Utility Reference` be split into smaller, more focused modules?**
   _Cohesion score 0.045454545454545456 - nodes in this community are weakly interconnected._
-- **Should `Brand Guidelines v1.0` be split into smaller, more focused modules?**
-  _Cohesion score 0.05263157894736842 - nodes in this community are weakly interconnected._
-- **Should `Voice adapter (`scripts/voice/`)` be split into smaller, more focused modules?**
-  _Cohesion score 0.05263157894736842 - nodes in this community are weakly interconnected._
