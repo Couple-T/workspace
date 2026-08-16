@@ -3,7 +3,10 @@
     "mcp-image": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "mcp-image"],
+      "args": [
+        "-y",
+        "mcp-image"
+      ],
       "env": {
         "GEMINI_API_KEY": "${GEMINI_API_KEY}",
         "IMAGE_OUTPUT_DIR": "${IMAGE_OUTPUT_DIR:-/tmp/aiworks-generated-images}",
@@ -38,11 +41,21 @@
     "codegraph": {
       "type": "stdio",
       "command": "codegraph",
-      "args": ["serve", "--mcp"]
+      "args": [
+        "serve",
+        "--mcp"
+      ]
     },
     "graphify_docs": {
       "type": "stdio",
       "command": "graphify-mcp"
+    },
+    "n8n-mcp": {
+      "type": "http",
+      "url": "https://n8n.feeed-me.com/mcp-server/http",
+      "headers": {
+        "Authorization": "Bearer ${N8N_MCP_ACCESS_TOKEN}"
+      }
     }
   }
 }

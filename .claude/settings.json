@@ -6,7 +6,8 @@
     "sonarqube",
     "redis",
     "graphify_docs",
-    "mcp-image"
+    "mcp-image",
+    "n8n-mcp"
   ],
   "permissions": {
     "allow": [
@@ -55,6 +56,7 @@
       "mcp__postgres_secondary",
       "mcp__postgres_main",
       "mcp__redis",
+      "mcp__n8n-mcp",
       "mcp__pg_triage",
       "mcp__redis_triage",
       "mcp__claude_ai_Figma__get_screenshot",

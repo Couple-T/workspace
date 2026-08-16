@@ -700,13 +700,13 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1786774641.623897,
-    "ast_hash": "753da3c82013b7b37de536b35e0f1611",
+    "mtime": 1786855058.1569142,
+    "ast_hash": "03509c2002ae6add3b492e0e8b83d84f",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1786774641.623897,
-    "ast_hash": "753da3c82013b7b37de536b35e0f1611",
+    "mtime": 1786855058.1569142,
+    "ast_hash": "03509c2002ae6add3b492e0e8b83d84f",
     "semantic_hash": ""
   },
   "CONTEXT.md": {
@@ -810,8 +810,8 @@
     "semantic_hash": ""
   },
   "docs/agents/doctor.md": {
-    "mtime": 1786774641.6246076,
-    "ast_hash": "37f60f21a372499ca395519085c5c12d",
+    "mtime": 1786774694.2711139,
+    "ast_hash": "aad01a11daa3e1be365b1a83d5c69da7",
     "semantic_hash": ""
   },
   "docs/agents/figma.md": {
@@ -845,8 +845,8 @@
     "semantic_hash": ""
   },
   "docs/agents/language.md": {
-    "mtime": 1786762937.9142828,
-    "ast_hash": "1f120b146902160ac589d77017620d42",
+    "mtime": 1786854795.3741395,
+    "ast_hash": "ff59aa7d7db4b5135182ad9d3cdaa37e",
     "semantic_hash": ""
   },
   "docs/agents/loadtest-gate.md": {
@@ -880,8 +880,8 @@
     "semantic_hash": ""
   },
   "docs/agents/voice.md": {
-    "mtime": 1786233820.4491985,
-    "ast_hash": "424c200b2a5b8170566bad799a463a39",
+    "mtime": 1786854795.3750043,
+    "ast_hash": "b78566e3d90c896cfd8f589437bf8f88",
     "semantic_hash": ""
   },
   "docs/agents/workflow-resume.md": {
@@ -997,6 +997,16 @@
   "docs/agents/obsidian.md": {
     "mtime": 1786767951.710656,
     "ast_hash": "13295118a08905c66bc76e06e0829ba5",
+    "semantic_hash": ""
+  },
+  "docs/adr/0016-thai-register-is-address-mode-not-exposition-mode.md": {
+    "mtime": 1786854795.3737147,
+    "ast_hash": "84789fb49485c06d9b2c8d2e0e5da985",
+    "semantic_hash": ""
+  },
+  "docs/agents/register.md": {
+    "mtime": 1786854795.3745105,
+    "ast_hash": "f019b3d3345a0c303af8642ef4d6a653",
     "semantic_hash": ""
   }
 }

@@ -1,16 +1,16 @@
-# Graph Report - workspace  (2026-08-15)
+# Graph Report - workspace  (2026-08-16)
 
 ## Corpus Check
-- 200 files · ~216,123 words
+- 202 files · ~219,767 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2194 nodes · 2039 edges · 183 communities (177 shown, 6 thin omitted)
+- 2209 nodes · 2056 edges · 187 communities (181 shown, 6 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c69d0dc9`
+- Built from commit: `f438ac91`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -23,6 +23,10 @@
 - Code minimalism (ponytail)
 - Cursor gets a generated mirror of the Claude config, built from symlinks
 - Obsidian — shared vault settings for the workspace meta-repo
+- Thai register (address mode)
+- Codegraph keeps the code, graphify maps the prose
+- The live workspace config carries no comments
+- Workspace output localization uses an English spine, not full translation
 - Tailwind CSS Utility Reference
 - Brand Guidelines v1.0
 - Voice adapter (`scripts/voice/`)
@@ -106,7 +110,7 @@
 - to-prd/SKILL.md
 - Diagrams — pick the kind that fits the content
 - 0001-headless-workflow-config-mirror.md
-- Codegraph keeps the code, graphify maps the prose
+- graphify — operating the doc graph
 - `aiworks doctor` — what is missing, and the command that fixes it
 - Worktree GC — reclaiming disk without serializing builds
 - Kubernetes triage adapter
@@ -203,12 +207,12 @@
 2. `UI Styling Skill` - 17 edges
 3. `Component library` - 16 edges
 4. `Design` - 15 edges
-5. `Tailwind CSS Customization` - 14 edges
-6. `Tailwind CSS Utility Reference` - 14 edges
+5. `Tailwind CSS Utility Reference` - 14 edges
+6. `Tailwind CSS Customization` - 14 edges
 7. `Interactive Debugger` - 13 edges
-8. `Tailwind CSS Responsive Design` - 13 edges
-9. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
-10. `Token Architecture` - 12 edges
+8. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
+9. `Tailwind CSS Responsive Design` - 13 edges
+10. `Voice — spoken output and dictation` - 12 edges
 
 ## Surprising Connections (you probably didn't know these)
 - None detected - all connections are within the same source files.
@@ -216,7 +220,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (183 total, 6 thin omitted)
+## Communities (187 total, 6 thin omitted)
 
 ### Community 0 - "FeeedMe visual system — mood: **cozy**"
 Cohesion: 0.33
@@ -249,6 +253,22 @@ Nodes (5): A root session gets each repo re-globbed, Cursor gets a generated mir
 ### Community 7 - "Obsidian — shared vault settings for the workspace meta-repo"
 Cohesion: 0.40
 Nodes (4): Commit vs keep local, Gotchas, Obsidian — shared vault settings for the workspace meta-repo, What `aiworks sync` does
+
+### Community 8 - "Thai register (address mode)"
+Cohesion: 0.18
+Nodes (11): 1. The one rule — a message to a person is written in address mode, 2. Who is speaking — three voices, and they are not interchangeable, 3. Second person: `คุณ` is banned by default, 4. The officialese table, read backwards, 5. Ordering — the one thing mode does not decide, 6. Reporting a problem to an outside team, 7. Warmth is in the framing, never in the finding, 8. Where it stops (+3 more)
+
+### Community 9 - "Codegraph keeps the code, graphify maps the prose"
+Cohesion: 0.20
+Nodes (10): Codegraph keeps the code, graphify maps the prose, Consequences, The cost we accepted, The gate it failed, The scope graphify gets, Two things measurement corrected, What the doc graph does not do, What was proposed (+2 more)
+
+### Community 10 - "The live workspace config carries no comments"
+Cohesion: 0.40
+Nodes (5): Consequences, Enforcement (four places, because a written-down rule gets forgotten), Rejected alternatives, The live workspace config carries no comments, Why
+
+### Community 11 - "Workspace output localization uses an English spine, not full translation"
+Cohesion: 0.67
+Nodes (3): Refinement (2026-07-17): `.md` is English, `.html` localizes, Rejected alternatives, Workspace output localization uses an English spine, not full translation
 
 ### Community 14 - "Tailwind CSS Utility Reference"
 Cohesion: 0.05
@@ -415,8 +435,8 @@ Cohesion: 0.12
 Nodes (15): 22 Art Direction Styles, Banner Sizes & Art Direction Styles Reference, Complete Banner Sizes, CTA Rules, Design Principles, Pinterest Research Queries, Print, Print Specs (+7 more)
 
 ### Community 127 - "0002-workspace-output-localization.md"
-Cohesion: 0.22
-Nodes (7): Refinement (2026-07-17): `.md` is English, `.html` localizes, Rejected alternatives, Workspace output localization uses an English spine, not full translation, A case report is localized for its reader, not for the session, Consequences, Considered options, Decision
+Cohesion: 0.24
+Nodes (6): A case report is localized for its reader, not for the session, Consequences, Considered options, Decision, Rejected alternatives, Thai register is address mode, and the speaker decides the pronoun
 
 ### Community 135 - "legitimate cross-repo (app + backend) ticket."
 Cohesion: 0.13
@@ -475,8 +495,8 @@ Cohesion: 0.05
 Nodes (37): Issue tracker conventions, Notes, Status lifecycle, The adapter is the only entry point, This workspace's settings, 🚀 First run, 🔄 Keeping the tooling current, 📚 Learn more (+29 more)
 
 ### Community 167 - "0003-personal-runtime-config-overrides.md"
-Cohesion: 0.15
-Nodes (10): Neither live file carries a comment, The workspace config files, Consequences, Personal config overrides apply at runtime only, never in the committed mirror, Rejected alternatives, Consequences, Enforcement (four places, because a written-down rule gets forgotten), Rejected alternatives (+2 more)
+Cohesion: 0.25
+Nodes (5): Neither live file carries a comment, The workspace config files, Consequences, Personal config overrides apply at runtime only, never in the committed mirror, Rejected alternatives
 
 ### Community 168 - "update.md"
 Cohesion: 0.15
@@ -582,9 +602,9 @@ Nodes (9): Choose by the shape of the idea, Diagrams — pick the kind that fits
 Cohesion: 0.20
 Nodes (8): Consequences, Headless workflows read config from a generated mirror, not the file, Rejected alternatives, History, Never hand-edit the persisted script, Resuming a workflow after the config changed, The rule, Two snapshots, not one
 
-### Community 222 - "Codegraph keeps the code, graphify maps the prose"
-Cohesion: 0.10
-Nodes (18): Codegraph keeps the code, graphify maps the prose, Consequences, The cost we accepted, The gate it failed, The scope graphify gets, Two things measurement corrected, What the doc graph does not do, What was proposed (+10 more)
+### Community 222 - "graphify — operating the doc graph"
+Cohesion: 0.20
+Nodes (8): Adding docs to the graph, `graphify install` overreaches — review before committing, ⚠️ graphify needs no API key. The skill IS the LLM., graphify — operating the doc graph, It is TWO installs, and the second is the one people miss, ⚠️ Labels are positional — regenerate the `.sig`, ⚠️ Remove the post-checkout hook, What is committed, and what is not
 
 ### Community 224 - "`aiworks doctor` — what is missing, and the command that fixes it"
 Cohesion: 0.20
@@ -923,24 +943,24 @@ Cohesion: 0.50
 Nodes (3): Adding a self-hosted provider later, Backend: mermaid.ink / mermaid.live, Diagram adapter
 
 ## Knowledge Gaps
-- **1615 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration`, ``/handoff` discipline`, `Keep the technical group parallel & idle-free` (+1610 more)
+- **1625 isolated node(s):** `Configuration (read these first)`, `Provider adapters`, `Language, compression and code`, `Speaking and showing`, `Notifications` (+1620 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Cursor gets a generated mirror of the Claude config, built from symlinks` connect `Cursor gets a generated mirror of the Claude config, built from symlinks` to `CONTEXT.md`?**
+- **Why does `Working this workspace from Cursor` connect `Working this workspace from Cursor` to `CONTEXT.md`?**
   _High betweenness centrality (0.001) - this node is a cross-community bridge._
-- **What connects `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration` to the rest of the system?**
-  _1615 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `Thai register (address mode)` connect `Thai register (address mode)` to `0002-workspace-output-localization.md`?**
+  _High betweenness centrality (0.001) - this node is a cross-community bridge._
+- **Why does `Deferred scope does not stop a run` connect `Deferred scope does not stop a run` to `CONTEXT.md`?**
+  _High betweenness centrality (0.001) - this node is a cross-community bridge._
+- **What connects `Configuration (read these first)`, `Provider adapters`, `Language, compression and code` to the rest of the system?**
+  _1625 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Tailwind CSS Utility Reference` be split into smaller, more focused modules?**
   _Cohesion score 0.045454545454545456 - nodes in this community are weakly interconnected._
 - **Should `Brand Guidelines v1.0` be split into smaller, more focused modules?**
   _Cohesion score 0.05263157894736842 - nodes in this community are weakly interconnected._
 - **Should `Voice adapter (`scripts/voice/`)` be split into smaller, more focused modules?**
   _Cohesion score 0.05263157894736842 - nodes in this community are weakly interconnected._
-- **Should `Design` be split into smaller, more focused modules?**
-  _Cohesion score 0.05555555555555555 - nodes in this community are weakly interconnected._
-- **Should `Canvas Design System` be split into smaller, more focused modules?**
-  _Cohesion score 0.05555555555555555 - nodes in this community are weakly interconnected._
