@@ -74,16 +74,15 @@ The graphic-designer (`Fiona`) generates assets via the **`mcp-image`** server
 needs the server enabled **and** `GEMINI_API_KEY` set. A connected server with no
 key still cannot generate — so check BOTH:
 1. From `claude mcp list`, is **`mcp-image` ✔ Connected**?
-2. Is the key present? `[ -n "$GEMINI_API_KEY" ]`, or a non-empty `GEMINI_API_KEY`
-   in `.claude/settings.local.json` `env` (e.g.
-   `grep -A2 '"env"' .claude/settings.local.json`).
+2. Is the key present in the workspace `.env`?
+   `grep -q '^GEMINI_API_KEY=.\+' .env` (exit code only — never print the value).
 
 - **Both true → image-gen available.** Proceed; the designers generate real assets.
 - **Otherwise → image-gen UNAVAILABLE.** Do **not** proceed silently into placeholder
   art. Warn the user and offer an explicit choice:
-  - **(a) Enable it** — set `GEMINI_API_KEY` in `.claude/settings.local.json`'s `env`
-    block (get a key at https://aistudio.google.com/apikey), then restart the session
-    so `mcp-image` picks it up. See `docs/agents/image-generation.md`.
+  - **(a) Enable it** — set `GEMINI_API_KEY` in the workspace-root `.env`
+    (get a key at https://aistudio.google.com/apikey), `direnv allow` if needed, then
+    restart the session so `mcp-image` picks it up. See `docs/agents/image-generation.md`.
   - **(b) Proceed placeholder/specs-only** — designers still build frames, but any
     asset-dependent state stays on an **explicit placeholder**, the graphic-designer
     returns `unavailable`/`placeholder`, and the ux-ui-designer must **flag those
@@ -200,6 +199,6 @@ finished.
   The build phase's wall-clock is the sum of the per-feature builds, not one chain.
 - A raw `Workflow(prd)` (stage `all`) CAN now write Figma frames headlessly, but still
   DON'T use it for UI work: (a) it fans designers out concurrently → page collisions, and
-  (b) the headless runtime can't read `GEMINI_API_KEY`, so every asset returns `unavailable`
-  → placeholder art. This skill (in-session, serialized, key present) is the supported path
-  for real, asset-complete frames.
+  (b) the headless runtime may not load the workspace `.env`, so every asset returns
+  `unavailable` → placeholder art. This skill (in-session, serialized, key in `.env`) is
+  the supported path for real, asset-complete frames.
