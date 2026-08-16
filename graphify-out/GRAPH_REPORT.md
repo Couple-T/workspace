@@ -1,7 +1,7 @@
 # Graph Report - workspace  (2026-08-16)
 
 ## Corpus Check
-- 205 files · ~226,002 words
+- 205 files · ~225,999 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `77cdab8c`
+- Built from commit: `dfa85b88`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -26,8 +26,9 @@
 - Thai register (address mode)
 - Codegraph keeps the code, graphify maps the prose
 - The live workspace config carries no comments
-- Resuming a workflow after the config changed
+- CONTEXT.md
 - A case report is localized for its reader, not for the session
+- Resuming a workflow after the config changed
 - Tailwind CSS Utility Reference
 - Brand Guidelines v1.0
 - Voice adapter (`scripts/voice/`)
@@ -108,7 +109,6 @@
 - Slide Strategies
 - to-prd/SKILL.md
 - Diagrams — pick the kind that fits the content
-- CONTEXT.md
 - `aiworks doctor` — what is missing, and the command that fixes it
 - Worktree GC — reclaiming disk without serializing builds
 - Kubernetes triage adapter
@@ -203,12 +203,12 @@
 2. `UI Styling Skill` - 17 edges
 3. `Component library` - 16 edges
 4. `Design` - 15 edges
-5. `Tailwind CSS Customization` - 14 edges
-6. `Tailwind CSS Utility Reference` - 14 edges
-7. `Business Requirements Document: App Launcher Logo` - 14 edges
+5. `Tailwind CSS Utility Reference` - 14 edges
+6. `Business Requirements Document: App Launcher Logo` - 14 edges
+7. `Tailwind CSS Customization` - 14 edges
 8. `Interactive Debugger` - 13 edges
-9. `Tailwind CSS Responsive Design` - 13 edges
-10. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
+9. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
+10. `Tailwind CSS Responsive Design` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
 - None detected - all connections are within the same source files.
@@ -262,13 +262,17 @@ Nodes (18): Codegraph keeps the code, graphify maps the prose, Consequences, The
 Cohesion: 0.22
 Nodes (7): Neither live file carries a comment, The workspace config files, Consequences, Enforcement (four places, because a written-down rule gets forgotten), Rejected alternatives, The live workspace config carries no comments, Why
 
-### Community 11 - "Resuming a workflow after the config changed"
-Cohesion: 0.40
-Nodes (5): History, Never hand-edit the persisted script, Resuming a workflow after the config changed, The rule, Two snapshots, not one
+### Community 11 - "CONTEXT.md"
+Cohesion: 0.20
+Nodes (6): Consequences, Headless workflows read config from a generated mirror, not the file, Rejected alternatives, Consequences, Personal config overrides apply at runtime only, never in the committed mirror, Rejected alternatives
 
 ### Community 12 - "A case report is localized for its reader, not for the session"
 Cohesion: 0.50
 Nodes (4): A case report is localized for its reader, not for the session, Consequences, Considered options, Decision
+
+### Community 13 - "Resuming a workflow after the config changed"
+Cohesion: 0.40
+Nodes (5): History, Never hand-edit the persisted script, Resuming a workflow after the config changed, The rule, Two snapshots, not one
 
 ### Community 14 - "Tailwind CSS Utility Reference"
 Cohesion: 0.05
@@ -589,10 +593,6 @@ Nodes (9): Further Notes, Implementation Decisions, Out of Scope, Output languag
 ### Community 220 - "Diagrams — pick the kind that fits the content"
 Cohesion: 0.20
 Nodes (9): Choose by the shape of the idea, Diagrams — pick the kind that fits the content, Don't let it break — the two rules that bite, Keep diagrams legible, Make the diagram interactive, Recipes, The export island (so the diagram survives export), Theming the diagram (+1 more)
-
-### Community 221 - "CONTEXT.md"
-Cohesion: 0.20
-Nodes (6): Consequences, Headless workflows read config from a generated mirror, not the file, Rejected alternatives, Consequences, Personal config overrides apply at runtime only, never in the committed mirror, Rejected alternatives
 
 ### Community 224 - "`aiworks doctor` — what is missing, and the command that fixes it"
 Cohesion: 0.20
@@ -923,18 +923,16 @@ Cohesion: 0.50
 Nodes (3): Adding a self-hosted provider later, Backend: mermaid.ink / mermaid.live, Diagram adapter
 
 ## Knowledge Gaps
-- **1673 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration`, ``/handoff` discipline`, `Keep the technical group parallel & idle-free` (+1668 more)
+- **1673 isolated node(s):** `Why this skill exists (read first)`, `0. Design config — read it FIRST (gates everything below)`, `0a. Preflight — confirm Figma is connected`, `0b. Preflight — confirm image generation is available`, `1. INTAKE (headless workflow)` (+1668 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Working this workspace from Cursor` connect `Working this workspace from Cursor` to `CONTEXT.md`?**
-  _High betweenness centrality (0.001) - this node is a cross-community bridge._
 - **Why does `AI Workspace` connect `AI Workspace` to `CONTEXT.md`?**
   _High betweenness centrality (0.001) - this node is a cross-community bridge._
-- **What connects `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration` to the rest of the system?**
+- **What connects `Why this skill exists (read first)`, `0. Design config — read it FIRST (gates everything below)`, `0a. Preflight — confirm Figma is connected` to the rest of the system?**
   _1673 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Business Requirements Document: App Launcher Logo` be split into smaller, more focused modules?**
   _Cohesion score 0.06666666666666667 - nodes in this community are weakly interconnected._
@@ -944,3 +942,5 @@ _Questions this graph is uniquely positioned to answer:_
   _Cohesion score 0.1 - nodes in this community are weakly interconnected._
 - **Should `Codegraph keeps the code, graphify maps the prose` be split into smaller, more focused modules?**
   _Cohesion score 0.1 - nodes in this community are weakly interconnected._
+- **Should `Tailwind CSS Utility Reference` be split into smaller, more focused modules?**
+  _Cohesion score 0.045454545454545456 - nodes in this community are weakly interconnected._
