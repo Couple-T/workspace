@@ -1,16 +1,16 @@
-# Graph Report - workspace  (2026-08-16)
+# Graph Report - workspace  (2026-08-17)
 
 ## Corpus Check
 - 205 files · ~225,999 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2276 nodes · 2121 edges · 183 communities (177 shown, 6 thin omitted)
+- 2285 nodes · 2129 edges · 185 communities (179 shown, 6 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `dfa85b88`
+- Built from commit: `d12c35a0`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -30,6 +30,8 @@
 - A case report is localized for its reader, not for the session
 - Resuming a workflow after the config changed
 - Tailwind CSS Utility Reference
+- CLAUDE.md — {{ORG_NAME}} Organization workspace
+- Output compression (caveman)
 - Brand Guidelines v1.0
 - Voice adapter (`scripts/voice/`)
 - Design
@@ -203,12 +205,12 @@
 2. `UI Styling Skill` - 17 edges
 3. `Component library` - 16 edges
 4. `Design` - 15 edges
-5. `Tailwind CSS Utility Reference` - 14 edges
-6. `Business Requirements Document: App Launcher Logo` - 14 edges
-7. `Tailwind CSS Customization` - 14 edges
+5. `Tailwind CSS Customization` - 14 edges
+6. `Tailwind CSS Utility Reference` - 14 edges
+7. `Business Requirements Document: App Launcher Logo` - 14 edges
 8. `Interactive Debugger` - 13 edges
-9. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
-10. `Tailwind CSS Responsive Design` - 13 edges
+9. `Tailwind CSS Responsive Design` - 13 edges
+10. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
 - None detected - all connections are within the same source files.
@@ -216,7 +218,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (183 total, 6 thin omitted)
+## Communities (185 total, 6 thin omitted)
 
 ### Community 0 - "FeeedMe visual system — mood: **cozy**"
 Cohesion: 0.33
@@ -277,6 +279,14 @@ Nodes (5): History, Never hand-edit the persisted script, Resuming a workflow af
 ### Community 14 - "Tailwind CSS Utility Reference"
 Cohesion: 0.05
 Nodes (43): Arbitrary Values, Aspect Ratio, Background Colors, Border Color, Border Radius, Border Style, Border Width, Borders (+35 more)
+
+### Community 15 - "CLAUDE.md — {{ORG_NAME}} Organization workspace"
+Cohesion: 0.22
+Nodes (8): CLAUDE.md — {{ORG_NAME}} Organization workspace, Configuration (read these first), DO NOT, Language, compression and code, Notifications, Product, Provider adapters, Speaking and showing
+
+### Community 16 - "Output compression (caveman)"
+Cohesion: 0.40
+Nodes (4): How it reaches each spawn path, In Cursor the skill is `/caveman`, Output compression (caveman), The boundary: compression is an OUTPUT rule
 
 ### Community 19 - "Brand Guidelines v1.0"
 Cohesion: 0.05
@@ -507,8 +517,8 @@ Cohesion: 0.15
 Nodes (12): Categories, Dark Mode, File Organization, Layer 1: Primitive Tokens, Layer 2: Semantic Tokens, Layer 3: Component Tokens, Layer Overview, Migration from Flat Tokens (+4 more)
 
 ### Community 171 - "Deferred scope does not stop a run"
-Cohesion: 0.05
-Nodes (34): Consequences, Deferred scope does not stop a run, No ticket is filed, The cost we accepted, and what pays for it, The floor, What that cost, Why not simply proceed on `partial`, Why not stop at the PR, short of the gate (+26 more)
+Cohesion: 0.06
+Nodes (30): Consequences, Deferred scope does not stop a run, No ticket is filed, The cost we accepted, and what pays for it, The floor, What that cost, Why not simply proceed on `partial`, Why not stop at the PR, short of the gate (+22 more)
 
 ### Community 178 - "Primitive Tokens"
 Cohesion: 0.17
@@ -923,17 +933,17 @@ Cohesion: 0.50
 Nodes (3): Adding a self-hosted provider later, Backend: mermaid.ink / mermaid.live, Diagram adapter
 
 ## Knowledge Gaps
-- **1673 isolated node(s):** `Why this skill exists (read first)`, `0. Design config — read it FIRST (gates everything below)`, `0a. Preflight — confirm Figma is connected`, `0b. Preflight — confirm image generation is available`, `1. INTAKE (headless workflow)` (+1668 more)
+- **1680 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration`, ``/handoff` discipline`, `Keep the technical group parallel & idle-free` (+1675 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `AI Workspace` connect `AI Workspace` to `CONTEXT.md`?**
+- **Why does `Cursor gets a generated mirror of the Claude config, built from symlinks` connect `Cursor gets a generated mirror of the Claude config, built from symlinks` to `CONTEXT.md`?**
   _High betweenness centrality (0.001) - this node is a cross-community bridge._
-- **What connects `Why this skill exists (read first)`, `0. Design config — read it FIRST (gates everything below)`, `0a. Preflight — confirm Figma is connected` to the rest of the system?**
-  _1673 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration` to the rest of the system?**
+  _1680 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Business Requirements Document: App Launcher Logo` be split into smaller, more focused modules?**
   _Cohesion score 0.06666666666666667 - nodes in this community are weakly interconnected._
 - **Should `Business Requirements Document: Splash Screen` be split into smaller, more focused modules?**
