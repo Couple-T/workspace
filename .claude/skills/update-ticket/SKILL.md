@@ -1,6 +1,11 @@
 ---
 name: update-ticket
-description: Write to a ticket in the issue tracker — move its Status, set properties (Priority/Effort/Title/Description), create a ticket when missing, post a comment (inline text or a Markdown file like agent_logs/<KEY>-testcases.md), and attach a file so it shows INSIDE the comment (a screenshot, a rendered report). Wraps scripts/tracker/upsert-ticket-details.sh + add-ticket-comment.sh + add-ticket-attachment.sh. Use whenever an agent or person needs to change a ticket, publish a note/plan/verdict onto a ticket, or put visual evidence on one.
+description: >-
+  Write to a ticket: move Status, set Priority/Effort/Title/Description, create one when missing,
+  post a comment (inline or from a Markdown file), attach a file so it renders INSIDE the comment
+  - a screenshot, a rendered report. Use whenever a ticket needs changing, or a
+  note/plan/verdict/evidence published onto it. A comment a LATER run must UPDATE rather than
+  repeat (a per-repo test report) has its own upsert row.
 argument-hint: "[ticket] [what to change — e.g. status Testing, comment plan.md]"
 arguments: [ticket, request]
 model: haiku
@@ -26,6 +31,7 @@ and id format are defined in `docs/agents/issue-tracker.md` / `workspace.config.
 |---|---|
 | Move Status / set a property / rename / create | `scripts/tracker/upsert-ticket-details.sh` |
 | Post a comment (note, plan, verdict) | `scripts/tracker/add-ticket-comment.sh` |
+| Post a comment a LATER run must **update, not repeat** (a per-repo test report) | `scripts/tracker/upsert-ticket-comment.sh … --marker '[<kind> · <context>]'` — one durable comment per marker; read the current one with `find-ticket-comment.sh` |
 | Show a file (screenshot, report) **in** a comment | `scripts/tracker/add-ticket-attachment.sh` → §4 |
 
 Do **both** when the task calls for it (e.g. comment the plan *and* move Status →

@@ -5,7 +5,7 @@
 #
 # WHY THIS EXISTS: the workspace has many moving parts and every one of them already has an
 # owner command — `aiworks sync` clones and onboards, `aiworks setup` links the adapters,
-# `aiworks cursor` regenerates the Cursor mirror, `aiworks update` moves the tooling forward.
+# `aiworks harnesses sync` regenerates selected projections, `aiworks update` moves tooling forward.
 # What was missing is the surface that tells you WHICH of them you need to run. Before this,
 # a half-finished workspace announced itself as a confusing failure three steps later: an
 # adapter dying on a missing token, an agent grepping a repo that was never cloned, a hook
@@ -53,6 +53,8 @@
 #   · skip   deliberately off (`<feature>.enabled: false`) or --deep-only on a default run.
 #            A switched-off feature is a decision, not a defect, and never scores against you.
 # exit 0 when nothing FAILED, 1 when something did. `--strict` promotes every warn to a fail.
+# After a --fix that ran, both come from the RE-CHECK: the first pass describes a workspace that
+# no longer exists, so `aiworks fix && <next step>` would otherwise trip over an old failure.
 #
 # ⚠️ THE .env RULE. This script never reads a secret. The ONLY thing it does to an adapter's
 # .env is `grep -q '^VAR=.\+'` — quiet, so the exit code is the whole answer and not one byte
@@ -69,9 +71,15 @@
 #       --deep          also run groups 9-12: daemons, ports, live credentials, disk — and the
 #                       Kubernetes half of `triage`.
 #       --json          machine-readable report on stdout. Never contains a secret value.
+#       --findings      one TAB-separated `<status> <group> <label>` record per OPEN finding and
+#                       nothing else. This is the representation --fix's own re-check compares
+#                       against, so both sides of that comparison come from one code path.
 #       --strict        treat every warn as a fail (exit 1 on a warn-only run).
 #       --fix           print the owner command for every fixable finding, then ask to run
-#                       them. Carries no repair logic of its own.
+#                       them. Carries no repair logic of its own. Afterwards it RE-RUNS the same
+#                       checks and reports which findings actually cleared — a command exiting 0
+#                       is not evidence that the thing it was meant to fix is gone — and the exit
+#                       code comes from that second pass. `aiworks fix` is `--deep --fix -y`.
 #   -y, --yes           answer yes to --fix. REQUIRED when stdin is not a TTY.
 #   -n, --dry-run       with --fix: print the plan and stop. Alone: same as a plain run.
 #   -v, --verbose       show every passing check, not just the group's summary line.
@@ -81,6 +89,9 @@ set -uo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
+# Absolute, resolved before the `cd "$ROOT"` below, because --fix re-invokes this script and
+# "$0" is relative to the ORIGINAL working directory.
+SELF="$DIR/$(basename "${BASH_SOURCE[0]}")"
 
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 
@@ -88,11 +99,12 @@ ALL_GROUPS="workspace repos adapters per-repo agent-cfg tooling voice headroom t
 DEEP_GROUPS="mcp services credentials disk"
 
 # ── args ──────────────────────────────────────────────────────────────────────────
-DEEP=0 JSON=0 STRICT=0 FIX=0 YES=0 DRY=0 VERBOSE=0 ONLY="" SKIP="" REPOS_ARG=""
+DEEP=0 JSON=0 STRICT=0 FIX=0 YES=0 DRY=0 VERBOSE=0 ONLY="" SKIP="" REPOS_ARG="" FINDINGS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --deep)        DEEP=1 ;;
     --json)        JSON=1 ;;
+    --findings)    FINDINGS=1 ;;
     --strict)      STRICT=1 ;;
     --fix)         FIX=1 ;;
     -y|--yes)      YES=1 ;;
@@ -356,11 +368,11 @@ check_workspace() {
 
   # This repo's doc graph (graphify — prose only, docs/adr/0013). The workspace's own half
   # of the index: codegraph covers the product repos' code and indexes neither shell nor
-  # markdown, which is most of what lives here. graph.json is committed, so a fresh clone
-  # should already have one — an absent graph means either the commit is missing or someone
-  # ran `graphify uninstall --purge`. Never offer a rebuild as a cheap fix: the semantic
-  # pass is the most expensive step in the toolchain and it is serialised, so the owner
-  # command is deliberately the explicit one.
+  # markdown, which is most of what lives here. The graph is NOT committed — it is derived,
+  # per-workspace state (see .gitignore) — so a fresh clone legitimately has none and this
+  # warns until the first build. Never offer a rebuild as a cheap fix: the semantic pass is
+  # the most expensive step in the toolchain and it is serialised, so the owner command is
+  # deliberately the explicit one.
   if [[ ! -f "$ROOT/.graphifyignore" ]]; then
     warn $g "no .graphifyignore" "the doc graph would index shell, config and generated mirrors" \
          "\$EDITOR .graphifyignore"
@@ -371,7 +383,7 @@ check_workspace() {
     local dn; dn="$(grep -o '"norm_label"' "$ROOT/graphify-out/graph.json" 2>/dev/null | grep -c . || true)"
     pass $g "doc graph" "${dn:-0} nodes"
   else
-    warn $g "no doc graph" "prose queries answer from nothing — codegraph indexes no shell and no markdown" \
+    warn $g "no doc graph" "not built yet — prose queries answer from nothing, and codegraph indexes no shell and no markdown" \
          "graphify extract . --backend claude-cli" slow
   fi
 }
@@ -392,7 +404,7 @@ check_repos() {
     local d=""
     [[ -n "$only_mani" ]] && d="in mani.d only: $only_mani"
     [[ -n "$only_cfg"  ]] && d="${d:+$d; }in config only: $only_cfg"
-    fail $g "mani.d and products[] disagree" "$d" "aiworks sync"
+    fail $g "mani.d and products[] disagree" "$d" "./aiworks sync -y"
   else
     pass $g "mani.d ↔ products[] agree" "$(mani_repos | grep -c .) repos"
   fi
@@ -425,7 +437,7 @@ check_repos() {
   done
   shopt -u nullglob
   if [[ -n "$stale_prod" ]]; then
-    fail $g "stale mani.d product file(s)" "$stale_prod — not in products[].id; duplicate keys make mani drop projects"          "aiworks sync"
+    fail $g "stale mani.d product file(s)" "$stale_prod — not in products[].id; duplicate keys make mani drop projects"          "./aiworks sync -y"
   else
     pass $g "mani.d product files match products[].id"
   fi
@@ -442,7 +454,7 @@ check_repos() {
     }
   ' "$ROOT"/mani.d/*.yaml 2>/dev/null || true)"
   if [[ -n "$dups" ]]; then
-    fail $g "duplicate mani project key(s)" "$(printf '%s' "$dups" | tr '\n' '; ')"          "aiworks sync"
+    fail $g "duplicate mani project key(s)" "$(printf '%s' "$dups" | tr '\n' '; ')"          "./aiworks sync -y"
   else
     pass $g "no duplicate mani project keys"
   fi
@@ -455,14 +467,14 @@ check_repos() {
       [[ $VERBOSE == 1 ]] && pass $g "$r cloned" "HEAD $(git -C "$ROOT/$r" rev-parse --short HEAD 2>/dev/null)"
     elif [[ -d "$ROOT/$r" ]]; then
       fail $g "$r has no valid HEAD" "the directory exists but the clone did not finish" \
-           "rm -rf $r && aiworks sync $r" slow
+           "rm -rf $r && ./aiworks sync -y $r" slow
     else
       missing="${missing:+$missing }$r"
     fi
   done
   if [[ -n "$missing" ]]; then
     fail $g "$(printf '%s' "$missing" | wc -w | tr -d ' ') repo(s) not cloned" "$missing" \
-         "aiworks sync${NARROWED:+ }$( [[ $NARROWED == 1 ]] && printf '%s' "$missing" | tr ' ' ',')" slow
+         "./aiworks sync -y${NARROWED:+ }$( [[ $NARROWED == 1 ]] && printf '%s' "$missing" | tr ' ' ',')" slow
   fi
   [[ $VERBOSE == 0 ]] && pass $g "clones" "$ready/$total ready"
 
@@ -475,7 +487,7 @@ check_repos() {
   done
   if [[ -n "$unignored" ]]; then
     warn $g "clone(s) not git-ignored" "$unignored — they will show as untracked in this repo" \
-         "aiworks config"
+         "./aiworks config"
   else
     pass $g "clones are git-ignored"
   fi
@@ -501,7 +513,7 @@ check_repos() {
   if [[ -n "$orphans" ]]; then
     warn $g "clone(s) no mani.d entry declares" \
          "$orphans${orphans_open:+ — and $orphans_open is not git-ignored, so \`git add -A\` stages it as a gitlink}" \
-         "see: aiworks add <url> to declare it, or remove the directory"
+         "see: ./aiworks add <url> to declare it, or remove the directory"
   else
     pass $g "no undeclared clones"
   fi
@@ -559,7 +571,7 @@ check_adapters() {
 
   for a in vcs tracker notify observability; do
     if [[ ! -d "$ROOT/scripts/$a" ]]; then
-      fail $g "scripts/$a missing" "the $a adapter is not installed" "aiworks setup"
+      fail $g "scripts/$a missing" "the $a adapter is not installed" "./aiworks setup"
       continue
     fi
     case "$a" in
@@ -600,7 +612,7 @@ check_adapters() {
         pass $g "$a ($provider) CLI" "$cli"
       else
         fail $g "$a ($provider): $cli not installed" "every $a call dies at vcs_require_config" \
-             "aiworks update --only brew" slow
+             "./aiworks update --only brew" slow
       fi
     fi
 
@@ -678,8 +690,17 @@ check_adapters() {
 # ══════════════════════════════════════════════════════════════════════════════════
 check_per_repo() {
   local g=per-repo r n
-  local no_dev="" noexec_dev="" no_claude="" over="" no_cg="" no_link="" no_lock="" bad_rules=""
+  local no_dev="" noexec_dev="" no_claude="" over="" no_cg="" no_link="" no_lock="" bad_rules="" no_fm=""
   local checked=0
+  # ADR-0025 — the base a run cuts a feature branch from is a CONSTANT in the generated workflow
+  # mirror, and nothing used to validate it. Measured: suite repos projected onto a base that was
+  # 99 and 157 commits behind their real trunk, one of them a 16-file scaffold last touched a year
+  # earlier, so a ticket's branch was cut off a dead branch and a whole round went into finding out.
+  # This is the check that would have said so before the run: what the mirror will use, against what
+  # the remote itself says its default is.
+  local base_drift="" base_gone="" base_checked=0
+  local cfg_feature_base
+  cfg_feature_base="$(cfg branch_model.feature_base)"
 
   for r in $SELECTED; do
     repo_ready "$r" || continue          # group 2 already owns "not cloned"
@@ -700,6 +721,36 @@ check_per_repo() {
     [[ -d "$d/.codegraph" ]] || no_cg="${no_cg:+$no_cg }$r"
     [[ -f "$d/skills-lock.json" ]] || no_lock="${no_lock:+$no_lock }$r"
 
+    # BASE DRIFT (ADR-0025). Read the base the workflow mirror will actually use — the generated
+    # REPOS block is the authority, so parse THAT rather than re-deriving the projection here and
+    # risking a second opinion. Then ask the clone what its remote calls its default.
+    local proj_base remote_head
+    # The generated line is exactly `    base: { feature: 'x', fix: 'y' },` so the first quoted
+    # token after it is the feature base. Splitting on the quote beats a regex here — and the
+    # `index(...)==3` guard stops at the NEXT repo key, so a repo with no base line yields nothing
+    # rather than the following repo's answer.
+    proj_base="$(awk -v want="  '$r':" '
+        index($0, want)==1 { inr=1; next }
+        inr && /base:[ \t]*\{/ { if (split($0, q, "\047") >= 2) printf "%s", q[2]; exit }
+        inr && index($0, "\047")==3 { exit }
+      ' "$ROOT/.claude/workflows/src/dev-cycle.js" 2>/dev/null)"
+    if [[ -n "$proj_base" ]]; then
+      base_checked=$((base_checked+1))
+      if ! git -C "$d" show-ref --verify --quiet "refs/remotes/origin/$proj_base" 2>/dev/null; then
+        # Not a style question: the open-PR precondition hard-stops on a base that is not on the
+        # remote, so this repo cannot finish a ticket at all until it is corrected.
+        base_gone="${base_gone:+$base_gone }$r(→$proj_base)"
+      else
+        remote_head="$(git -C "$d" symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)"
+        remote_head="${remote_head#refs/remotes/origin/}"
+        if [[ -n "$remote_head" && "$remote_head" != "$proj_base" ]]; then
+          local behind
+          behind="$(git -C "$d" rev-list --count "origin/$proj_base..origin/$remote_head" 2>/dev/null || printf '?')"
+          base_drift="${base_drift:+$base_drift }$r(uses $proj_base, origin/HEAD→$remote_head, $behind commits ahead)"
+        fi
+      fi
+    fi
+
     # `aiworks add` links exactly two adapters into a repo (scripts/aiworks-add.sh: `for a in
     # tracker vcs`). notify and observability are called from the workspace root only — do not
     # demand them here, or every healthy repo reports two failures it cannot fix.
@@ -711,11 +762,26 @@ check_per_repo() {
     # `.claude/rules/*.md` scope with `paths:`; `globs:` is Cursor's key for the same idea.
     # A file carrying BOTH is untidy but works — Claude reads paths:, Cursor reads globs:. The
     # broken shape is `globs:` ALONE: the file parses, the rule loads, and it matches nothing.
+    #
+    # NO frontmatter at all is a third shape, and it used to be invisible here: the only thing
+    # that noticed was the Codex generator, which reported it as one anonymous line of its own
+    # drift ("codex projection has drifted") whose owner command can never close it — a rules
+    # file's scope is a judgement call. Named here instead, with the files, so the person who
+    # has to make that call can see which ones.
     if [[ -d "$d/.claude/rules" ]]; then
       local f
+      while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        # tr -d '\r' because the canonical reader is parse_frontmatter() in
+        # scripts/codex/common.py, and it compares lines[0].STRIP() — so a CRLF file it accepts
+        # would otherwise be reported here as having no frontmatter at all, forever, with an
+        # instruction to add the block it already has.
+        [[ "$(head -n 1 "$f" | tr -d '\r')" == "---" ]] || no_fm="${no_fm:+$no_fm }${f#$ROOT/}"
+      done < <(find "$d/.claude/rules" -name '*.md' -type f 2>/dev/null | sort)
       for f in "$d"/.claude/rules/*.md; do
         [[ -f "$f" ]] || continue
         if awk '
+             { sub(/\r$/, "") }
              NR==1 && $0!="---" { exit }
              NR>1  && $0=="---" { exit }
              /^globs:/ { g=1 }
@@ -733,25 +799,45 @@ check_per_repo() {
     return
   fi
 
-  [[ -n "$no_dev"     ]] && fail $g "scripts/dev.sh not scaffolded" "$no_dev" "aiworks sync" slow
+  [[ -n "$no_dev"     ]] && fail $g "scripts/dev.sh not scaffolded" "$no_dev" "./aiworks sync -y" slow
   [[ -n "$noexec_dev" ]] && fail $g "scripts/dev.sh not executable" \
                                  "$noexec_dev — every dev.sh call is a permission error" \
                                  "chmod +x $noexec_dev"
   [[ -z "$no_dev" && -z "$noexec_dev" ]] && pass $g "scripts/dev.sh" "$checked repos"
-  [[ -n "$no_claude" ]] && warn $g "no CLAUDE.md" "$no_claude — agents get no repo instructions" "aiworks sync" slow
+  [[ -n "$no_claude" ]] && warn $g "no CLAUDE.md" "$no_claude — agents get no repo instructions" "./aiworks sync -y" slow
   [[ -n "$over"      ]] && warn $g "CLAUDE.md over the 100-line budget" "$over" "\$EDITOR <repo>/CLAUDE.md"
   [[ -z "$no_claude" && -z "$over" ]] && pass $g "per-repo CLAUDE.md budget" "$checked repos ≤100 lines"
-  [[ -n "$no_link"   ]] && fail $g "adapter link(s) missing in repo" "$no_link" "aiworks setup" \
+  [[ -n "$no_link"   ]] && fail $g "adapter link(s) missing in repo" "$no_link" "./aiworks setup" \
                         || pass $g "adapter symlinks" "tracker + vcs in $checked repos"
   [[ -n "$no_cg"     ]] && warn $g "no .codegraph index" "$no_cg — codegraph queries answer from nothing" \
-                                "aiworks sync" slow \
+                                "./aiworks sync -y" slow \
                         || pass $g "codegraph index" "$checked repos"
-  [[ -n "$no_lock"   ]] && warn $g "no skills-lock.json" "$no_lock" "aiworks sync" slow \
+  [[ -n "$no_lock"   ]] && warn $g "no skills-lock.json" "$no_lock" "./aiworks sync -y" slow \
                         || pass $g "skills-lock.json" "$checked repos"
+  [[ -n "$no_fm" ]] && warn $g "rules file with no YAML frontmatter" \
+                            "$no_fm — no frontmatter means no scope, so the rule never loads for a Harness that reads one. Add a frontmatter block declaring paths: (and globs: for Cursor); an unscoped rule needs at least a description:." \
+                            "\$EDITOR <the files above>"
   [[ -n "$bad_rules" ]] && warn $g "rules file scoped with 'globs:' and no 'paths:'" \
                                 "$bad_rules — the rule loads and matches nothing" \
-                                "\$EDITOR <the files above>" \
-                        || pass $g "rules frontmatter" "$checked repos"
+                                "\$EDITOR <the files above>"
+  [[ -z "$bad_rules" && -z "$no_fm" ]] && pass $g "rules frontmatter" "$checked repos"
+  # ADR-0025. A base that is not on the remote FAILS: the run cannot open a PR/MR against it, so
+  # the ticket stops there. A base that merely disagrees with origin/HEAD WARNS: it is legitimate
+  # for a repo to run its own branch policy — it just has to say so in the config rather than
+  # inheriting a workspace default that does not fit it.
+  # BOTH base findings are answered by a person, not by a command. `./aiworks config` only
+  # re-projects the mirror FROM workspace.config.yaml — with the config unchanged it reprints the
+  # same disagreement and exits 0, which is what made --fix report these as fixed on every run
+  # forever. The decision (declare the repo's own feature_base:, or move the workspace default)
+  # is the fix; re-projecting is its follow-up, so it is named in the detail and the registered
+  # command is the editor — the form manual_fix() routes to "needs you".
+  [[ -n "$base_gone" ]] && fail $g "feature base does not exist on the remote" \
+                                "$base_gone — open-PR hard-stops on this, so no ticket can finish in that repo. Set branch_model.feature_base, or the repo's own feature_base:, to a branch that exists, then run ./aiworks config to re-project." \
+                                "\$EDITOR workspace.config.yaml" \
+                        || { [[ $base_checked -gt 0 && -z "$base_drift" ]] && pass $g "feature base vs origin/HEAD" "$base_checked repos agree${cfg_feature_base:+ (branch_model.feature_base: $cfg_feature_base)}"; }
+  [[ -n "$base_drift" ]] && warn $g "feature base disagrees with origin/HEAD" \
+                                "$base_drift — a ticket's branch is cut from the base on the left. If that is deliberate, declare it as this repo's own feature_base: under products[].repos[]; if not, fix branch_model.feature_base. Either way run ./aiworks config afterwards so the mirror agrees with the config." \
+                                "\$EDITOR workspace.config.yaml"
   return 0
 }
 
@@ -761,9 +847,34 @@ check_per_repo() {
 check_agent_cfg() {
   local g=agent-cfg
   local settings="$ROOT/.claude/settings.json"
+  local shared_harnesses="" active_harnesses="" active_error="" active_rc=0
+  if [[ -x "$DIR/aiworks-harnesses.sh" ]]; then
+    shared_harnesses=" $($DIR/aiworks-harnesses.sh list 2>/dev/null | tr '\n' ' ') "
+    [[ -n "${shared_harnesses// /}" ]] && pass $g "Supported Harness set" "${shared_harnesses# }"
+    active_error="$("$DIR/aiworks-harnesses.sh" list --active 2>&1)"; active_rc=$?
+    if [[ $active_rc -eq 0 ]]; then
+      active_harnesses=" $(printf '%s\n' "$active_error" | tr '\n' ' ') "
+      pass $g "Active Harness set" "${active_harnesses# }"
+      # The ACTIVE set — workspace.config.local.yaml over the shared file — is what `aiworks sync`
+      # projects and what the projection checks below key on. A Harness the shared file names
+      # but this machine's local file omits is therefore the one thing worth saying: sync will
+      # not refresh its projection here, and will not remove it either (only `aiworks remove
+      # --harnesses` does). Advice, not a defect, printed at the tier that says so.
+      local sharedonly="" hid
+      for hid in $shared_harnesses; do
+        [[ "$active_harnesses" == *" $hid "* ]] || sharedonly="${sharedonly:+$sharedonly }$hid"
+      done
+      [[ -n "$sharedonly" ]] && skip $g "shared-only Harness" \
+        "$sharedonly — in the shared set, not this machine's active set: aiworks sync leaves its projection untouched"
+    else
+      # Reachable now only for a set that is broken on its own terms: an id no registry entry
+      # claims, or an empty list. Both are typos in a file a person owns, so both are theirs.
+      fail $g "active Harness set is invalid" "$active_error" "\$EDITOR workspace.config.local.yaml"
+    fi
+  fi
 
   if [[ ! -f "$settings" ]]; then
-    fail $g ".claude/settings.json missing" "no hooks, no permissions, no plugins" "aiworks sync" slow
+    fail $g ".claude/settings.json missing" "no hooks, no permissions, no plugins" "./aiworks sync -y" slow
     return
   fi
 
@@ -781,120 +892,157 @@ check_agent_cfg() {
 $(grep -oE '\.claude/hooks/[A-Za-z0-9._/-]+\.sh' "$settings" 2>/dev/null | sort -u)
 EOF
 
-  [[ -n "$missing" ]] && fail $g "hook(s) referenced but not present" "$missing" "aiworks sync" slow
+  [[ -n "$missing" ]] && fail $g "hook(s) referenced but not present" "$missing" "./aiworks sync -y" slow
   [[ -n "$noexec"  ]] && fail $g "hook(s) not executable" "$noexec — the harness silently skips them" \
                               "chmod +x $noexec"
   [[ -z "$missing" && -z "$noexec" ]] && pass $g "hooks" "$n wired, present, executable"
 
   [[ -d "$ROOT/.claude/skills" ]] && pass $g ".claude/skills" \
-    || warn $g "no .claude/skills" "skill packs are not installed" "aiworks sync" slow
+    || warn $g "no .claude/skills" "skill packs are not installed" "./aiworks sync -y" slow
 
   # The Cursor face of this workspace is GENERATED, and `aiworks cursor --check` is its own
   # drift detector — one exit code, one definition of "in sync", nothing reimplemented here.
   # It walks every repo though, which costs ~8s: four times this whole command's budget. So
   # the default run answers the cheap half (is the projection even THERE?) and the real
   # comparison waits for --deep.
-  local nomirror="" r
-  for r in $SELECTED; do
-    repo_ready "$r" || continue
-    [[ -f "$ROOT/$r/AGENTS.md" && -d "$ROOT/$r/.cursor" ]] || nomirror="${nomirror:+$nomirror }$r"
-  done
-  [[ -n "$nomirror" ]] && warn $g "cursor mirror not projected" "$nomirror" "aiworks cursor" \
-                       || pass $g "cursor mirror present" "AGENTS.md + .cursor/ per repo"
+  if [[ "$active_harnesses" == *" cursor "* ]]; then
+    local nomirror="" r
+    for r in $SELECTED; do
+      repo_ready "$r" || continue
+      [[ -f "$ROOT/$r/AGENTS.md" && -d "$ROOT/$r/.cursor" ]] || nomirror="${nomirror:+$nomirror }$r"
+    done
+    [[ -n "$nomirror" ]] && warn $g "cursor mirror not projected" "$nomirror" "./aiworks cursor" \
+                         || pass $g "cursor mirror present" "AGENTS.md + .cursor/ per repo"
 
-  if [[ $DEEP == 1 ]]; then
-    if [[ -x "$DIR/aiworks-cursor.sh" ]]; then
-      if "$DIR/aiworks-cursor.sh" --check >/dev/null 2>&1; then
-        pass $g "cursor mirror in sync"
+    if [[ $DEEP == 1 ]]; then
+      if [[ -x "$DIR/aiworks-cursor.sh" ]]; then
+        if "$DIR/aiworks-cursor.sh" --check >/dev/null 2>&1; then
+          pass $g "cursor mirror in sync"
+        else
+          warn $g "cursor mirror has drifted" "the .cursor/ projection no longer matches the Claude side" \
+               "./aiworks cursor"
+        fi
       else
-        warn $g "cursor mirror has drifted" "the .cursor/ projection no longer matches the Claude side" \
-             "aiworks cursor"
+        skip $g "cursor drift" "aiworks-cursor.sh not present"
       fi
     else
-      skip $g "cursor drift" "aiworks-cursor.sh not present"
+      skip $g "cursor drift" "--deep (aiworks cursor --check costs ~8s)"
     fi
   else
-    skip $g "cursor drift" "--deep (aiworks cursor --check costs ~8s)"
+    skip $g "cursor projection" "Cursor is not in the active Harness set"
   fi
 
-  # PLUGIN SCOPE. `.superset/lib.sh` installs every declared plugin at USER scope on purpose
-  # (its own comment: one install covers the root AND all 22 clones; project scope would mean 22
-  # installs that drift apart). A project-scope entry beside it is not a second plugin — it is a
-  # duplicate registration of the same one, pinned to whatever marketplace commit was cached the
-  # day it appeared, and `claude plugin update` only ever moves the USER entry. So it silently
-  # rots: measured 2026-08-07, this workspace carried one 18 days behind the user-scope install.
+  # Codex is a generated Harness projection with its own strict drift check. Cheap presence is
+  # checked on every run; full source-to-projection comparison waits for --deep like Cursor.
+  if [[ "$active_harnesses" == *" codex "* ]]; then
+    if [[ -f "$ROOT/.codex/config.toml" && -f "$ROOT/.codex/hooks.json" \
+          && -L "$ROOT/.agents/skills" && -d "$ROOT/.codex/agents" ]]; then
+      pass $g "codex projection present" "config + hooks + agents + canonical skill link"
+    else
+      fail $g "codex projection incomplete" "one or more generated Codex surfaces are missing" "./aiworks codex"
+    fi
+    if [[ $DEEP == 1 ]]; then
+      # Exit 2 means the generator found drift AND cannot close it: a real path where the
+      # canonical link belongs, a generated file somebody edited, a rules file whose scope only
+      # its author can decide. Registering `./aiworks codex` as the fix for that is the mistake
+      # this whole group of checks was cleaned up to stop making — the command runs, refuses,
+      # exits nonzero, and the finding is still there on the next run, forever.
+      local cxout cxrc
+      cxout="$("$DIR/aiworks-codex.sh" --check 2>&1)"; cxrc=$?
+      if [[ $cxrc == 0 ]]; then
+        pass $g "codex projection in sync"
+      elif [[ $cxrc == 2 ]]; then
+        warn $g "codex projection has drift only a person can resolve" \
+             "$(printf '%s\n' "$cxout" | sed -n 's/^  needs a person: //p' | sort -u | tr '\n' ' ')" \
+             "\$EDITOR <the paths above>"
+      else
+        warn $g "codex projection has drifted" "generated .codex no longer matches .claude" "./aiworks codex"
+      fi
+    else
+      skip $g "codex drift" "--deep (aiworks codex --check)"
+    fi
+  else
+    skip $g "codex projection" "Codex is not in the active Harness set"
+  fi
+
+  # PLUGIN SCOPE. `.superset/lib.sh` installs every declared plugin at PROJECT scope: a workspace
+  # declares its dependencies in a committed settings.json, so the install that satisfies the
+  # declaration belongs to the same project rather than to the machine of whoever cloned it
+  # (docs/adr/0035). So the finding here is a project that DECLARES a plugin and does not carry
+  # it — the state `aiworks sync` leaves, since sync converges enabledPlugins everywhere and
+  # never installs. Nothing looks broken while it is open: the skills still resolve, because
+  # `aiworks cursor` vendors and links them independently of the plugin. What is silently absent
+  # is the plugin's HOOKS — which for caveman and ponytail is the entire point, since that is how
+  # the ruleset reaches a session and its subagents at all.
+  # A leftover USER-scope copy is not a finding on its own (it serves the person's other
+  # projects, and this one is served by its own copy) — only a DIVERGENCE is, because then one of
+  # the two lagged and the honest fix refreshes both rather than deleting either.
   # Cheap enough for the default run — two file reads, no network, no session.
-  local reg="$HOME/.claude/plugins/installed_plugins.json"
+  local reg="$HOME/.claude/plugins/installed_plugins.json" proj_stamps=""
   if ! command -v jq >/dev/null 2>&1; then
     skip $g "plugin scope" "jq unavailable — cannot read the plugin registry"
   elif [[ ! -f "$reg" ]]; then
     skip $g "plugin scope" "no plugin registry on this machine yet"
   else
-    # Report DIVERGENCE, not mere duplication. A project-scope entry appears on its own here
-    # (`claude plugin update` refreshed one into this root mid-run on 2026-08-07, and every
-    # dispatched worktree gets one), so warning on existence alone would be a warn no command can
-    # permanently clear — the same defect this file's `gh` currency warn had. While the two entries
-    # carry the SAME version nothing is broken; the failure is when they part, because only the
-    # user entry is ever updated. That is the caveman case: project 77 lines vs user 87.
     # Match the project entry on the RESOLVED path, never the recorded string. $ROOT is already
     # physical (`cd … && pwd`) while the registry stores whatever path the session was opened
     # with — on macOS a /var/… symlink of /private/var/… is the same directory spelled two ways,
     # and a string compare silently matches nothing. Caught by the selftest, not by inspection.
-    local pkey projscoped="" missing="" dup=0 uv pv ep ev rootp
+    local pkey diverged="" missing="" installed=0 uv pv ep ev el rootp
     rootp="$(cd "$ROOT" 2>/dev/null && pwd -P)" || rootp="$ROOT"
     while IFS= read -r pkey; do
       [[ -z "$pkey" ]] && continue
       uv="$(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "user") | .version' "$reg" 2>/dev/null | head -1)"
       pv=""
-      while IFS="$(printf '\t')" read -r ep ev; do
+      while IFS="$(printf '\t')" read -r ep ev el; do
         [[ -z "$ep" ]] && continue
-        [[ "$(cd "$ep" 2>/dev/null && pwd -P)" == "$rootp" ]] && { pv="$ev"; break; }
+        # The project entry's own lastUpdated is carried out for the RESTART check below, so the
+        # resolved-path walk happens once per plugin rather than twice.
+        [[ "$(cd "$ep" 2>/dev/null && pwd -P)" == "$rootp" ]] && {
+          pv="$ev"; proj_stamps="$proj_stamps$pkey	$el
+"; break; }
       done <<INNER
-$(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "project") | "\(.projectPath)\t\(.version)"' "$reg" 2>/dev/null)
+$(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "project") | "\(.projectPath)\t\(.version)\t\(.lastUpdated)"' "$reg" 2>/dev/null)
 INNER
-      [[ -n "$pv" ]] && dup=$((dup+1))
-      [[ -n "$uv" && -n "$pv" && "$uv" != "$pv" ]] && projscoped="${projscoped:+$projscoped }$pkey"
-      # DECLARED BUT NOT INSTALLED. `$uv` is already the user-scope version, so its absence IS
-      # the test — no second registry read, no second loop.
-      [[ -z "$uv" ]] && missing="${missing:+$missing }$pkey"
+      # DECLARED BUT NOT INSTALLED — for THIS project. `$pv` is the project-scope version, so its
+      # absence IS the test; a user-scope copy does not stand in for it, because nothing keeps a
+      # machine-wide install in step with what this workspace declares.
+      if [[ -z "$pv" ]]; then missing="${missing:+$missing }$pkey"
+      else installed=$((installed+1)); fi
+      [[ -n "$uv" && -n "$pv" && "$uv" != "$pv" ]] && diverged="${diverged:+$diverged }$pkey"
     done <<EOF
 $(jq -r '(.enabledPlugins // {}) | keys[]' "$settings" 2>/dev/null)
 EOF
     # "Declared" reads as done and is not. `aiworks sync` converges enabledPlugins +
-    # extraKnownMarketplaces into the root and every declared repo, and stops there — the install is
-    # `ensure_claude_plugins` in .superset/lib.sh, which ONLY setup.sh calls. Nothing else
-    # reports the gap, and nothing looks broken while it is open: the skills still resolve,
-    # because `aiworks cursor` vendors and links them independently of the plugin. What is
-    # silently absent is the plugin's HOOKS — which for caveman and ponytail is the entire
-    # point, since that is how the ruleset reaches a session and its subagents at all.
-    # Reported separately from the scope block below: a machine can be missing one plugin while
-    # another has drifted, and collapsing them would hide whichever lost the branch.
+    # extraKnownMarketplaces into the root and every declared repo, and stops there — the install
+    # is `ensure_claude_plugins` in .superset/lib.sh, which ONLY setup.sh calls.
+    # Reported separately from the divergence below: a project can be missing one plugin while
+    # another has parted from the machine's copy, and collapsing them would hide whichever lost
+    # the branch.
     if [[ -n "$missing" ]]; then
       # The owner is ensure_claude_plugins, not a hand-written pair of claude commands: it
       # already adds the marketplace from extraKnownMarketplaces BEFORE installing, and a bare
       # `claude plugin install` without that step fails with "not found in marketplace" —
       # measured 2026-08-13. Sourcing lib.sh keeps the write in the one script that owns it.
-      warn $g "declared plugin(s) not installed" \
-           "$missing — declaring is not installing: no SessionStart/SubagentStart hooks on this machine" \
+      warn $g "declared plugin(s) not installed in this project" \
+           "$missing — declaring is not installing: no SessionStart/SubagentStart hooks in this project" \
            "bash -c '. .superset/lib.sh && ensure_claude_plugins'" slow
     fi
 
-    if [[ -n "$projscoped" ]]; then
-      # The uninstall ALSO deletes the plugin's line from the committed settings.json, which is
-      # the very file lib.sh reads to install it user-scope everywhere — so the restore is part
-      # of the fix, not an afterthought.
-      # `claude plugin uninstall` takes ONE plugin, so a bare space-joined list would fail — loop.
-      # The trailing checkout is not optional: each uninstall deletes that plugin's line from the
-      # committed settings.json, the file lib.sh reads to install it user-scope on every machine.
-      warn $g "project-scope plugin copy has drifted from user scope" \
-           "$projscoped — the session may serve this older copy; only user scope gets updated" \
-           "for p in $projscoped; do claude plugin uninstall \"\$p\" -s project -y; done; git checkout -- .claude/settings.json"
-    elif [[ $dup -gt 0 ]]; then
-      pass $g "plugin scope" "$dup project-scope duplicate(s), all matching user scope"
+    if [[ -n "$diverged" ]]; then
+      # NOT an uninstall. Deleting the project copy also deletes the plugin's line from the
+      # committed settings.json — the very declaration the workspace installs from — and `setup`
+      # or `update` puts the copy straight back, which is how this warn used to survive its own
+      # fix. The honest close is to move BOTH copies forward: `aiworks update --only plugins`
+      # refreshes each project copy in its own project AND any leftover user-scope one, so the
+      # two stop parting. Owner command, not a suggestion, so --fix can actually clear it.
+      warn $g "project-scope plugin copy is out of step with the machine's user-scope copy" \
+           "$diverged — this project serves ITS copy; one of the two lagged, so refresh both" \
+           "./aiworks update --only plugins" slow
     elif [[ -z "$missing" ]]; then
-      # Only claim this when every declared plugin is actually there — a "user-scope only" pass
-      # beside a not-installed warn would read as the plugins being fine.
-      pass $g "plugin scope" "declared plugins are user-scope only"
+      # Only claim this when every declared plugin is actually there — a clean-scope pass beside
+      # a not-installed warn would read as the plugins being fine.
+      pass $g "plugin scope" "$installed declared plugin(s) installed at project scope"
     fi
   fi
 
@@ -902,29 +1050,107 @@ EOF
   # serving the old one, because its SessionStart hook already injected that version's ruleset.
   # Nothing else reports this, and it is what team "caveman is misbehaving" reports turn out to
   # be — the old ruleset is missing the rule against dropping not/never/no and the strict
-  # language-preservation rule. caveman is checked by name rather than generically because it is
-  # the one plugin every session and all 16 agent definitions depend on, and because it is the
-  # one that leaves a per-activation marker to compare against: its activate hook rewrites
-  # $CLAUDE_CONFIG_DIR/.caveman-active every time it runs, so that file's mtime IS the last
-  # activation. Update newer than activation ⇒ no session since has picked the new rules up.
-  local flag="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.caveman-active"
-  if ! command -v jq >/dev/null 2>&1 || [[ ! -f "$reg" ]]; then
-    : # already reported by the scope check above
-  elif [[ ! -f "$flag" ]]; then
-    skip $g "caveman restart" "no .caveman-active marker — caveman is off or has never activated"
-  else
-    local lu ue fm
-    lu="$(jq -r '(((.plugins // .)["caveman@caveman"]) // [])[] | select(.scope == "user") | .lastUpdated' "$reg" 2>/dev/null | head -1)"
-    fm="$(stat -f %m "$flag" 2>/dev/null)"
-    ue="$(date -j -u -f '%Y-%m-%dT%H:%M:%S' "${lu%.*}" +%s 2>/dev/null)"
-    if [[ -z "$lu" || -z "$fm" || -z "$ue" ]]; then
-      skip $g "caveman restart" "cannot compare install time with last activation"
-    elif [[ "$ue" -gt "$fm" ]]; then
-      warn $g "caveman plugin updated since the last activation" \
-           "every running session is still serving the OLD ruleset" \
-           "see: restart Claude Code (a plugin update cannot reach a live session)"
+  # language-preservation rule. caveman and ponytail are checked BY NAME rather than
+  # generically, for two reasons: they are the pair every session and all 16 agent definitions
+  # depend on — caveman governs what an agent says, ponytail what it builds — and they are the
+  # only declared plugins that leave a per-activation marker to compare against. Each activate
+  # hook rewrites $CLAUDE_CONFIG_DIR/.<name>-active every time it runs, so that file's mtime IS
+  # the last activation. Update newer than activation ⇒ no session since has picked the new
+  # rules up. Reported one row per plugin, never a shared verdict: one ruleset can be stale
+  # while the other is current, and collapsing them would hide whichever lost.
+  local ruleset pk mk nm flag lu ue fm
+  for ruleset in "caveman@caveman:.caveman-active:caveman" \
+                 "ponytail@ponytail:.ponytail-active:ponytail"; do
+    pk="${ruleset%%:*}"; mk="${ruleset#*:}"; mk="${mk%%:*}"; nm="${ruleset##*:}"
+    flag="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/$mk"
+    if ! command -v jq >/dev/null 2>&1 || [[ ! -f "$reg" ]]; then
+      : # already reported by the scope check above
+    elif [[ ! -f "$flag" ]]; then
+      skip $g "$nm restart" "no $mk marker — $nm is off or has never activated"
     else
-      pass $g "caveman ruleset current" "activated after the last plugin update"
+      # THIS project's copy is the one a session here serves, so its install time is the one to
+      # compare against — collected by the scope walk above, which already resolved the paths.
+      # A machine that still carries only a user-scope copy falls back to that one rather than
+      # skipping: the ruleset it serves can be stale in exactly the same way.
+      lu="$(printf '%s' "$proj_stamps" | awk -F'\t' -v k="$pk" '$1 == k { print $2; exit }')"
+      [[ -n "$lu" ]] || lu="$(jq -r --arg k "$pk" '(((.plugins // .)[$k]) // [])[] | select(.scope == "user") | .lastUpdated' "$reg" 2>/dev/null | head -1)"
+      fm="$(stat -f %m "$flag" 2>/dev/null)"
+      ue="$(date -j -u -f '%Y-%m-%dT%H:%M:%S' "${lu%.*}" +%s 2>/dev/null)"
+      if [[ -z "$lu" || -z "$fm" || -z "$ue" ]]; then
+        skip $g "$nm restart" "cannot compare install time with last activation"
+      elif [[ "$ue" -gt "$fm" ]]; then
+        warn $g "$nm plugin updated since the last activation" \
+             "every running session is still serving the OLD ruleset" \
+             "see: restart Claude Code (a plugin update cannot reach a live session)"
+      else
+        pass $g "$nm ruleset current" "activated after the last plugin update"
+      fi
+    fi
+  done
+
+  # A workflow script reaches the Workflow tool as a FILE, weighed before it is parsed:
+  # 524,288 bytes launches, one byte more comes back `exceeds 524288 bytes`, and no delivery
+  # parameter is exempt. dev-cycle.js walked from 120,083 bytes to 522,045 over 41 commits at
+  # a mean of +5,189 each, and nothing in this workspace measured it — so the wall was found
+  # by a run that would not start, in a clone that was already 5,804 bytes over. Nothing here
+  # can shrink a workflow for you, so there is no owner command: this exists so the number is
+  # seen while there is still room to act on it. See docs/agents/harnesses.md.
+  if command -v node >/dev/null 2>&1 && [[ -x "$DIR/workflows/build.mjs" ]]; then
+    local wstat wname wdetail
+    while IFS=$'\t' read -r wstat wname wdetail; do
+      case "$wstat" in
+        ok)    pass $g "workflow $wname within its byte budget" "$wdetail" ;;
+        # Claude Code registers every `.claude/workflows/*.js` as its own `/<name>`, so a script
+        # left at the top level is a second entry beside the skill that already owns the name —
+        # and the half that skips the strip above. Moving it is a person's call: the file may be
+        # somebody's private workflow rather than drift.
+        stray) fail $g "workflow $wname is auto-registered as a duplicate slash command" "$wdetail" \
+                    "see: git mv .claude/workflows/$wname.js .claude/workflows/src/$wname.js" ;;
+        *)     warn $g "workflow $wname over its byte budget" "$wdetail" ;;
+      esac
+    done < <(node "$DIR/workflows/build.mjs" --check 2>/dev/null |
+             awk '{ st=$1; nm=$2; $1=""; $2=""; sub(/^ +/,""); print st"\t"nm"\t"$0 }')
+  fi
+
+  # A workflow script is ALSO compiled under a determinism rule that lives in the Claude Code
+  # binary and nowhere in this repo: `Date.now()`, `new Date()` and `Math.random()` are refused
+  # before a line of the script runs, because they break resume. `scripts/workflows/run.mjs` — the
+  # runtime every selftest here exercises — bans nothing, so a script that breaks the rule passes
+  # the whole suite and then cannot START a run. Measured: a clock-minted id shipped exactly that
+  # way. build.mjs holds a copy of the list and the selftest pins it, but a copy can only ever
+  # agree with itself; this reads the INSTALLED runtime's own sentence and says when the two have
+  # drifted apart, which is the only warning available before a CLI update adds a rule nobody here
+  # has heard of. ~30ms even when the string is absent, so it runs on a default pass.
+  local cbin=""
+  cbin="$(command -v claude 2>/dev/null || true)"
+  [[ -n "$cbin" ]] && cbin="$(readlink -f "$cbin" 2>/dev/null || printf '%s' "$cbin")"
+  if [[ -z "$cbin" || ! -f "$cbin" ]]; then
+    skip $g "workflow determinism rule unverified" "claude is not on PATH — nothing to read the live rule from"
+  elif command -v node >/dev/null 2>&1 && [[ -f "$DIR/workflows/build.mjs" ]]; then
+    local sentence live unknown
+    sentence="$(LC_ALL=C grep -a -o -m1 -E 'workflow scripts must be deterministic: .{0,120} are unavailable' "$cbin" 2>/dev/null || true)"
+    live="${sentence#*deterministic: }"; live="${live% are unavailable}"
+    if [[ -z "$sentence" ]]; then
+      # Not a failure: an older or newer CLI may word it differently, or not carry it at all. But
+      # it does mean build.mjs's list is now asserted against nothing, and that is worth saying.
+      warn $g "cannot read the workflow determinism rule from Claude Code" \
+           "no rule sentence in $cbin — build.mjs's banned list is unverified against the runtime" \
+           "see: strings '$cbin' | grep -i 'workflow scripts'"
+    else
+      unknown="$(node -e '
+        const live = process.argv[1].split("/").map((s) => s.trim()).filter(Boolean)
+        import(process.argv[2]).then((m) => {
+          const known = new Set(m.BANNED_NAMES)
+          console.log(live.filter((x) => !known.has(x)).join(", "))
+        })
+      ' "$live" "$DIR/workflows/build.mjs" 2>/dev/null)"
+      if [[ -n "$unknown" ]]; then
+        warn $g "Claude Code bans a workflow construct build.mjs does not know" \
+             "runtime says: $live · missing here: $unknown" \
+             "see: add it to BANNED in scripts/workflows/build.mjs, with a case in scripts/workflows/selftest.mjs"
+      else
+        pass $g "workflow determinism list matches the installed Claude Code" "$live"
+      fi
     fi
   fi
 }
@@ -941,12 +1167,12 @@ EOF
 # on someone's behalf (node switches PATH, Docker Desktop is a GUI app).
 tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning "needs you"
   case "$1" in
-    jq|glab|gh|pnpm|dap|ngrok) printf 'aiworks setup' ;;
+    jq|glab|gh|pnpm|uv|dap|ngrok) printf './aiworks setup' ;;
     mani|k6|yq)                printf 'brew install %s' "$1" ;;
     git|curl|awk)              printf 'see: %s is part of the base system — install Xcode CLT or coreutils' "$1" ;;
     node)                      printf 'see: nvm install --lts --reinstall-packages-from=current (a node switch moves the global bin dir)' ;;
     docker)                    printf 'see: install Docker Desktop — https://docker.com/products/docker-desktop' ;;
-    claude)                    printf 'see: https://claude.com/claude-code — then re-run aiworks update --only claude' ;;
+    claude)                    printf 'see: https://claude.com/claude-code — then re-run ./aiworks update --only claude' ;;
     codegraph)                 printf 'see: %s is installed outside this workspace; reinstall it the way you first did' "$1" ;;
     graphify)                  printf 'uv tool install --python 3.12 "graphifyy[leiden,svg,sql]"' ;;
     *)                         printf 'see: install %s' "$1" ;;
@@ -955,7 +1181,7 @@ tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning 
 
 check_tooling() {
   local g=tooling b
-  local hard="git jq curl awk mani"
+  local hard="git jq curl awk mani uv"
   local soft="node pnpm docker claude codegraph graphify dap k6 yq"
 
   local miss=""
@@ -993,9 +1219,9 @@ check_tooling() {
   else
     local behind
     behind="$(brew outdated --quiet 2>/dev/null \
-              | grep -xE 'mani|glab|gh|jq|dap|k6|pnpm|ngrok' | tr '\n' ' ' | sed 's/ *$//')"
+              | grep -xE 'mani|glab|gh|jq|dap|k6|pnpm|uv|ngrok' | tr '\n' ' ' | sed 's/ *$//')"
     if [[ -n "$behind" ]]; then
-      warn $g "brew-owned tool(s) behind" "$behind" "aiworks update --only brew" slow
+      warn $g "brew-owned tool(s) behind" "$behind" "./aiworks update --only brew" slow
     else
       pass $g "brew-owned tools current" "rustup/gcloud/claude/codegraph self-update — not checked here"
     fi
@@ -1017,10 +1243,10 @@ check_voice() {
       pass $g "voice status" "aiworks voice status is clean"
     else
       warn $g "voice is enabled but not healthy" "run the status surface for the switch that decides it" \
-           "aiworks voice status"
+           "./aiworks voice status"
     fi
   else
-    fail $g "voice enabled but the adapter is missing" "scripts/aiworks-voice.sh not present" "aiworks sync" slow
+    fail $g "voice enabled but the adapter is missing" "scripts/aiworks-voice.sh not present" "./aiworks sync -y" slow
   fi
 }
 
@@ -1098,7 +1324,7 @@ check_headroom() {
     done
     if [[ $stale -gt 0 ]]; then
       fail $g "$stale repo(s) carry a pre-hcat .env guard" \
-           "the mirrored copy is stale, so hcat can dump a .env in those repos" "aiworks sync" slow
+           "the mirrored copy is stale, so hcat can dump a .env in those repos" "./aiworks sync -y" slow
     else
       pass $g "env guard covers hcat" "root + mirrored copies"
     fi
@@ -1112,7 +1338,7 @@ check_headroom() {
   elif [[ ! -f "$ROOT/$size_rel" ]]; then
     fail $g "hcat size guard missing" \
          "hcat has no upper bound of its own — a huge file is passed through in full" \
-         "aiworks sync" slow
+         "./aiworks sync -y" slow
   else
     stale=0
     for rp in $SELECTED; do
@@ -1120,7 +1346,7 @@ check_headroom() {
       [[ -f "$ROOT/$rp/$size_rel" ]] || stale=$((stale+1))
     done
     if [[ $stale -gt 0 ]]; then
-      fail $g "$stale repo(s) have no hcat size guard" "the mirrored copy is missing" "aiworks sync" slow
+      fail $g "$stale repo(s) have no hcat size guard" "the mirrored copy is missing" "./aiworks sync -y" slow
     else
       pass $g "hcat size guard present" "root + mirrored copies"
     fi
@@ -1150,12 +1376,33 @@ check_headroom() {
   if ! command -v jq >/dev/null 2>&1; then
     skip $g "headroom plugin" "jq not on PATH — cannot read the plugin registry"
   elif [[ -f "$reg" ]] && jq -e --arg k "$key" \
-         '(((.plugins // .)[$k]) // []) | any(.scope == "user")' "$reg" >/dev/null 2>&1; then
-    pass $g "headroom plugin" "installed at user scope"
+         '(((.plugins // .)[$k]) // []) | any(.scope == "project" or .scope == "user")' "$reg" >/dev/null 2>&1; then
+    # Either scope serves the badge and the hooks; the scope check above is the one that holds
+    # this project to its own copy, and saying it twice would double-count one defect.
+    pass $g "headroom plugin" "installed"
   else
     warn $g "headroom plugin not installed" \
          "declared in .claude/settings.json enabledPlugins, but declaring is not installing" \
-         "claude plugin install $key -s user" slow
+         "claude plugin install $key -s project -y" slow
+  fi
+
+  # ── a knob the installed plugin does not read (C15) ──
+  # DANGI_NUDGE_BYTES is set in .claude/settings.json env. Plugin 2.7.0 hardcodes NUDGE_BYTES=4096
+  # and never reads it, so the setting is a statement of intent, not a threshold. Warn while that
+  # is true; the check disappears on its own the day a release starts reading it.
+  local want_nudge pdir
+  want_nudge=$(command -v jq >/dev/null 2>&1 && jq -r '.env.DANGI_NUDGE_BYTES // ""' "$ROOT/.claude/settings.json" 2>/dev/null)
+  if [[ -n "${want_nudge:-}" ]]; then
+    pdir="$(ls -dt "$HOME"/.claude/plugins/cache/*/headroom-usage-indicator/*/ 2>/dev/null | head -1)"
+    if [[ -z "$pdir" ]]; then
+      skip $g "nudge threshold" "headroom plugin not installed on this machine — nothing to compare"
+    elif grep -rq 'DANGI_NUDGE_BYTES' "$pdir"scripts "$pdir"hooks 2>/dev/null; then
+      pass $g "nudge threshold" "the installed plugin reads DANGI_NUDGE_BYTES (=$want_nudge)"
+    else
+      warn $g "DANGI_NUDGE_BYTES is set but the installed plugin ignores it" \
+           "settings.json asks for $want_nudge; $(basename "$(dirname "$pdir")")/$(basename "$pdir") hardcodes NUDGE_BYTES=4096, so every tool result over 4 KB still nudges" \
+           "see: docs/agents/headroom.md — the knob is documented DEAD; nothing to fix locally" slow
+    fi
   fi
 
   # ── the savings badge (per-person: it edits a MACHINE-GLOBAL user settings file) ──
@@ -1208,7 +1455,7 @@ check_headroom() {
       else
         warn $g "savings badge measures nothing" \
              "missing beside ~/.claude/headroom-statusline.sh:$miss, and no plugin scripts/lib to copy from" \
-             "see: reinstall the headroom plugin, then re-run aiworks doctor --only headroom" slow
+             "see: reinstall the headroom plugin, then re-run ./aiworks doctor --only headroom" slow
       fi
     fi
   else
@@ -1240,6 +1487,54 @@ check_headroom() {
          "see: add that model's input \$/MTok to ~/.claude/headroom-model-prices.json (docs/agents/headroom.md)" slow
   else
     pass $g "badge price table" "every recorded saving is priced"
+  fi
+
+  # ── context-window drift ────────────────────────────────────────────────────────
+  # Cache read is billed per request at the FULL window: cache_read = Σ window(turn). A high
+  # cache-hit rate does not shrink that sum, it only prices it at the discounted tier — so a
+  # session left to drift to 700k pays 4.7× per turn for the same work as one held at 150k,
+  # and the status line never says so, because it shows headroom REMAINING, not turn cost.
+  # posttool-context-budget.sh nudges inside a live session; this is the after-the-fact view,
+  # because the sessions that cost the most are the ones nobody noticed at the time.
+  # Overridable for the same reason HEADROOM_STATE_DIR is: like the badge price-table check
+  # above, this reads a MACHINE-GLOBAL path unrelated to the workspace being diagnosed. A fixture
+  # run — the selftest, a CI clone — has to be able to point BOTH somewhere empty, or a case
+  # asserting on a COUNT of findings passes or fails according to how the machine happened to be
+  # used that week.
+  local proj_dir="${AIWORKS_TRANSCRIPT_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
+  local alarm="${AIWORKS_CONTEXT_ALARM:-300000}"
+  local drifted=0 scanned=0 worst=0 tf tw
+  if [[ ! -d "$proj_dir" ]]; then
+    skip $g "context window drift" "no session transcripts on this machine yet"
+  else
+    # Bounded on purpose: a transcript tree is routinely ~1 GB, and this runs in `doctor`.
+    # 40 recent files × a 400 KB tail is the sample; a drifted session ends big, so the tail
+    # is where the evidence is.
+    for tf in $(find "$proj_dir" -type f -name '*.jsonl' -mtime -7 2>/dev/null | head -40); do
+      tw=$(tail -c 400000 "$tf" 2>/dev/null | jq -Rn '
+        [ inputs | try fromjson catch empty | .message.usage? // empty
+          | ( (.cache_read_input_tokens // 0)
+            + (.cache_creation_input_tokens // 0)
+            + (.input_tokens // 0) ) ] | max // 0' 2>/dev/null)
+      case "$tw" in ''|*[!0-9]*) continue ;; esac
+      scanned=$((scanned + 1))
+      [[ "$tw" -gt "$worst" ]] && worst="$tw"
+      [[ "$tw" -ge "$alarm" ]] && drifted=$((drifted + 1))
+    done
+    if [[ "$scanned" -eq 0 ]]; then
+      skip $g "context window drift" "no session in the last 7 days carried usage data"
+    elif [[ "$drifted" -gt 0 ]]; then
+      # Advisory, not a warning, because the subject is already over: the sessions it names
+      # have ENDED. No command clears this, no habit change clears it today, and it leaves on
+      # its own when the transcript ages out of the 7-day window. As a warn it was a finding
+      # the report could never close and `--fix` could only ever file under "needs you" —
+      # standing noise in front of the findings that are still actionable. The number is worth
+      # printing; it is worth printing at the tier that says "this is advice".
+      skip $g "$drifted of $scanned recent session(s) ran past $((alarm / 1000))k of context" \
+           "worst was $((worst / 1000))k; every turn there billed $((worst / 1000))k of cache read, ~$((worst / 150000))x a turn held at 150k. Compact at ~150k or split the thread — a fresh session re-bases to the static prefix (docs/agents/headroom.md)"
+    else
+      pass $g "context window drift" "$scanned recent session(s) stayed under $((alarm / 1000))k"
+    fi
   fi
 }
 
@@ -1277,15 +1572,25 @@ check_triage() {
     # which is a tooling gap (group 6 owns it) wearing a triage finding's clothes.
     skip $g "triage MCPs" "jq not on PATH — cannot read the registration"
   else
-    local out missing legacy drift
+    local out missing stale legacy drift
     out="$("$sh" status 2>/dev/null)"
     missing="$(printf '%s\n' "$out" | grep -c 'not registered' || true)"
+    stale="$(  printf '%s\n' "$out" | grep -c 'STALE path' || true)"
     legacy="$( printf '%s\n' "$out" | grep -c 'LEGACY registration still present' || true)"
     drift="$(  printf '%s\n' "$out" | grep -c 'registered with a DIFFERENT command' || true)"
-    missing="${missing:-0}"; legacy="${legacy:-0}"; drift="${drift:-0}"
+    missing="${missing:-0}"; stale="${stale:-0}"; legacy="${legacy:-0}"; drift="${drift:-0}"
     if [[ "$missing" -gt 0 ]]; then
       fail $g "$missing triage MCP(s) not registered" \
            "aiworks sync no longer registers them — this is the command that does" \
+           "scripts/triage-mcp.sh sync"
+    elif [[ "$stale" -gt 0 ]]; then
+      # A registration left behind by a clone or worktree that has moved. The detail states a
+      # fact, so the detector proves it: both reconcilers classify an entry as stale ONLY when
+      # the registered script path is absent from disk (a sibling checkout registers the same
+      # SHAPE and works fine). An absent interpreter path means the server never starts and its
+      # tools are silently missing — the same outage as "not registered", hence a fail.
+      fail $g "$stale triage MCP(s) registered under a path that no longer exists" \
+           "the registered script is gone from disk, so the server cannot start" \
            "scripts/triage-mcp.sh sync"
     elif [[ "$legacy" -gt 0 ]]; then
       warn $g "a pre-0005 triage registration is still present" \
@@ -1298,6 +1603,31 @@ check_triage() {
     else
       pass $g "triage MCPs" "pg_triage · redis_triage · k8s_triage registered (local scope)"
     fi
+  fi
+
+  # ── the triage servers' SOURCE: registered is not the same as starts ──
+  # A server that does not parse, or references a name that is never defined, dies on import
+  # — and every session then shows CONNECTION_CLOSED while the registration above reads green.
+  # The parse + undefined-name guard is the detector; this only runs it over the entry files
+  # and the shared modules they import. Files a workspace does not have are simply not checked.
+  local guard="$DIR/python-sources-selftest.sh" src=() f
+  for f in "$DIR"/db/pg_triage_mcp.py "$DIR"/redis/redis_triage_mcp.py \
+           "$DIR"/k8s/k8s_triage_mcp.py "$DIR"/monitoring/monitoring_triage_mcp.py \
+           "$DIR"/lib/*.py; do
+    [[ -f "$f" ]] && src+=("$f")
+  done
+  if [[ ${#src[@]} -gt 0 && -x "$guard" ]]; then
+    local gout grc
+    gout="$("$guard" "${src[@]}" 2>&1)"; grc=$?
+    case $grc in
+      0) pass $g "triage MCP sources" "${#src[@]} file(s) parse and every name resolves" ;;
+      1) fail $g "triage MCP source broken" \
+              "$(printf '%s\n' "$gout" | grep -m1 '^FAIL ' | sed 's/^FAIL //') — the server dies on import and every session shows CONNECTION_CLOSED" \
+              "scripts/python-sources-selftest.sh" ;;
+      *) warn $g "triage MCP source check not run" \
+              "$(printf '%s\n' "$gout" | grep -m1 'NOT RUN' || echo "guard exited $grc")" \
+              "scripts/python-sources-selftest.sh" ;;
+    esac
   fi
 
   # ── the read-only Kubernetes identity (--deep) ──
@@ -1331,7 +1661,7 @@ check_mcp() {
   local compose="$ROOT/.superset/mcp-compose.yml"
   [[ -f "$compose" ]] || { skip $g "mcp" "no .superset/mcp-compose.yml"; return; }
   command -v docker >/dev/null 2>&1 || { fail $g "docker not on PATH" "the shared MCP stack cannot run" \
-                                              "aiworks update --only brew" slow; return; }
+                                              "./aiworks update --only brew" slow; return; }
   local running; running="$(docker compose -p aiworks-mcp ps --status running -q 2>/dev/null | grep -c . || true)"
   if [[ "${running:-0}" -gt 0 ]]; then
     pass $g "mcp stack up" "$running container(s)"
@@ -1378,8 +1708,12 @@ check_services() {
     if port_open "$p"; then
       pass $g "port $p" "127.0.0.1:$p answering"
     else
+      # `slow`, because on a machine that has not pulled these images yet this is a docker
+      # image pull — and `--quiet-pull` plus --fix's captured output means it prints nothing
+      # at all while it runs. Warm, it is seconds. The marker is the only warning a person
+      # gets before answering `yes`, so it has to describe the cold case, not the warm one.
       warn $g "declared port $p not listening" "published by .superset/mcp-compose.yml" \
-           ".superset/mcp-services.sh up"
+           ".superset/mcp-services.sh up" slow
     fi
   done
 }
@@ -1429,6 +1763,9 @@ check_credentials() {
   skip $g "notify${np:+ ($np)}" \
        "no read-only probe exists — a dry run never authenticates and a real send would post"
 
+  # --since -5m, not find-traces' default -7d: an unfiltered count over seven days aggregates every
+  # span in the estate, takes ~60s, and intermittently hits the gateway timeout — a failure probe()
+  # would then report as a rejected credential. Five minutes proves the same thing in ~2s.
   local op; op="$(cfg observability.provider)"
   # Default matches workspace.config.example.yaml (off) — same gate as check_adapters.
   cfg_bool observability.enabled false
@@ -1438,7 +1775,7 @@ check_credentials() {
     skip $g "observability" "no provider configured"
   elif [[ -x "$ROOT/scripts/observability/find-traces.sh" ]]; then
     probe $g "observability ($op)" "\$EDITOR scripts/observability/.env" \
-          "$ROOT/scripts/observability/find-traces.sh" --limit 1
+          "$ROOT/scripts/observability/find-traces.sh" --since -5m --limit 1
   else
     skip $g "observability" "find-traces.sh not present"
   fi
@@ -1455,11 +1792,29 @@ check_disk() {
   # orphans on a workspace that has none.
   local out; out="$("$DIR/aiworks-gc.sh" 2>&1)"
   local orphans; orphans="$(printf '%s\n' "$out" | sed -n 's/.*orphaned:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+  # The count alone is not enough to know the registered fix can do anything. `aiworks gc`
+  # REFUSES an orphan that is in use, or that holds uncommitted work, and says so — one
+  # `! skip … (--force to override)` line each, inside its own Orphans section. It then exits
+  # 0, because refusing on purpose is not an error. Registered blind, the fix therefore ran,
+  # reported `✓ ran`, removed nothing, and the finding came back byte-identical on every
+  # re-check forever: the "reported fixed, nothing fixed" shape the referee exists to catch,
+  # arriving from the one direction the referee cannot repair — a command that was never
+  # capable of clearing it. Read gc's own refusals and register the honest owner instead.
+  # Section-scoped, not a whole-output grep: the artifact and dispatch sections print `! skip`
+  # of their own, and counting those would call a removable orphan un-removable.
+  local blocked; blocked="$(printf '%s\n' "$out" \
+    | awk '/^==> Orphans/{inb=1; next} /^==>/{inb=0} inb' | grep -c '! *skip' || true)"
+  blocked="${blocked//[^0-9]/}"; blocked="${blocked:-0}"
   if [[ -z "$orphans" ]]; then
     skip $g "worktree disk" "aiworks gc printed no orphan count to read"
+  elif [[ "$orphans" -gt 0 && "$blocked" -ge "$orphans" ]]; then
+    warn $g "$orphans orphaned worktree(s), none of them removable" \
+         "aiworks gc refuses every one — each is in use or holds uncommitted work, and it prints the reason per worktree. Rescue or discard that work, then re-run; --force overrides the refusal and discards it." \
+         "see: ./aiworks gc   (read the reasons, then ./aiworks gc --orphans --artifacts)" slow
   elif [[ "$orphans" -gt 0 ]]; then
-    warn $g "$orphans orphaned worktree(s)" "Superset no longer lists them but the directories remain" \
-         "aiworks gc --orphans --artifacts" slow
+    warn $g "$orphans orphaned worktree(s)" \
+         "Superset no longer lists them but the directories remain$( [[ "$blocked" -gt 0 ]] && printf ' · %d of them gc will refuse (in use, or uncommitted work)' "$blocked" )" \
+         "./aiworks gc --orphans --artifacts" slow
   else
     pass $g "worktree disk" "nothing orphaned"
   fi
@@ -1504,7 +1859,20 @@ rec() { printf '%s' "$1" | cut -d"$US" -f"$2"; }
 
 json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g'; }
 
-if [[ $JSON == 1 ]]; then
+# One record per OPEN finding: <status> TAB <group> TAB <label>. The referee's ground truth, and
+# the reason it never has to read its own JSON back into labels.
+findings_records() {
+  local r
+  for r in ${R+"${R[@]}"}; do
+    case "$(rec "$r" 2)" in
+      warn|fail) printf '%s\t%s\t%s\n' "$(rec "$r" 2)" "$(rec "$r" 1)" "$(rec "$r" 3)" ;;
+    esac
+  done
+}
+
+if [[ $FINDINGS == 1 ]]; then
+  findings_records
+elif [[ $JSON == 1 ]]; then
   printf '{\n'
   printf '  "workspace": "%s",\n' "$(json_escape "$ROOT")"
   printf '  "worktree": %s,\n' "$( [[ $IN_WORKTREE == 1 ]] && printf 'true' || printf 'false' )"
@@ -1538,7 +1906,10 @@ else
     local head="${s:0:$max}"; head="${head% *}"
     local rest="${s:${#head}}"
     local more; more="$(printf '%s' "$rest" | wc -w | tr -d ' ')"
-    printf '%s … (+%s more)' "$head" "$more"
+    # "(+34 more)" counts WORDS, and a detail is "<the list> — <what it means>", so most of that
+    # number is prose. Saying so costs four characters and stops the count being read as "34 more
+    # repos" — a misreading that has already produced one wrong conclusion in a written audit.
+    printf '%s … (+%s more words)' "$head" "$more"
   }
 
   for grp in $ALL_GROUPS; do
@@ -1589,8 +1960,86 @@ if [[ $FIX == 1 ]]; then
   manual_fix() {
     case "$1" in
       'see:'*|*'$EDITOR'*|'grep '*|*' grep -'*) return 0 ;;
-      *) return 1 ;;
     esac
+    # A fix that is prose rather than a command is advice, and advice must never reach eval.
+    # Measured: the context-drift finding shipped without its `see:` prefix, so the runner fed
+    # `compact at ~150k, … (docs/agents/headroom.md)` to eval and the run died on
+    # `syntax error near unexpected token ('`. The prefix convention is the first line of
+    # defence; this is the one that does not depend on anyone remembering it.
+    bash -n -c "$1" 2>/dev/null || return 0
+    return 1
+  }
+
+  # ── the referee ─────────────────────────────────────────────────────────────────
+  # "the command exited 0" is NOT "the finding is gone". Measured: three findings reported
+  # `✓ done` and survived a re-run byte-identically — a triage sync that skipped its own stale
+  # registration as foreign, a codex projection whose exit code only ever failed under --check,
+  # and a config re-projection standing in for a workspace.config.yaml edit nobody had made.
+  # Auditing each owner command's exit code catches those three; it does not stop the fourth.
+  # So the doctor is its own referee: after the plan runs, re-run the SAME scope and say which
+  # findings actually cleared. One check, at the only place that can never be bypassed, and the
+  # verdict below comes from the re-check rather than from the stale first pass.
+  #
+  # Only the scope flags are replayed — never --fix — so this recurses exactly one level deep.
+  # SELF, never "$0": the script cd'd to $ROOT during startup, so a relative invocation
+  # (`cd some-repo && ../scripts/aiworks-doctor.sh --fix -y`) leaves "$0" resolving against the
+  # wrong directory. The child then produces nothing, the referee reports "could not re-check",
+  # and the verdict falls back to the pre-fix pass — the exact breakage this exists to prevent,
+  # reachable by nothing more than how you typed the path.
+  RECHECK_ARGS=(--findings)
+  [[ $DEEP == 1 ]]       && RECHECK_ARGS+=(--deep)
+  [[ -n "$ONLY" ]]       && RECHECK_ARGS+=(--only "$ONLY")
+  [[ -n "$SKIP" ]]       && RECHECK_ARGS+=(--skip "$SKIP")
+  [[ -n "$REPOS_ARG" ]]  && RECHECK_ARGS+=(--repo "$REPOS_ARG")
+
+  # A finding's IDENTITY is its group plus its label with every run of digits folded to `#`,
+  # because labels carry counts: "3 repo(s) not cloned" and "1 repo(s) not cloned" are one
+  # finding, two thirds repaired. Compared verbatim they share no line, so a partial repair
+  # reported "1 cleared · 0 still open · 1 new" and filed the surviving half under `new` — the
+  # same "reported fixed, nothing fixed" misreading the referee exists to catch.
+  #
+  # Both sides are emitted by the SAME code path (`--findings`, one `<status> <group> <label>`
+  # record per open finding) rather than one side reading in-memory records and the other
+  # scraping them back out of --json: a label holding a quote or a backslash came back mangled
+  # across that escaping boundary and read as cleared-plus-a-phantom-new.
+  findings_key() { sed 's/[0-9][0-9]*/#/g'; }
+  RECHECK_BEF="" RECHECK_AFT=""
+  AFTER_FAIL="" AFTER_WARN=""
+  recheck() {
+    local cleared still fresh
+    RECHECK_BEF="$(mktemp "${TMPDIR:-/tmp}/aiworks-doctor-before.XXXXXX")"
+    RECHECK_AFT="$(mktemp "${TMPDIR:-/tmp}/aiworks-doctor-after.XXXXXX")"
+    findings_records > "$RECHECK_BEF"
+    "$SELF" "${RECHECK_ARGS[@]}" 2>/dev/null > "$RECHECK_AFT"
+    AFTER_FAIL="$(cut -f1 "$RECHECK_AFT" | grep -c '^fail$' || true)"
+    AFTER_WARN="$(cut -f1 "$RECHECK_AFT" | grep -c '^warn$' || true)"
+    if [[ ! -s "$RECHECK_AFT" ]] && ! "$SELF" "${RECHECK_ARGS[@]}" >/dev/null 2>&1; then
+      # The one path where the referee itself failed must never read as "verified clean": the
+      # counts below would be the PRE-fix pass's, which is what the whole mechanism rejects.
+      printf '  %s✗ could not re-check — the exit code describes the workspace BEFORE the fix.%s\n' \
+        "$c_err" "$c_off"
+      printf '    run ./aiworks doctor%s yourself.\n' "$( [[ $DEEP == 1 ]] && printf ' --deep' )"
+      AFTER_FAIL="" AFTER_WARN="" RECHECK_FAILED=1
+      rm -f "$RECHECK_BEF" "$RECHECK_AFT"
+      return 0
+    fi
+    _keys() { cut -f2,3 "$1" | findings_key | sort -u; }
+    _show() { cut -f2,3 "$1" | awk -F'\t' -v k="$2" '
+      BEGIN { while ((getline line < k) > 0) want[line] = 1 }
+      { key = $0; gsub(/[0-9]+/, "#", key); if (key in want) print $2 }' | sort -u; }
+    local shared; shared="$(mktemp "${TMPDIR:-/tmp}/aiworks-doctor-keys.XXXXXX")"
+    comm -12 <(_keys "$RECHECK_BEF") <(_keys "$RECHECK_AFT") > "$shared"
+    cleared="$(comm -23 <(_keys "$RECHECK_BEF") <(_keys "$RECHECK_AFT") | grep -c . || true)"
+    still="$(grep -c . "$shared" || true)"
+    fresh="$(comm -13 <(_keys "$RECHECK_BEF") <(_keys "$RECHECK_AFT") | grep -c . || true)"
+    printf '  re-checked: %s%d cleared%s · %d still open%s\n' \
+      "$c_ok" "$cleared" "$c_off" "$still" \
+      "$( [[ "$fresh" -gt 0 ]] && printf ' · %d new' "$fresh" )"
+    _show "$RECHECK_AFT" "$shared" | sed "s/^/    ${c_warn}still open${c_off}  /"
+    comm -13 <(_keys "$RECHECK_BEF") <(_keys "$RECHECK_AFT") > "$shared"
+    _show "$RECHECK_AFT" "$shared" | sed "s/^/    ${c_warn}new${c_off}         /"
+    printf '  full report: ./aiworks doctor%s\n' "$( [[ $DEEP == 1 ]] && printf ' --deep' )"
+    rm -f "$RECHECK_BEF" "$RECHECK_AFT" "$shared"
   }
 
   PLAN=(); MANUAL=()
@@ -1629,18 +2078,19 @@ if [[ $FIX == 1 ]]; then
       fi
       if [[ $go == 1 ]]; then
         printf '\n'
-        nfixed=0 nfailed=0
+        nran=0 nfailed=0
         for p in "${PLAN[@]}"; do
           cmd="$(rec "$p" 3)"
           printf '  %s→ %s%s\n' "$c_hd" "$cmd" "$c_off"
-          if ( cd "$ROOT" && eval "$cmd" ) >/dev/null 2>&1; then
-            printf '    %s✓ done%s\n' "$c_ok" "$c_off"; nfixed=$((nfixed+1))
+          if fixout="$( (cd "$ROOT" && eval "$cmd") 2>&1 )"; then
+            printf '    %s✓ ran%s\n' "$c_ok" "$c_off"; nran=$((nran+1))
           else
-            printf '    %s✗ failed — run it yourself to see why%s\n' "$c_err" "$c_off"; nfailed=$((nfailed+1))
+            printf '    %s✗ failed%s\n' "$c_err" "$c_off"; nfailed=$((nfailed+1))
+            printf '%s\n' "$fixout" | tail -n 8 | sed 's/^/      /'
           fi
         done
-        printf '\n  %d fixed · %d failed · %d need you\n' "$nfixed" "$nfailed" "${#MANUAL[@]}"
-        printf '  re-run: aiworks doctor\n'
+        printf '\n  %d ran · %d failed · %d need you\n' "$nran" "$nfailed" "${#MANUAL[@]}"
+        recheck
       else
         printf '  cancelled.\n'
       fi
@@ -1649,6 +2099,15 @@ if [[ $FIX == 1 ]]; then
 fi
 
 # ── verdict ───────────────────────────────────────────────────────────────────────
+# After a --fix that actually ran, the FIRST pass's counts describe a workspace that no longer
+# exists. The re-check's do, so `aiworks doctor --fix -y && …` means what it looks like it means.
+if [[ -n "${AFTER_FAIL:-}" ]]; then
+  n_fail="$AFTER_FAIL"; n_warn="${AFTER_WARN:-0}"
+elif [[ "${RECHECK_FAILED:-0}" == 1 ]]; then
+  # "I could not verify" must never read as "verified clean". The first pass's counts describe
+  # the workspace BEFORE the plan ran, which is the one thing this mechanism exists to reject.
+  exit 1
+fi
 if [[ $n_fail -gt 0 ]]; then exit 1; fi
 if [[ $STRICT == 1 && $n_warn -gt 0 ]]; then exit 1; fi
 exit 0

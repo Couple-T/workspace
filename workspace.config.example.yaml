@@ -15,7 +15,7 @@
 #     only its `folders` array is regenerated — any `settings` you add to it survive;
 #   • the adapters read their slice from scripts/{vcs,tracker}/.env;
 #   • the dev-cycle workflow keeps a mirrored CONFIG block at the top of
-#     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem at
+#     .claude/workflows/src/dev-cycle.js (Workflow scripts cannot read the filesystem at
 #     runtime). `scripts/aiworks sync` — and every `add` / `remove` — REGENERATES that
 #     block from THIS file automatically (`scripts/aiworks config` is the standalone step),
 #     so the mirror always tracks this file. You never hand-edit dev-cycle.js.
@@ -40,6 +40,18 @@
 # So: explain a key HERE (and put measurements / design rationale in docs/ or the owning script's
 # README) — never in the file the workspace actually runs on. See docs/adr/0006-config-carries-no-comments.md.
 # ─────────────────────────────────────────────────────────────────────────────
+
+# ── Agent harnesses ──────────────────────────────────────────────────────────
+# Organization-wide supported Harnesses: `aiworks setup` opens a first-run multi-select when this
+# list is empty, then `aiworks sync` reconciles every supported projection at the workspace root
+# and in every repo. Existing workspaces without this key preserve the legacy `claude,cursor` set
+# in non-interactive runs. A person may activate a non-empty subset locally; that never changes
+# projections or this shared file. Deselecting a shared Harness removes only generator-owned files.
+#
+# Add a future Harness through scripts/harnesses/registry.json and docs/agents/harnesses.md; do
+# not add another hard-coded setup branch. `hermes` is the planned next adapter.
+harnesses: []                     # claude | cursor | codex; multiple values supported
+                                  # Example after setup: [claude, cursor, codex]
 
 org:
   name: Acme                       # shown in agent copy / summaries
@@ -123,11 +135,22 @@ notify:
   provider: slack                  # slack (the only provider today)
   channel: "#code-reviews"         # the Slack channel the digest is posted to (id or #name). The token/
                                    #   webhook live in scripts/notify/.env (seeded by `aiworks sync`).
+  dm_on_incomplete: "U00000000000" # a Slack MEMBER id (not a channel). Every run that ends WITHOUT
+                                   #   completing the ticket — blocked, halted, stalled, budget-stopped,
+                                   #   plan-missing, dry-run, awaiting plan approval — sends ONE direct
+                                   #   message here (status, summary path, resume command) and posts
+                                   #   NOTHING to the channel. The channel digest is reserved for a run
+                                   #   that finished. Replace the placeholder with your own id
+                                   #   (scripts/notify/send.sh --lookup-user <name>); leave it as-is or
+                                   #   empty to disable the DM.
 
 # ── Issue tracker ──────────────────────────────────────────────────────────────
 tracker:
   provider: notion                 # notion | jira | linear
-  ticket_prefix: FM                # FM | APP | …  → drives the ticket-id regex (e.g. FM-\d+)
+  ticket_prefix: FM                # FM | APP | …  → drives the ticket-id regex (e.g. FM-\d+).
+                                   #   Several projects: comma-separate them, "FM,OPS" — every
+                                   #   prefix parses, and the FIRST is the one a bare number
+                                   #   expands against (JIRA_PROJECT_KEY / LINEAR_TEAM_KEY).
   base_url: ""                     # the board's web root, e.g. https://your-org.atlassian.net — used
                                    #   to turn a bare ticket key into a link (stagehand opens
                                    #   <base_url>/browse/<KEY>). A public hostname, not a credential;
@@ -155,7 +178,11 @@ tracker:
     testing:       "Testing"
     done:          "Done"
 
-# ── Branch model (defaults; a repo may override under products[].repos[].base) ─
+# ── Branch model ───────────────────────────────────────────────────────────────
+# The workspace-wide default, applied to EVERY repo kind including test suites. A repo whose
+# own policy differs overrides it with `feature_base:` / `fix_base:` on its products[].repos[]
+# entry — that is the only supported way to say so, and it keeps the base in the config rather
+# than in generated code (docs/adr/0025).
 branch_model:
   feature_base: develop            # base branch for feature/* work
   fix_base:     main               # base branch for fix/* work
@@ -177,6 +204,27 @@ review:
                                    #   the rest filed as Improvement tickets.
                                    #   A `Human:` review comment is always a must-fix, at either level
                                    #   (docs/agents/human-review.md).
+  # ── The review loop's own bounds (docs/adr/0027) ────────────────────────────
+  # THE LOOP DOES NOT HALT ON A FINDING. Every condition that used to stop a repo mid-review is
+  # now a must-fix with its own attempt budget; when a budget runs out the condition is RECORDED
+  # and the loop carries on with everything else. `max_rounds` is the ONE terminal bound: a repo
+  # that reaches it ends `review-unresolved`, carrying what it could not close. A recorded
+  # blocking item keeps that repo out of `ready`, so nothing is approved and nothing merges —
+  # "does not halt" never means "passes without evidence".
+  max_rounds: 14                   # reviewer pass + developer fix pass, per repo. Higher than it
+                                   #   once was on purpose: this budget now also absorbs
+                                   #   regressions, escalation retries and stall re-attempts that
+                                   #   used to exit the loop early.
+  max_regression_fixes: 3          # a fix that DIRECTLY caused a new blocking problem is handed
+                                   #   straight back with the regression detail. Its own counter,
+                                   #   because fix → regression → fix can oscillate without ever
+                                   #   burning a round's other work.
+  max_stall_reattempts: 3          # the same unresolved finding set surviving a round with no new
+                                   #   commit does not halt — but it does not simply repeat either:
+                                   #   the next brief ESCALATES (name what did not move, treat the
+                                   #   prior read as a hypothesis to disprove) before re-running.
+  max_escalation_attempts: 3       # cross-repo: fix pass + scoped re-gate in the OTHER repo, per
+                                   #   (repo, finding). Was hardcoded at one attempt.
 
 # ── Load-test gate (the base-branch NON-DEGRADATION rule) ─────────────────────
 # Read only by a repo declared `suite_kind: load` (see products[].repos[] below). A plain
@@ -197,10 +245,16 @@ loadtest:
                                    #   gate returns UNAVAILABLE (a loud skip, banner in the run
                                    #   summary) instead of widening the threshold until anything
                                    #   passes. An honest "cannot tell" beats a fake verdict.
-  max_fix_rounds: 2                # a regression the developer ATTRIBUTES to the change loops back
+  max_fix_rounds: 3                # a regression the developer ATTRIBUTES to the change loops back
                                    #   for a fix, then the candidate is re-run (the baseline is
-                                   #   cached, so a loop costs one run, not three). Rounds before
-                                   #   the repo halts for a human. A load run is expensive — small.
+                                   #   cached, so a loop costs one run, not three). A load run is
+                                   #   expensive, so keep it small — but the fix brief now carries
+                                   #   the metric, the base sha and the measured noise floor, plus
+                                   #   the shapes worth looking at, so an extra round has something
+                                   #   new to work with rather than repeating the last one.
+                                   #   When the rounds run out the regression is RECORDED, not
+                                   #   halted on: the repo keeps working its other findings and
+                                   #   still cannot reach `ready` (docs/adr/0027).
   baseline_cache: ~/.cache/aiworks/loadtest-baselines
                                    # where base-build results are cached, keyed by
                                    #   <repo>/<scenario>/<base-sha>/<env-fingerprint>.
@@ -209,6 +263,83 @@ loadtest:
                                    #   worktree. The base SHA in the key makes a moved base
                                    #   self-invalidating; the env fingerprint stops a baseline from
                                    #   one machine being compared against a candidate from another.
+
+# ── Cross-repo test-suite gate ─────────────────────────────────────────────────
+test_suite:
+  max_fix_rounds: 3                # a red at the cross-repo gate is CLASSIFIED, then acted on: an
+                                   #   automation bug the suite repo fixes itself, an app bug the
+                                   #   named repo's developer fixes — checked by a scoped
+                                   #   guardian+performance pass over that fix diff when the repo
+                                   #   declares those gates, retried up to its own bound BEFORE the
+                                   #   suite re-runs (docs/adr/0024) — or a missing prerequisite the
+                                   #   suite repo seeds. This caps both the rounds and those
+                                   #   per-red retries. 0 disables repair: the first red is recorded
+                                   #   with evidence and nothing is fixed.
+  max_suite_repair_attempts: 3     # a suite that COULD NOT RUN is different from a red one, and it
+                                   #   is not a verdict: no receipt (command + exit code + summary)
+                                   #   means the gate did not run, and that can never read as a
+                                   #   pass. It is now a must-fix instead of a halt — the brief
+                                   #   hands over what the gate actually got, this repo's declared
+                                   #   known_false_reds, and the failure classes worth checking in
+                                   #   order (broken harness · candidate stack not up · missing data
+                                   #   precondition · genuinely absent from this environment). The
+                                   #   last class is the one nothing can fix: an agent that names it
+                                   #   WITH evidence closes these attempts early rather than
+                                   #   grinding the budget, and the gate stays unverified.
+
+# ── build phase limits ─────────────────────────────────────────────────────────
+build:
+  max_continuation_passes: 3       # a `partial` handoff means "some slices landed, work OF MY OWN
+                                   #   remains" — the best-informed continuation point in the run,
+                                   #   and it used to end the repo on attempt one. It is CONTINUED
+                                   #   this many times from the branch as it stands (never a restart:
+                                   #   the brief carries what landed, what remains, the measured
+                                   #   cause and any parked WIP). `blocked` takes the same ladder with
+                                   #   a brief that rules out the cheap classes first.
+                                   #   A pass whose `remaining` came back unchanged escalates the
+                                   #   brief instead of repeating it, and an EVIDENCED cannot_fix ends
+                                   #   the passes early rather than grinding the budget to reach the
+                                   #   same answer. What the bound cannot close is RECORDED, and the
+                                   #   repo still cannot reach ready — this buys the passes, not a
+                                   #   pass. 0 = the old behaviour (stop at the first partial).
+                                   #   docs/adr/0032.
+
+# ── dev-cycle run limits ───────────────────────────────────────────────────────
+dev_cycle:
+  token_budget: 2000000            # the run's own spend ceiling — OUTPUT tokens across the run's
+                                   #   agents (the unit budget.spent() reports). Checked at every
+                                   #   phase boundary; over it the run writes its checkpoint +
+                                   #   summary, sends the incomplete-run DM, skips the channel
+                                   #   notification and stops with status budget-stopped. Fully
+                                   #   resumable — re-run and the run state replays every milestone
+                                   #   already proven. 0 = no cap.
+                                   # ⚠️ READ THE UNIT TWICE. It is OUTPUT tokens, and PER INVOCATION.
+                                   #   Measured on a four-repo ticket: 232k output against 6.7M total
+                                   #   run tokens in ONE invocation — a ~29x ratio — so this number is
+                                   #   not a total-token ceiling and is far smaller than it reads. A
+                                   #   hard multi-repo ticket spanning several invocations pays it
+                                   #   each time; the run summary reports the per-ticket running
+                                   #   total across rounds so the real cost is visible somewhere.
+                                   # SIZING IT. Since ADRs 0027/0028/0029/0032 no phase ends on its
+                                   #   first bad answer, so this ceiling is now close to the only
+                                   #   thing that stops a run — which makes "is it big enough?" the
+                                   #   question, not "is it small enough?". Two measurements to
+                                   #   anchor on: the four-repo run above spent 232k output, and an
+                                   #   audited SIX-repo run that stopped three times spent 4.57M
+                                   #   total ≈ 158k output across 41 agents. Both are under a TENTH
+                                   #   of this default, and neither was stopped by it — they were
+                                   #   stopped by the halts those ADRs removed. So the default has
+                                   #   roughly an order of magnitude of headroom for the tickets
+                                   #   this workspace actually runs, and RAISING it is not the lever
+                                   #   for a run that ends early: read the summary's "Blocking —
+                                   #   needs a person" section first, because a recorded item is a
+                                   #   different ending than budget-stopped and no ceiling fixes it.
+                                   #   Lower it only to cap spend deliberately (a spike, an
+                                   #   unfamiliar ticket) and expect budget-stopped as the normal
+                                   #   result; raise it when the summary actually says
+                                   #   budget-stopped AND the per-ticket total is climbing across
+                                   #   rounds. The bounds that shape the WORK are review.max_rounds
+                                   #   (the one terminal bound) and build.max_continuation_passes.
 
 # ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
 planning:
@@ -754,6 +885,14 @@ products:
         app_id: com.example.app                     # mobile apps only — the app/bundle id the QA suite drives (matches config/capabilities.js)
         distribute: firebase                        # firebase | none | custom  (default: none)
         # auto_merge: false                         # optional — override vcs.auto_merge for this repo
+        # feature_base: develop                     # optional — THIS repo's own branch policy,
+        # fix_base: staging                         #   overriding branch_model above. Set these when
+                                                    #   the repo does not follow the workspace default
+                                                    #   (a service on `develop → staging → main`, a
+                                                    #   suite repo whose trunk really is `main`). The
+                                                    #   run then carries that base as state and asserts
+                                                    #   its PR/MR against it; nothing downstream may
+                                                    #   re-derive it. docs/adr/0025
         # path: your-app                            # optional — clone dir (default: the repo name)
         # green: "<keep-it-green check, e.g. lint + unit tests>"   # optional override (else from kind)
         # guardian_focus: "<secrets, data-protection, perms…>"     # optional override (else from kind)

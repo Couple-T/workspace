@@ -1,0 +1,316 @@
+# Agent harnesses
+
+An **Agent harness** is the execution environment through which the agent team works: Claude Code,
+Cursor, Codex, and later Hermes. It is not a Provider; Provider remains the concrete backend behind
+the VCS, tracker, and notification adapters.
+
+The organization-wide **supported** Harness set lives in `workspace.config.yaml`:
+
+```yaml
+harnesses:
+  - claude
+  - cursor
+  - codex
+```
+
+`aiworks setup` owns the first-run picker. `aiworks sync` reconciles the projection of every
+**active** Harness at the workspace root and in every declared repo — and only ever adds or
+updates. A Harness absent from the set is left exactly as it is on disk.
+
+A person may set a non-empty `harnesses:` in git-ignored `workspace.config.local.yaml`. When
+present, that file **wins outright**: it is the highest-priority source for every consumer —
+`aiworks sync`, `aiworks doctor`, CLI install/authentication, native plugins and status lines,
+machine-local MCP registrations. It may name a Harness the shared file does not carry; the
+projection it produces is this machine's to commit and share.
+
+What makes that safe is the rule that **sync never removes a projection**. Dropping an id from
+either config file deletes nothing, so a teammate whose local file omits a Harness cannot tear a
+committed projection out of a shared checkout on their next `aiworks sync`. Deletion is an
+explicit act:
+
+```bash
+aiworks remove --harnesses codex        # or: aiworks harnesses remove codex[,cursor] [<repo>…] [-n]
+```
+
+It runs the projector's `--remove` (generator-owned artifacts only; user-authored files are
+reported and preserved), drops the id from **both** config files so the next sync does not
+project it straight back, and clears the generator-owned `AGENTS.md` once no remaining active
+Harness reads it. Removing the last Harness is refused. `aiworks doctor` reports a Harness the
+shared file names but the local file omits as `shared-only Harness`, at the advisory tier: sync
+neither refreshes nor removes it here. The two ways to get the set genuinely wrong still fail:
+an id no registry entry claims, and an empty list. (`docs/adr/0033`.)
+
+## One canonical source
+
+The agent configuration is authored under `.claude/`. The shared MCP registry remains `.mcp.json`.
+Every other Harness is a projection:
+
+| Capability | Canonical source | Cursor projection | Codex projection |
+|---|---|---|---|
+| Project guidance | `CLAUDE.md` | `AGENTS.md` symlink | same `AGENTS.md` symlink |
+| Skills | `.claude/skills/` | `.cursor/skills` symlink | `.agents/skills` symlink |
+| Agents | `.claude/agents/*.md` | `.cursor/agents` symlink | generated `.codex/agents/*.toml` |
+| Instruction rules | `.claude/rules/*.md` | `.cursor/rules/*.mdc` links/slices | generated scope index + direct-read hook |
+| Hooks | `.claude/settings.json` + `.claude/hooks/` | generated wiring + shim | generated wiring + shim |
+| MCP | `.mcp.json` | `.cursor/mcp.json` symlink | generated `.codex/config.toml` tables |
+| Workflows | `.claude/workflows/src/*.js` | shared runtime, Cursor adapter | shared runtime, Codex adapter |
+| Status line | Harness-native | command-driven Cursor form | native Codex footer items |
+
+Compatible formats use relative symlinks. Incompatible formats are generated and checked. A
+generated copy is never an authored source.
+
+Codex writes `.codex/generated/compatibility.json` beside its rule index. It names every source
+hook event mapping/fold plus the verified native-agent, status-line, and SSE-bridge boundaries;
+an unknown source event fails `aiworks codex --check`.
+
+## Commands
+
+```sh
+aiworks harnesses list
+aiworks harnesses list --active
+aiworks harnesses configure --reconfigure
+aiworks harnesses configure --harnesses claude,cursor,codex
+aiworks harnesses sync
+aiworks harnesses check
+
+aiworks cursor --check
+aiworks codex --check
+aiworks workflow dev-cycle --harness cursor FM-123
+aiworks workflow dev-cycle --harness codex FM-123
+```
+
+In chat, invoke `$dev-cycle` / `$prd` / `$brd` in Codex and `/dev-cycle` / `/prd` / `/brd` in
+Cursor and in Claude Code. The skills launch the deterministic runtime; they do not ask the outer
+model to reproduce the workflow from prose.
+
+**One workflow, one `/` entry.** Claude Code auto-loads `.claude/workflows/` and registers every
+`.js` it finds there as both a `/<name>` slash command and a `Workflow({name})` target. Each
+canonical workflow already owns that name through its skill, so a script sitting at the top of
+that directory would put two identically named entries in one menu — and the native one is the
+wrong half: it hands the Workflow tool the AUTHORED file, comments and all, skipping the build
+below. The loader does not recurse (measured: a `.js` one directory down registers nothing), so
+the authored sources live in `.claude/workflows/src/` and the built copies in
+`.claude/workflows/.build/`, leaving the directory Claude Code scans empty. `build.mjs --check`
+and `scripts/workflows/selftest.mjs` both fail on a `.js` that drifts back up, and `aiworks
+doctor` names it.
+
+## Harness registry contract
+
+`scripts/harnesses/registry.json` is the dispatch source. A Harness entry contains:
+
+| Field | Contract |
+|---|---|
+| `id` | Stable lowercase config/CLI identifier |
+| `display_name` | Picker and diagnostic label |
+| `default_selected` | Legacy fallback only; never silently enables a new Harness |
+| `cli` | Binary `setup`, `update`, and `doctor` verify |
+| `projector` | Repo-relative projection command, or `null` for the canonical Harness |
+| `workflow_adapter` | Module name under `scripts/workflows/adapters/`, or `native` |
+| `project_guidance` | `claude` or `agents-md`; lets `harnesses remove` clean a shared `AGENTS.md` safely |
+
+Do not add a Harness-specific branch to `aiworks sync`. Register the adapter, then let
+`aiworks-harnesses.sh` dispatch it.
+
+### Projector interface
+
+Every non-canonical projector must accept:
+
+```text
+<projector> [<repo> ...]           reconcile selected projection
+<projector> --check [<repo> ...]   write nothing; nonzero on drift
+<projector> --remove [<repo> ...]  remove only generator-owned artifacts (reached via `harnesses remove`, never by sync)
+<projector> --dry-run              preview without writing or failing on expected drift
+```
+
+`--check` is the only form that verdicts. A reconcile and a `--dry-run` exit 0 — they did
+everything they were allowed to do — and print what they could not do instead. A projector may
+split `--check`'s nonzero further, as `aiworks codex` does: **1** for drift a reconcile will
+close, **2** for drift it will not (a real path where the canonical link belongs, a generated
+file somebody edited, a source defect only its author can settle). The distinction is what lets
+`doctor --fix` hand the second kind to a person rather than register a command that will refuse
+identically on every run.
+
+Requirements:
+
+- With no repo, process the root and every cloned repo declared by `workspace.config.yaml`.
+- Use relative symlinks when the target format is compatible.
+- Put an ownership marker in every generated regular file.
+- Refuse to overwrite a real file, a differently-targeted link, or an unmarked directory.
+- Prune stale generated children when a canonical source disappears.
+- Keep project-root and standalone-repo operation equivalent.
+- Provide a self-test that exercises idempotence, drift, conflict preservation, and removal.
+
+### Workflow adapter interface
+
+`scripts/workflows/run.mjs` loads `scripts/workflows/adapters/<workflow_adapter>.mjs` dynamically.
+The module exports:
+
+```js
+export async function run({ root, role, definition, prompt, schema, options }) {
+  return { value, spent, accounting };
+}
+```
+
+The adapter must:
+
+- execute the role through its Harness rather than impersonating it in the outer session;
+- preserve or intentionally map model/effort policy;
+- enforce the least filesystem/tool permissions the canonical role allows;
+- return a value conforming to the existing workflow JSON Schema;
+- retry malformed output only within a documented bound, then fail closed;
+- report output-token usage, or a conservative estimate explicitly labelled as such;
+- support parallel invocations without sharing mutable session state;
+- surface a Harness failure as a failed phase, never as permission to continue manually.
+
+### The byte budget
+
+Under Claude Code there is no adapter: the native Workflow tool runs the script itself, and it
+weighs the script **file** before it parses it. The cap was measured against the live runtime
+rather than read off a schema — a 524,288-byte script launches, a 524,289-byte one comes back
+`Workflow script file … exceeds 524288 bytes` — and **no delivery parameter is exempt**, `scriptPath`
+included. So a workflow that grows past it cannot be launched, resumed, or worked around from
+inside a session.
+
+`dev-cycle.js` reached that wall from underneath. Over 41 commits it went from 120,083 bytes to
+522,045, at a mean of **+5,189 bytes per fix**, because this framework keeps its rules in agent
+brief text and every fix adds prose. Nothing measured it, so the cap was found by a run that
+would not start, in a clone already 5,804 bytes over — and the only obvious remedy, deleting
+comments, would have spent the design record that stops the next regression in order to survive
+this one.
+
+The rule that replaces it: **the authored script is never what the runtime receives.**
+
+```
+node scripts/workflows/build.mjs [--check] [<name>…]
+```
+
+Default reads `.claude/workflows/src/<name>.js` and builds each workflow into
+`.claude/workflows/.build/<name>.js` — gitignored, disposable,
+rebuilt on demand — and prints the path to hand the Workflow tool. `--check` measures without
+writing. Both refuse to produce a file they cannot vouch for:
+
+- only a whole line whose first non-blank characters are `//`, and only in code state, is removed —
+  a comment-shaped line inside a template literal is an agent's brief text and stays;
+- `AIWORKS:CONFIG` markers stay, because `aiworks config` writes the generated registry between them;
+- every removed span is re-checked against the comment shape and must account for the entire byte
+  difference, so a scanner that lost its place cannot pass as a saving;
+- the output must parse as an async function body, and stripping it again must change nothing.
+
+The budget is the cap less a **65,536-byte reserve** — twelve commits at the measured growth rate —
+so `aiworks doctor` reports the number while there is still room to act on it rather than leaving
+it to the run that cannot start. Nothing can shrink a workflow for you, so that finding carries no
+fix command: it is a prompt to hoist repeated brief text into shared constants, which is where the
+next 100 KB is.
+
+`scripts/workflows/selftest.mjs` holds the assertions, including the budget itself.
+
+### The determinism rule
+
+Claude Code compiles a workflow script under a rule that exists in **its runtime and nowhere in
+this repo**: `Date.now()`, `new Date()` and `Math.random()` are refused before a line of the script
+runs, because a resume replays completed `agent()` calls and a script that reads a clock cannot be
+replayed. The runtime says it in full:
+
+```
+workflow scripts must be deterministic: Date.now()/Math.random()/new Date() are unavailable
+(breaks resume). Stamp results after the workflow returns, or pass timestamps via args.
+```
+
+`scripts/workflows/run.mjs` bans none of that — it is a plain `AsyncFunction` — so **the Harness
+this framework tests against is more permissive than the one most runs happen on**. A workflow that
+breaks the rule passes every selftest here and then cannot start. Measured: a clock-minted
+per-invocation id did exactly that, green sweep and all.
+
+Three things hold the line now, and they are deliberately not the same thing:
+
+- `build.mjs` scans the **delivered** text and fails the build — delivered, not authored, so a
+  workflow may document the rule without tripping it;
+- `selftest.mjs` tests that scanner, including its false-positive cases, because a guard nothing
+  asserts is a guard a refactor deletes silently;
+- `aiworks doctor` reads the **installed** Claude Code's own sentence and warns when the runtime
+  bans something `BANNED` in `build.mjs` does not list. A copied list can only agree with itself;
+  this is the one check that can notice a rule a CLI update added.
+
+The workflow needs a per-invocation value anyway — a live-state probe must be re-asked rather than
+served from the memo — so it takes one from the caller: `--invocation <stamp>`, minted fresh per
+call by the skill, which is the runtime's own advice ("pass timestamps via args"). A resume passes
+the same arguments and replays its memos, which is what a resume is for.
+
+## Agent compatibility contract
+
+A generated agent is available only when safety-relevant fields are mapped:
+
+- `name`, `description`, prompt body, model, and supported effort map directly.
+- `skills:` becomes a mandatory startup-skill instruction; every named canonical skill must exist.
+- Workflow-spawned Codex roles pass their identity to a project-global default-deny tool guard.
+  Generated native custom agents also carry a conservative read-only default when their canonical
+  role lacks `Write`/`Edit`, but Codex re-applies the parent turn's live permission override when it
+  spawns them. Native role TOML therefore preserves role/model/instructions, not a hard per-role
+  permission boundary. Run permission-sensitive role work through the Workflow runtime; never use
+  a native custom-agent result as proof that its Claude tool allowlist was enforced.
+- Plan-only roles use the Harness's read-only mode.
+- No role carries a `maxTurns` ceiling: every agent runs to completion, bounded only by the
+  budgets already owned by `review.max_rounds`, `test_suite.max_fix_rounds`, and `dev_cycle.token_budget`.
+
+Harness-specific presentation can differ. Exact status-line layout is not functional parity, but
+missing agents, rules, hooks, skills, MCP tools, or workflow validation are.
+
+### Interactive child-agent visibility
+
+A named role spawned inside one interactive turn is child state of that turn, not necessarily a
+separate app-server session. Harness session browsers such as `codex agents` therefore cannot be
+used as proof that the child was or was not created. The orchestrator must expose the child’s
+canonical name plus `running` and terminal status in chat, and must use its native child-list tool
+as the authoritative view. A slow child stays alive while independent work continues; interruption
+is an explicit, reported state transition, never a silent fallback to inline impersonation.
+
+## Setup, update, and doctor
+
+A registered Harness is incomplete until all three lifecycle owners know it:
+
+1. `aiworks setup` installs the selected CLI, checks authentication quietly, launches login only
+   in the main interactive workspace, and reconciles native/projected plugin components.
+2. `aiworks update` upgrades the CLI through its owning installer and refreshes native plugin
+   marketplaces without replacing an installation from another owner.
+3. `aiworks doctor` checks binary/auth readiness, cheap projection presence, and the full projector
+   under `--deep`.
+
+Worktree setup never opens installers, login flows, or the first-run picker. It inherits the main
+workspace's shared supported set, symlinked local active subset, and machine-global login state.
+
+## Verification gate
+
+A Harness is not supported because files were generated. Before its PR can claim support:
+
+- generator fixture: create, second-run idempotence, source drift, safe removal, user conflict;
+- skill discovery in a fresh real Harness session;
+- every agent definition parses, with live samples across its model tiers;
+- a workflow-role forbidden write is denied; generated native non-write roles declare a read-only
+  default, and the parent-permission inheritance limitation is named rather than treated as proof;
+- path-scoped rule context appears only for a matching path;
+- representative hook context and blocking responses survive protocol translation;
+- shared and local MCP registrations list the expected servers without exposing secret values;
+- serial and parallel workflow probes satisfy their schemas;
+- BRD, PRD, and dev-cycle execute through deterministic stub agents;
+- a fresh terminal renders the richest supported native status line;
+- no verification run writes a real ticket, PR, or team notification.
+
+## Adding Hermes
+
+Hermes is the planned next Harness. Add it without changing the canonical tree:
+
+1. Add `hermes` to `scripts/harnesses/registry.json` with `default_selected: false`.
+2. Implement `scripts/aiworks-hermes.sh` with the Projector interface above.
+3. Add `scripts/workflows/adapters/hermes.mjs` implementing the runtime interface.
+4. Add install, quiet auth check, login, and owner-aware update commands to the lifecycle helpers.
+5. Translate canonical agents, rules, hooks, MCP, plugins, and status presentation. Link; do not
+   copy, whenever Hermes accepts the canonical format.
+6. Add `aiworks hermes` as a direct diagnostic command, while normal sync stays registry-driven.
+7. Extend `aiworks doctor` with cheap presence and deep drift checks.
+8. Run the full Verification gate and document only genuine, non-functional presentation
+   exceptions.
+
+If adding Hermes requires editing existing workflow scripts, duplicating skills, or adding a
+Hermes branch to `aiworks sync`, the adapter boundary is incomplete—fix the boundary first.
+
+Architecture rationale: [ADR 0023](../adr/0023-agent-harnesses-project-from-claude-canonical-source.md).

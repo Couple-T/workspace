@@ -19,10 +19,12 @@ vcs_open_pr() {
   # Name the repo explicitly. gh otherwise infers it from the cwd's `origin`, which is the WRONG
   # repo whenever VCS_REMOTE names an upstream (see _gh_nwo) — and inferring also fails outright
   # when the cwd is not inside a checkout of the target.
-  local nwo; nwo="$(_gh_nwo)"
-  existing="$(gh pr list --repo "$nwo" --head "$head" --state open --json url -q '.[0].url' 2>/dev/null || true)"
+  local nwo
+  _gh_nwo_resolve || die "could not resolve the target repository (VCS_REPO=${VCS_REPO:-<unset>}, VCS_REMOTE=${VCS_REMOTE:-origin})"
+  nwo="$_GH_NWO"
+  existing="$(_gh_pr list --head "$head" --state open --json url -q '.[0].url' 2>/dev/null || true)"
   if [[ -n "$existing" ]]; then
-    num="$(gh pr list --repo "$nwo" --head "$head" --state open --json number -q '.[0].number' 2>/dev/null)"
+    num="$(_gh_pr list --head "$head" --state open --json number -q '.[0].number' 2>/dev/null)"
     printf '%s\nnumber=%s\n' "$existing" "$num"
     return 0
   fi
@@ -30,9 +32,20 @@ vcs_open_pr() {
     printf 'DRY RUN — git push -u %s %q && gh pr create --repo %q --base %q --head %q --title %q --body <…>\n' "$VCS_REMOTE" "$head" "$nwo" "$base" "$head" "$title"
     return 0
   fi
-  git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
-  local url
-  url="$(gh pr create --repo "$nwo" --base "$base" --head "$head" --title "$title" --body "$body")"
+  vcs_push_head "$head"   # never pushes from a cwd that is not $nwo — see lib.sh
+  local url out rc=0
+  # `|| true` + an explicit check, for the reason spelled out in gitlab.sh: a failing create must
+  # not kill this function before it can say what went wrong. Both lines need it — the second one
+  # is a `grep` that exits 1 on no match, which under `pipefail` + `set -e` is itself fatal.
+  out="$(_gh_pr create --base "$base" --head "$head" --title "$title" --body "$body" 2>&1)" || rc=$?
+  url="$(printf '%s' "$out" | grep -oE 'https?://[^ ]+/pull/[0-9]+' | head -n1)" || true
+  # A create that reported failure may still have landed the PR (gitlab.sh's _gl_open_mr_url says
+  # why). Same read as the reuse path above — ask the forge before claiming nothing exists.
+  if [[ -z "$url" ]]; then
+    url="$(_gh_pr list --head "$head" --state open --json url -q '.[0].url' 2>/dev/null || true)"
+    [[ -z "$url" ]] || printf 'vcs[github] pr create exited %s, but %s already has an open PR on the forge — reusing %s\n' "$rc" "$head" "$url" >&9
+  fi
+  [[ -n "$url" ]] || { printf '%s\n' "$out" >&2; die "gh pr create exited $rc and printed no PR URL — the PR was NOT created (repo $nwo, $head -> $base). gh's own output is on the line above."; }
   num="${url##*/}" # gh prints the PR URL; the number is the trailing path segment
   printf '%s\nnumber=%s\n' "$url" "$num"
 }
@@ -43,7 +56,7 @@ vcs_open_pr() {
 # title (e.g. feat(FM-12): …) and/or branch (feature/FM-12).
 vcs_find_prs() {
   local key="$1"
-  gh pr list --state open --limit 100 --json url,title,headRefName 2>/dev/null \
+  _gh_pr list --state open --limit 100 --json url,title,headRefName 2>/dev/null \
     | jq -r --arg k "$key" '
         ($k | ascii_downcase) as $kk
         | .[]
@@ -53,29 +66,109 @@ vcs_find_prs() {
 }
 
 # vcs_list_prs -> one TSV line per OPEN PR in the repo of the current directory:
-#   number <TAB> draft(yes|no) <TAB> author <TAB> updated(YYYY-MM-DD) <TAB> title <TAB> url
+#   number <TAB> draft(yes|no) <TAB> author <TAB> updated(YYYY-MM-DD) <TAB> target <TAB> title <TAB> url
 # Read-only. Same contract as the GitLab implementation; see the note there on why this exists
 # alongside the key-filtered vcs_find_prs.
 vcs_list_prs() {
-  gh pr list --state open --limit 100 \
-      --json number,isDraft,author,updatedAt,title,url 2>/dev/null \
+  _gh_pr list --state open --limit 100 \
+      --json number,isDraft,author,updatedAt,baseRefName,title,url 2>/dev/null \
     | jq -r '.[] | [ (.number|tostring),
                      (if .isDraft then "yes" else "no" end),
                      (.author.login // "-"),
                      ((.updatedAt // "")[0:10]),
+                     (.baseRefName // "-"),
                      (.title // ""),
                      (.url // "") ] | @tsv' 2>/dev/null || true
 }
 
-# vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
+# vcs_pr_view NUMBER -> "state=", "merge_sha=", "approved=", "target_branch=", "source_branch=".
+# See the GitLab implementation for why the branches are printed: a gate cannot assert what the
+# sanctioned tool refuses to show, and this call already fetched the PR.
 vcs_pr_view() {
-  local num="$1" json state sha
-  if ! json="$(gh pr view "$num" --json state,mergeCommit 2>/dev/null)"; then
-    printf 'state=UNKNOWN\nmerge_sha=\n'; return 0
+  local num="$1" json state sha tgt src
+  if ! json="$(_gh_pr view "$num" --json state,mergeCommit,baseRefName,headRefName 2>/dev/null)"; then
+    printf 'state=UNKNOWN\nmerge_sha=\napproved=unknown\ntarget_branch=\nsource_branch=\n'; return 0
   fi
   state="$(printf '%s' "$json" | jq -r '.state // "UNKNOWN"')"
   sha="$(printf '%s' "$json" | jq -r '.mergeCommit.oid // ""')"
-  printf 'state=%s\nmerge_sha=%s\n' "$state" "$sha"
+  tgt="$(printf '%s' "$json" | jq -r '.baseRefName // ""')"
+  src="$(printf '%s' "$json" | jq -r '.headRefName // ""')"
+  printf 'state=%s\nmerge_sha=%s\napproved=%s\ntarget_branch=%s\nsource_branch=%s\n' \
+    "$state" "$sha" "$(vcs_pr_approved "$num")" "$tgt" "$src"
+}
+
+# vcs_pr_retarget NUMBER BASE -> repoint an OPEN PR at a different base branch.
+# `gh pr edit --base` is the supported route (PATCH /pulls/:n with `base` underneath). GitHub
+# dismisses no approval for a base change by default, so this is the non-destructive repair —
+# unlike close + reopen, which loses review state.
+vcs_pr_retarget() {
+  local num="$1" base="$2" dry="${3:-0}" out
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — gh pr edit %s --base %s\n' "$num" "$base"; return 0
+  fi
+  out="$(_gh_pr edit "$num" --base "$base" 2>&1)" || { printf '%s\n' "$out" >&2; return 1; }
+  printf 'target_branch=%s\n' "$(_gh_pr view "$num" --json baseRefName -q '.baseRefName' 2>/dev/null || printf '%s' "$base")"
+}
+
+# vcs_pr_describe NUMBER TITLE BODY [DRY] -> re-describe an OPEN PR. An empty TITLE or BODY means
+# "leave that field alone", so a caller can fix a stale description without restating a title.
+#
+# The body goes through --body-file, never argv. A description is markdown of unbounded length,
+# and a multi-kilobyte argv is the kind of limit that holds on this machine and fails on someone
+# else's — the same reason open-pr.sh grew --body-file.
+vcs_pr_describe() {
+  local num="$1" title="${2:-}" body="${3:-}" dry="${4:-0}" out bf=""
+  [[ -n "$title" || -n "$body" ]] || { printf 'nothing to update — pass --title, --body or --body-file\n' >&2; return 1; }
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — gh pr edit %s%s%s\n' "$num" \
+      "${title:+ --title "$title"}" "${body:+ --body-file <${#body} bytes>}"; return 0
+  fi
+  local -a args=(edit "$num")
+  [[ -n "$title" ]] && args+=(--title "$title")
+  if [[ -n "$body" ]]; then
+    bf="$(mktemp)"; printf '%s\n' "$body" > "$bf"; args+=(--body-file "$bf")
+  fi
+  # `out=$(…)` on its own is FATAL under this adapter's `set -e`: the function dies at the
+  # assignment and the caller gets zero bytes instead of the forge's reason. The `||` is what
+  # keeps the refusal readable — the same silent-exit regression open-pr-selftest.sh pins.
+  if ! out="$(_gh_pr "${args[@]}" 2>&1)"; then
+    [[ -z "$bf" ]] || rm -f "$bf"
+    printf '%s\n' "$out" >&2; return 1
+  fi
+  [[ -z "$bf" ]] || rm -f "$bf"
+  printf 'updated=%s\n' "$num"
+}
+
+# vcs_pr_approved NUMBER -> prints yes | no | unknown, the forge's own record of whether this
+# PR already carries a review approval. "unknown" is NOT "no": it means GitHub would not
+# answer, and a caller must never skip a review gate on an unanswered question — treat unknown
+# as unapproved and review.
+#
+# The state is per REVIEWER, latest review wins: an APPROVED that a later CHANGES_REQUESTED
+# from the same person superseded is not an approval. Second tier is the approval marker on a
+# PR comment, which is what vcs_approve_pr leaves when the repo's rules refuse a review
+# (a self-approval, most often) — and what keeps a re-run from stacking a second verdict.
+vcs_pr_approved() {
+  local num="$1" json
+  if json="$(_gh_pr view "$num" --json reviews 2>/dev/null)"; then
+    if printf '%s' "$json" | jq -e '
+          [(.reviews // [])[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")]
+          | group_by(.author.login) | map(last)
+          | map(select(.state == "APPROVED")) | length > 0' >/dev/null 2>&1; then
+      printf 'yes\n'; return 0
+    fi
+    if _gh_has_approval_note "$num"; then printf 'yes\n'; return 0; fi
+    printf 'no\n'; return 0
+  fi
+  if _gh_has_approval_note "$num"; then printf 'yes\n'; return 0; fi
+  printf 'unknown\n'
+}
+
+# _gh_has_approval_note NUMBER -> 0 when a PR comment starts with the approval marker that
+# vcs_approve_pr posts when the host-level review is refused.
+_gh_has_approval_note() {
+  _gh_pr view "$1" --json comments 2>/dev/null \
+    | jq -e --arg m "$VCS_APPROVAL_MARKER" 'any((.comments // [])[]; (.body // "") | startswith($m))' >/dev/null 2>&1
 }
 
 # vcs_pr_comment NUMBER PATH LINE BODY [DRY]
@@ -106,7 +199,7 @@ vcs_pr_comment() {
   fi
   if [[ -n "$path" && -n "$line" ]]; then
     local sha err
-    sha="$(gh pr view "$num" --json headRefOid -q .headRefOid 2>/dev/null || true)"
+    sha="$(_gh_pr view "$num" --json headRefOid -q .headRefOid 2>/dev/null || true)"
     if [[ -z "$sha" ]]; then
       printf 'WARN: could not read head SHA for PR #%s — posting %s:%s as a NON-inline comment\n' "$num" "$path" "$line" >&2
     else
@@ -114,7 +207,7 @@ vcs_pr_comment() {
       local -a args=( -f body="$body" -f commit_id="$sha" -f path="$path" -f side=RIGHT )
       if [[ "$sline" != "$eline" ]]; then args+=( -F start_line="$sline" -f start_side=RIGHT -F line="$eline" )
       else                                 args+=( -F line="$eline" ); fi
-      if err="$(gh api "repos/{owner}/{repo}/pulls/$num/comments" "${args[@]}" 2>&1)"; then
+      if err="$(gh api "repos/$_GH_NWO/pulls/$num/comments" "${args[@]}" 2>&1)"; then
         if [[ "$sline" != "$eline" ]]; then printf 'Inline comment posted on PR #%s at %s:%s-%s (range)\n' "$num" "$path" "$sline" "$eline"
         else                                printf 'Inline comment posted on PR #%s at %s:%s\n' "$num" "$path" "$eline"; fi
         return 0
@@ -122,7 +215,7 @@ vcs_pr_comment() {
         # Range rejected — retry a single-line anchor at the last line before giving up on inline.
         printf 'WARN: range anchor %s:%s-%s rejected on PR #%s — retrying single-line at %s.\n  GitHub said: %s\n' \
           "$path" "$sline" "$eline" "$num" "$eline" "$(printf '%s' "$err" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-300)" >&2
-        if err="$(gh api "repos/{owner}/{repo}/pulls/$num/comments" -f body="$body" -f commit_id="$sha" -f path="$path" -F line="$eline" -f side=RIGHT 2>&1)"; then
+        if err="$(gh api "repos/$_GH_NWO/pulls/$num/comments" -f body="$body" -f commit_id="$sha" -f path="$path" -F line="$eline" -f side=RIGHT 2>&1)"; then
           printf 'Inline comment posted on PR #%s at %s:%s\n' "$num" "$path" "$eline"; return 0
         fi
         printf 'WARN: inline anchor failed for %s:%s on PR #%s — falling back to a NON-inline comment.\n  GitHub said: %s\n' \
@@ -133,7 +226,7 @@ vcs_pr_comment() {
       fi
     fi
   fi
-  gh pr comment "$num" --body "$full" >/dev/null || die "failed to post comment on PR #$num"
+  _gh_pr comment "$num" --body "$full" >/dev/null || die "failed to post comment on PR #$num"
   if [[ -n "$path" && -n "$line" ]]; then
     printf 'Comment posted on PR #%s (NON-inline comment — see WARN above for why %s:%s did not anchor)\n' "$num" "$path" "$line"
   else
@@ -143,7 +236,7 @@ vcs_pr_comment() {
 
 # vcs_pr_comments NUMBER -> prints the PR's comments/review notes as plain text.
 vcs_pr_comments() {
-  gh pr view "$1" --comments 2>/dev/null || die "could not read comments for PR #$1"
+  _gh_pr view "$1" --comments 2>/dev/null || die "could not read comments for PR #$1"
 }
 
 # vcs_pr_threads NUMBER -> list the PR's review threads, one block each:
@@ -219,7 +312,7 @@ vcs_close_pr() {
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — gh pr close %s\n' "$num"; return 0
   fi
-  gh pr close "$num"
+  _gh_pr close "$num"
   vcs_pr_view "$num"
 }
 
@@ -250,10 +343,49 @@ _gh_nwo() {
       *) die "VCS_REMOTE=$VCS_REMOTE points at '$url', which is not a github.com remote — set VCS_PROVIDER to match it" ;;
     esac
   fi
-  nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
+  nwo="$(vcs_repo_ref)"
+  [[ -n "$nwo" ]] || nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
   [[ -n "$nwo" ]] && { printf '%s' "$nwo"; return 0; }
   url="$(git remote get-url origin 2>/dev/null || true)"; url="${url%.git}"
   case "$url" in *github.com[:/]*) printf '%s' "${url#*github.com[:\/]}" ;; *) printf '%s' "$url" ;; esac
+}
+
+# Resolve the target repo ONCE per process into $_GH_NWO, and say whether it worked.
+#
+# Two traps, both load-bearing. (1) `_gh_nwo`'s `die` is an `exit 1` inside a command substitution,
+# so it kills only that subshell — the caller keeps going with an EMPTY value. An empty value means
+# resolution FAILED, which is not the same claim as "no explicit target was given", and a caller that
+# conflates them falls back to the current directory's remote: the exact wrong-repo write this file
+# exists to prevent, now with a success return over it. So this returns non-zero and the caller
+# refuses. (2) A memo assigned inside `$( )` is assigned in the subshell and gone on return, so
+# `nwo="$(_gh_nwo_once)"` would have re-run `gh repo view` — a network call — on every single call.
+# Setting the global here and reading it directly is what actually memoizes.
+_GH_NWO=''
+_gh_nwo_resolve() {
+  [[ -n "$_GH_NWO" ]] && return 0
+  _GH_NWO="$(_gh_nwo)" || return 1
+  [[ -n "$_GH_NWO" ]] || return 1
+  return 0
+}
+
+# Every `gh pr <verb>` goes through here. gh resolves the repository from the CURRENT WORKING
+# DIRECTORY's git remote unless told otherwise, so in a multi-repo run — where the cwd is the
+# workspace root, not the target repo — every untargeted call acted on the wrong repository or
+# failed outright. `vcs_open_pr` was the only function that passed `--repo`; the rest inherited
+# the cwd. One wrapper names the repo for all of them; the resolved target itself is announced
+# once by lib.sh, deliberately outside any stderr a call site captures and then pattern-matches.
+_gh_pr() {
+  local verb="$1"; shift
+  # FAIL CLOSED. An untargeted `gh pr review --approve` or `gh pr merge --squash` lands on the cwd
+  # repo's PR of that number — numbers collide across this workspace — and it is irreversible. There
+  # is no fallback: if the target cannot be resolved, nothing goes on the wire.
+  _gh_nwo_resolve || die "could not resolve the target repository for \`gh pr $verb\` (VCS_REPO=${VCS_REPO:-<unset>}, VCS_REMOTE=${VCS_REMOTE:-origin}) — refusing to run it against the current directory's remote instead"
+  # Mutations only, and on fd 9 (see lib.sh): the reads are called from places that parse their
+  # output, and a mutation is the call whose silent misfire cost a real run three rounds.
+  case "$verb" in create|edit|comment|review|close|merge)
+    printf 'vcs[github] pr %s → %s\n' "$verb" "$_GH_NWO" >&9 ;;
+  esac
+  gh pr "$verb" --repo "$_GH_NWO" "$@"
 }
 
 vcs_upload_media() {
@@ -295,7 +427,7 @@ vcs_merge_pr() {
   # usual refusal here, and it has a real alternative, so the adapter names it rather than
   # letting the caller guess. (--admin can be added above if a self-merge must be forced.)
   local err
-  if ! err=$(gh pr merge "$num" --squash --subject "$subject" 2>&1); then
+  if ! err=$(_gh_pr merge "$num" --squash --subject "$subject" 2>&1); then
     printf '%s\n' "$err" >&2
     case "$err" in
       *"protected"*|*"Protected"*|*"not authorized"*|*"required status"*|*"review is required"*)
@@ -319,16 +451,26 @@ vcs_approve_pr() {
     printf 'DRY RUN — gh pr review %s --approve%s\n' "$num" "${body:+ --body <verdict>}"
     return 0
   fi
+  # IDEMPOTENT. A review gate that already passed is frozen, and a later invocation must be able
+  # to call this without consequence: the APPROVE review is harmless to repeat but its body is
+  # not — it would stack a second identical verdict on the PR every run. An UNKNOWN answer is
+  # not a yes: when GitHub won't say, approve again rather than skip, because a missing approval
+  # is the failure mode that actually costs something.
+  if [[ "$(vcs_pr_approved "$num")" == "yes" ]]; then
+    printf 'PR #%s is already approved — nothing to do (no second verdict posted)\n' "$num"
+    return 0
+  fi
+  if [[ -n "$body" && "$body" != "$VCS_APPROVAL_MARKER"* ]]; then body="$VCS_APPROVAL_MARKER — $body"; fi
   # Approvals can be refused by the repo's own rules (and GitHub always refuses a self-approval).
   # That is a capability of this repo, not a failed review: degrade to a comment carrying the
   # same verdict rather than exiting 1 and leaving the gate recorded as broken.
   local err
-  if err=$(gh pr review "$num" --approve ${body:+--body "$body"} 2>&1); then
+  if err=$(_gh_pr review "$num" --approve ${body:+--body "$body"} 2>&1); then
     printf 'Approved PR #%s\n' "$num"
     return 0
   fi
   printf 'WARN: host-level approval unavailable on PR #%s — %s\n' "$num" "${err##*$'\n'}" >&2
-  gh pr comment "$num" --body "${body:-PASS} (host-level approval is unavailable on this repository; recording the verdict as a comment.)" >/dev/null \
+  _gh_pr comment "$num" --body "${body:-$VCS_APPROVAL_MARKER} (host-level approval is unavailable on this repository; recording the verdict as a comment.)" >/dev/null \
     || die "PR #$num: approval was refused AND the fallback verdict comment failed — nothing records this review"
   printf 'Approved PR #%s (verdict recorded as a COMMENT — host-level approval unavailable on this repository)\n' "$num"
 }

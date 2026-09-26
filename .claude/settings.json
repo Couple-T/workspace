@@ -1,5 +1,10 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "outputStyle": "Concise",
+  "autoMemoryEnabled": false,
+  "fallbackModel": [
+    "sonnet"
+  ],
   "enabledMcpjsonServers": [
     "postgres_main",
     "postgres_secondary",
@@ -76,6 +81,7 @@
     "deny": [
       "Bash(hcat *.env)",
       "Bash(hcat *.env.*)",
+      "Bash(hcat *socks.auth)",
       "Bash(sudo *)",
       "Bash(rm -rf /*)",
       "Bash(rm -rf ~*)",
@@ -85,6 +91,7 @@
       "Bash(gcloud *)",
       "Read(**/.env)",
       "Read(**/.env.local)",
+      "Read(**/socks.auth)",
       "Read(**/*.pem)",
       "Read(**/id_rsa)",
       "Read(**/id_ed25519)",
@@ -92,6 +99,8 @@
       "Read(**/secrets/**)",
       "Write(**/.env)",
       "Edit(**/.env)",
+      "Write(**/socks.auth)",
+      "Edit(**/socks.auth)",
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
       "Read(~/.claude/**)",
@@ -160,6 +169,11 @@
           },
           {
             "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-bash-context-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh",
             "timeout": 10
           },
@@ -185,6 +199,16 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-adapter-pipe-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-orchestrator-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-codegraph-nudge.sh",
+            "timeout": 10
           }
         ]
       },
@@ -224,6 +248,11 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-adapter-edit-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-orchestrator-guard.sh",
             "timeout": 10
           }
         ]
@@ -269,6 +298,11 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/context-handoff.sh",
             "timeout": 10
           }
         ]
@@ -323,6 +357,21 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-context-budget.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/context-handoff.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-agent-relay.sh",
             "timeout": 10
           }
         ]
@@ -436,6 +485,18 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-agent-relay.sh",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   },
   "enabledPlugins": {
@@ -473,9 +534,9 @@
     }
   },
   "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75",
     "HCAT_GATE_BYTES": "65536",
     "HCAT_GATE_NO_SNIFF": "1",
-    "DANGI_NUDGE_BYTES": "32768",
     "DANGI_NO_NOTIFY": "1",
     "HEADROOM_UPDATE_CHECK": "off",
     "HF_HUB_OFFLINE": "1",

@@ -10,9 +10,12 @@ print **plain text** to stdout. A ticket key is `FM-9` / `APP-123` / a bare numb
 |---|---|
 | `get-ticket-details.sh`   | Read title, properties/fields (Status, Priority, Assignee, …) and the body |
 | `get-ticket-comments.sh`  | Read open comments (`--deep` also gathers inline/block-anchored — Notion only) |
-| `find-tickets.sh`         | **Search** the tracker (`--query`/`--type`/`--open`) — the dedup lookup |
+| `find-tickets.sh`         | **Search** the tracker (`--query`/`--type`/`--open`/`--fix-version`) — the dedup lookup, and the release-report input |
 | `upsert-ticket-details.sh`| Set Status/Priority/Effort/Title/Description, and write the full spec to the **body** (`--body`/`--body-file`) — updates or creates the ticket |
 | `add-ticket-comment.sh`   | Add a comment (text from an argument or stdin) — Markdown is rendered to the tracker's native style, not posted raw |
+| `find-ticket-comment.sh`  | **Read-only.** Print the id + body of the one comment carrying `--marker <text>`, or nothing |
+| `upsert-ticket-comment.sh`| Add that comment the first time and **update it in place** every run after — one durable comment per marker instead of a growing pile |
+| `… --section '### <repo>'` | Write only that heading's block inside the marked record, leaving every other section byte-identical — one comment co-written by several agents (`find-ticket-comment.sh --section` reads one back) |
 
 The two write scripts accept `--dry-run` to print the request instead of sending it.
 
@@ -63,6 +66,34 @@ the media uuid it needs. To REPLACE or drop an embedded image, add `--no-carry-m
 otherwise the safety net re-appends the one your new body left out, and writing again
 cannot clear it (the carry-over reads the description it just wrote).
 
+**A repeated report is ONE comment, not a pile.** Anything a run posts again on every
+invocation — a per-repo test report, most of all — goes through `upsert-ticket-comment.sh`
+with a `--marker`, so the ticket carries one durable comment per *context* (normally per repo)
+that each later run rewrites. The marker has to be a **visible line** in the body
+(`[test-report · <repo>]`): a comment is posted as Markdown, stored as the tracker's own
+format, and read back as text, and an HTML comment does not survive that trip. The script
+refuses a body that omits its own marker, because such a record is invisible to the next run
+and the next run then posts a second one.
+
+**One comment, several writers.** A record more than one agent contributes to — the build role's
+`[dev · <KEY>]`, one `### <repo>` section per repo — is written with `--section '### <repo>'`:
+the body starts with that heading, carries no marker (the script writes it), and only that block is
+replaced. The repos build in parallel, so a writer rewriting the whole body would silently drop
+every sibling's section; the read-modify-write runs under a ticket+marker directory lock.
+
+**Every provider updates in place** — by whichever route its API actually offers. **Jira** and
+**Linear** rewrite the comment body (`commentUpdate` on Linear). **Notion**'s comment API has no
+update endpoint at all, so there a marked record is not a comment: it is ONE `callout` **block**
+on the page, the marker being the callout's own text and the record its children, and an update
+archives that block and appends a fresh one. So the marker still identifies exactly one record,
+`find-ticket-comment.sh` still reads it back, and the comment feed stays a place for humans.
+
+This is load-bearing, not cosmetic. `dev-cycle` proves its cross-repo test-suite gate really ran
+by having a second agent *find* this run's result on the ticket through `tracker_find_comment`.
+While notion and linear answered "nothing" unconditionally, that gate could never be verified on
+either — it was recorded as **NOT RUN** on every ticket. A find that cannot find is not a missing
+nicety; it is a gate that cannot pass.
+
 **Comments render Markdown too:** `add-ticket-comment.sh` no longer posts raw Markdown —
 it converts it to each tracker's native style so headers, bullets, tables and inline
 marks read as intended, not as literal `##`/`-`/`|`. **Jira** comment bodies are full ADF
@@ -88,6 +119,13 @@ the board so a caller never files a duplicate. Notion matches a case-insensitive
 **substring**; Jira's `summary ~` is a **word/text** match — pick a distinctive whole
 token. `--json` returns the raw matches for scripting.
 
+**Every ticket in a release:** `find-tickets.sh --fix-version <id|name>` — the input a
+release report or announcement is built from. Jira maps it to `fixVersion = …`: an all-digits
+value is the version **ID** (the number in a release-report URL, passed bare) and anything
+else is the version **name** (quoted), so no version lookup is needed. Notion and Linear have
+no release field and **refuse** the flag — a silently unfiltered list would be worse than an
+error. Regression suite: `./fix-version-selftest.sh` (offline, asserts the built JQL).
+
 ## Layout
 
 ```
@@ -97,7 +135,11 @@ tracker/
 ├── get-ticket-comments.sh
 ├── upsert-ticket-details.sh
 ├── add-ticket-comment.sh
-├── notion/{impl.sh,notion.jq} # Notion REST implementation
+├── find-ticket-comment.sh     # reader: marker -> record id + body
+├── upsert-ticket-comment.sh   # writer: update the marked record, else add it
+├── durable-record-selftest.sh # offline regression for the marker upsert on every provider
+├── fix-version-selftest.sh    # offline regression for the --fix-version JQL clause + provider refusal
+├── notion/{impl.sh,notion.jq} # Notion REST implementation (records are page BLOCKS — see above)
 ├── jira/{impl.sh,jira.jq}     # Jira Cloud REST v3 implementation (ADF)
 └── linear/impl.sh             # Linear GraphQL implementation (Markdown-native)
 ```
@@ -127,6 +169,7 @@ Requires `bash`, `curl`, and `jq`.
 # search (dedup) — provider-neutral flags
 ./find-tickets.sh --query "encryption" --open
 ./find-tickets.sh --type Bug --open --json
+./find-tickets.sh --fix-version 10042 --json      # Jira: every ticket in one release
 
 # update — provider-neutral flags
 ./upsert-ticket-details.sh FM-9    --status Testing
@@ -134,6 +177,12 @@ Requires `bash`, `curl`, and `jq`.
 ./upsert-ticket-details.sh new     --title "Encrypt DB at rest" --description "one-liner" --body-file spec.md
 ./add-ticket-comment.sh    FM-9    "Moving to Testing — plan attached."
 ./add-ticket-comment.sh    APP-123 < plan.md
+
+# a comment with an IDENTITY — posted once, rewritten by every later run
+./upsert-ticket-comment.sh APP-123 --marker '[test-report · e2e-suite]' < report.md
+./find-ticket-comment.sh   APP-123 --marker '[test-report · e2e-suite]' --id-only
+./upsert-ticket-comment.sh APP-123 --marker '[dev · APP-123]' --section '### web-app' < section.md
+./find-ticket-comment.sh   APP-123 --marker '[dev · APP-123]' --section '### web-app'
 ./upsert-ticket-details.sh APP-123 --status Done --dry-run   # preview, don't send
 
 # create a QA sub-task under a parent (component validated, Implements link added)

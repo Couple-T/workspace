@@ -159,12 +159,13 @@ ensure_graphify() {
 }
 
 # ── the workspace repo's doc graph: report, never silently rebuild ────────────────
-# graph.json + GRAPH_REPORT.md are COMMITTED, so a fresh clone already has the map and a
-# sync must not spend the semantic pass again — it is the one expensive step here, it is
-# serialised (graphify forces concurrency 1 on the claude-cli backend), and it grows with
-# the repo's prose. So this step only reports, and hands over the one command that
-# refreshes it. It also installs the git merge driver, which is what stops two people
-# committing graph.json in parallel from landing conflict markers in it.
+# The graph is NOT committed — it is derived, per-workspace state (see .gitignore) — so a
+# fresh clone has none and builds it once, by hand. A sync must never spend the semantic
+# pass on its own: it is the one expensive step here, it is serialised (graphify forces
+# concurrency 1 on the claude-cli backend), and it grows with the repo's prose. So this step
+# only reports, and hands over the one command that refreshes it. `hook install` still runs,
+# for the post-commit rebuild and for the union merge driver a workspace that CHOOSES to
+# commit its own graph needs.
 sync_doc_graph() {
   step "Check the workspace repo's doc graph (reports only — never re-spends the semantic pass)"
   command -v graphify >/dev/null 2>&1 || { warn "graphify not on PATH — doc graph not checked"; return 0; }
@@ -356,9 +357,12 @@ prepare_adapter_env() {
   # tracker/.env — the provider, plus the one provider-specific value the config carries.
   local -a tkv=(TRACKER_PROVIDER "$tracker_provider")
   case "$tracker_provider" in
-    jira)   tkv+=(JIRA_PROJECT_KEY  "$ticket_prefix") ;;   # ticket_prefix == the Jira project key
+    # ticket_prefix == the project/team key. It may list several ("FM,OPS"); the adapters take
+    # ONE, and an explicit KEY-123 reaches any project regardless, so the FIRST one is the
+    # default a bare number expands against.
+    jira)   tkv+=(JIRA_PROJECT_KEY  "${ticket_prefix%%,*}") ;;
     notion) tkv+=(NOTION_STATUS_DONE "$status_done") ;;    # the "done" status name find-tickets uses
-    linear) tkv+=(LINEAR_TEAM_KEY   "$ticket_prefix") ;;   # ticket_prefix == the Linear team key
+    linear) tkv+=(LINEAR_TEAM_KEY   "${ticket_prefix%%,*}") ;;
   esac
   seed_env_file "$DIR/tracker" "${tkv[@]}"
 
@@ -1065,15 +1069,21 @@ if [[ -x "$SUPGEN" ]]; then   # prints its own "==> Ensure .superset lifecycle h
   else "$SUPGEN" >/dev/null || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"; fi   # quiet by default
 fi
 
-# ── project the whole workspace onto Cursor ───────────────────────────────────────
-# One pass over the root + every repo, after the per-repo work above has settled the
-# Claude-side config. Symlinks only (plus the generated hooks/permissions pair), so a
-# repo that was already in sync costs nothing. Never runs in dry-run.
-CURGEN="$DIR/aiworks-cursor.sh"
-if [[ -x "$CURGEN" && "$DRY" -ne 1 ]]; then
-  step "Project the agent config onto Cursor (AGENTS.md + .cursor/) for the root and every repo"
-  if [[ "$VERBOSE" -eq 1 ]]; then "$CURGEN" || warn "could not project the Cursor layer — run 'aiworks cursor' by hand"
-  else "$CURGEN" >/dev/null || warn "could not project the Cursor layer — run 'aiworks cursor' by hand"; fi
+# ── reconcile every active Agent harness ──────────────────────────────────────
+# The Harness registry owns dispatch. The ACTIVE set (workspace.config.local.yaml over the shared
+# file) is projected; a Harness absent from it is left untouched — sync never deletes a
+# projection, `aiworks remove --harnesses <id>` does. This is the extension seam for future
+# Harnesses such as Hermes.
+HARGEN="$DIR/aiworks-harnesses.sh"
+if [[ -x "$HARGEN" ]]; then
+  step "Reconcile selected Agent harnesses"
+  if [[ "$DRY" -eq 1 ]]; then
+    "$HARGEN" sync --dry-run || warn "could not preview Harness projections"
+  elif [[ "$VERBOSE" -eq 1 ]]; then
+    "$HARGEN" sync || warn "could not reconcile Harness projections — run 'aiworks harnesses sync' by hand"
+  else
+    "$HARGEN" sync >/dev/null || warn "could not reconcile Harness projections — run 'aiworks harnesses sync' by hand"
+  fi
 fi
 
 # ── the root's own instruction is subject to the same budget ─────────────────────
@@ -1090,7 +1100,7 @@ else
   if [[ "${#noted[@]}" -gt 0 ]]; then
     printf '%sNotes:%s\n' "$c_warn" "$c_off"; for n in "${noted[@]}"; do printf '  • %s\n' "$n"; done
   fi
-  printf '%sNext:%s `mani list projects` to see the set, then `cursor %s.code-workspace` to open every repo as its own Source Control panel. (The .claude/workflows/dev-cycle.js CONFIG and %s.code-workspace were regenerated from workspace.config.yaml automatically — no manual mirror needed.)\n' "$c_step" "$c_off" "$(basename "$ROOT")" "$(basename "$ROOT")"
+  printf '%sNext:%s `mani list projects` to see the set, then `cursor %s.code-workspace` to open every repo as its own Source Control panel. (The .claude/workflows/src/dev-cycle.js CONFIG and %s.code-workspace were regenerated from workspace.config.yaml automatically — no manual mirror needed.)\n' "$c_step" "$c_off" "$(basename "$ROOT")" "$(basename "$ROOT")"
 fi
 # Printed in EVERY branch, including a 0-repo run and a dry run: triage readiness has nothing to
 # do with how many repos matched the filter, so scoping it to the normal branch would hide it

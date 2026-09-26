@@ -1,16 +1,13 @@
 ---
 name: pg-triage
 description: >-
-  Use this to get ground truth from the real DEPLOYED Postgres — PRODUCTION or STAGING,
-  read-only — instead of guessing from code, memory, or a local copy. Trigger for: a reported
-  symptom that only deployed data can confirm (wrong balance, bad amount, missing/duplicate
-  record, wrong status, misconfigured row); a direct ask to look up, grab, verify, or compare a
-  specific row, count, or config value in prod or staging, or across several configured
-  databases; checking what a migration or a deploy actually did to the STAGING data; or
-  grounding another skill plan/fix with a real deployed DB fact. One on-demand, read-only MCP
-  covers both environments and always disconnects when done — it never writes or migrates. Do
-  NOT use for the local/dev DB (postgres_main/postgres_secondary), schema migrations,
-  logs/traces, or cache / session / Redis-Stream state (redis-triage).
+  Read-only ground truth from the DEPLOYED Postgres, PRODUCTION or STAGING - not code, memory or a
+  local copy. Triggers: a symptom only deployed data confirms (wrong balance, bad amount, missing
+  or duplicate record, wrong status, a misconfigured row); verifying or comparing a row, count or
+  config value in prod, staging, or across several configured databases; what a migration or
+  deploy did to STAGING data. Never writes or migrates. NOT for the local/dev DB
+  (postgres_main/postgres_secondary), schema migrations, logs and traces (telemetry-triage), or
+  cache/session/Redis-Stream state (redis-triage).
 argument-hint: "[symptom / target / table / ticket-key] [staging|prod]"
 ---
 
@@ -110,11 +107,18 @@ Every data tool takes **`target`** — a name you configured via `PGPROD_<NAME>`
 (see `scripts/db/README.md`): `target="main"`, `target="secondary"`, or any name you declared.
 Use `list_targets` to see what is configured.
 
-There is **no sharding scheme baked in** — a target is just a database. If your data is split
-across several databases, each is its own target (`target="shard0"`, …); to compare a record
-across them, query each explicitly and say you did — don't pretend one database is the whole
-picture. When you only have an inner-system identifier (e.g. a `*_code`) and don't know which
-target holds it, resolve it from whatever registry your schema uses before a blind fan-out.
+A target is just a database — nothing about the topology is assumed until it is declared. If
+your data is split across several databases, each is its own target (`target="shard0"`, …); to
+compare a record across them, query each explicitly and say you did — don't pretend one database
+is the whole picture. When you only have an inner-system identifier (e.g. a `*_code`) and don't
+know which target holds it, resolve it from whatever registry your schema uses before a blind
+fan-out.
+
+When the `.env` **declares shard roles** (`PGPROD_SHARD_<HEX>`, `PGPROD_<LABEL>_SHARD_<HEX>`, or
+`PGPROD_<NAME>_SHARD=<hex>` — see "Shards (optional)" in `scripts/db/README.md`), `target="<hex>"`
+selects that shard and `resolve_shard(routing_key)` derives it from the identifier's first
+character; every data tool then takes `routing_key=` in place of `target=`. A shard `list_targets`
+reports with `conflict: [vars]` is deliberately unconfigured — fix the `.env`, never guess.
 
 ## Workflow
 
@@ -133,7 +137,9 @@ target holds it, resolve it from whatever registry your schema uses before a bli
    hand that off — this skill does not write code or change prod.
 7. **Teardown**: call `disconnect` to close every prod pool **and any open tunnel sidecars**.
    Always do this when the investigation is done — it leaves zero open connections to prod and
-   zero tunnel processes. Call `tunnel_status` afterwards to confirm the local port was released.
+   zero tunnel processes — except an adopted gost (a person's own), which is reported under
+   `adopted_left_running` and left running on purpose. Call `tunnel_status` afterwards to
+   confirm the local port was released.
 
 ## Persisting to a local repro (developer, `/diagnosing-bugs` only)
 Reading prod here is transient and read-only. If a bug needs the *actual* rows reproduced
@@ -149,19 +155,25 @@ the fix off.
 Some targets require a `gcloud compute ssh` port-forward because the Postgres host is inside a
 VPC. These are declared in `scripts/db/.env` as `PGPROD_<NAME>_TUNNEL=...` sidecars. When one
 is configured, the MCP opens and manages the tunnel automatically — you do not need a `gcloud`
-grant.
+grant. Targets may instead ride the shared `gost` SOCKS forwarder (`tunnel=gost` — one process
+for every gost target, stopped when the last one closes); a missing `gost` binary fails loudly
+with `brew install gost` and a pointer to `scripts/db/README.md`.
 
 - **`list_targets`** includes `tunnel_open` per entry when a sidecar is declared.
-- **`tunnel_status`** shows open tunnels, pid, idle time and time-to-reap mid-session.
-- **`disconnect`** closes both pools and tunnels and returns a `tunnels_closed` key.
+- **`tunnel_status`** shows open tunnels, pid, `owner` (`self` | `adopted`), idle time and
+  time-to-reap mid-session.
+- **`disconnect`** closes both pools and tunnels and returns a `tunnels_closed` key, plus
+  `adopted_left_running` for any adopted gost it left untouched.
 
 **Port-in-use failure:** if `127.0.0.1:<local>` is already listening when the MCP tries to
-open a tunnel, the call fails with a clear error naming `scripts/db/tunnel.sh status|kill`.
-This means a previous session's tunnel is orphaned. The remedy is human-only:
+open a tunnel, the call fails with a clear error naming `scripts/db/tunnel.sh status|kill` —
+a listener the MCP could not identify as this `gost.yaml`'s gost (the error names the failed
+condition), or a gcloud port already taken. A gost a person started for themselves is instead
+adopted: used for connecting, never stopped. The remedy for the rest is human-only:
 
 ```bash
-scripts/db/tunnel.sh status     # see what is open
-scripts/db/tunnel.sh kill       # clear orphans
+scripts/db/tunnel.sh status     # see what is open, each gost labelled by owner
+scripts/db/tunnel.sh kill       # clear orphans — a manual gost is spared
 ```
 
 This script is not granted to agents. See `docs/adr/0017`.

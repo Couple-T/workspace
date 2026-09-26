@@ -120,7 +120,7 @@ tracker_get_details() {
   key="$(jira_key "$1")"
   # Append the configured point/effort field ids so the estimate is visible (e.g. for
   # /estimate-ticket re-estimation) — the endpoint returns only the fields requested.
-  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent,issuelinks,attachment"
+  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent,issuelinks,attachment,fixVersions"
   for f in "$JIRA_DEV_POINTS_FIELD" "$JIRA_QA_POINTS_FIELD" "$JIRA_EFFORT_FIELD" "$JIRA_SPRINT_FIELD"; do
     [[ -n "$f" ]] && fields_q="$fields_q,$f"
   done
@@ -518,10 +518,49 @@ tracker_add_comment() {
   printf 'Added comment to %s (id %s)\n' "$key" "${cid:-?}"
 }
 
+# tracker_find_comment TICKET MARKER -> the ONE comment this marker identifies:
+#   line 1     its comment id
+#   line 2..n  its body, rendered back to text
+# Nothing at all when no comment carries the marker. When several do (a duplicate from before
+# the marker existed, a partial earlier run), the NEWEST wins — that is the one a re-run should
+# update, and the older ones are history nobody is editing any more.
+#
+# The marker is matched against the RENDERED text, not the ADF, because that is the only form
+# stable across a round trip: a comment is posted as Markdown, stored as ADF, and read back as
+# text, and an HTML comment (`<!-- … -->`) does not survive that trip at all. So a marker has
+# to be a line a human can see — which is also why it reads like a label rather than a uuid.
+#
+# A marker embedding the ticket key (e.g. `[dev · APP-1]`) is not safe from md_to_adf's own
+# autolink: the FIRST post goes out bold (`**[dev · APP-1]**`), and bold does not recurse for
+# inline parsing, so the key inside is untouched — but adf_to_text drops mark info entirely
+# (it only ever reads a LINK mark back out), so the record's SECOND write posts that same line
+# unguarded, and this time the bare key gets autolinked like any other mention. Read back, it
+# is `[dev · [APP-1](url)]` — text that no longer CONTAINS the literal marker, so the next
+# find answers "nothing" and a fresh record gets posted instead of an update. Undo exactly
+# that autolink before matching, so a marker already corrupted this way is still found.
+tracker_find_comment() {
+  local ticket="$1" marker="$2" key resp hit
+  key="$(jira_key "$ticket")"
+  resp="$(jira_api GET "/rest/api/3/issue/$key/comment")"
+  hit="$(printf '%s' "$resp" | jq -r -L "$JIRA_IMPL_DIR" --arg m "$marker" --arg prefix "$JIRA_PROJECT_KEY" '
+    include "jira";
+    def unlink_ticket_keys:
+      if ($prefix // "") == "" then .
+      else gsub("\\[(?<k>" + $prefix + "-[0-9]+)\\]\\([^)]*\\)"; "\(.k)") end;
+    [ (.comments // [])[]
+      | { id: .id, created: (.created // ""), text: (.body | adf_to_text | unlink_ticket_keys) }
+      | select(.text | contains($m)) ]
+    | sort_by(.created) | last
+    | if . == null then empty else "\(.id)\n\(.text)" end')"
+  [[ -n "$hit" ]] || return 0
+  printf '%s\n' "$hit"
+}
+
 # Replace an existing comment's body in place (e.g. re-language a comment posted
 # before the workspace's language policy was applied). comment_id comes from
 # tracker_get_comments' raw API response (get-ticket-comments.sh doesn't print it,
-# so callers fetch it via GET /rest/api/3/issue/$key/comment first).
+# so callers fetch it via GET /rest/api/3/issue/$key/comment first), or from
+# tracker_find_comment when the comment carries an identifying marker.
 tracker_edit_comment() {
   local ticket="$1" comment_id="$2" dry="$3" text="$4" key body
   key="$(jira_key "$ticket")"
@@ -750,11 +789,15 @@ tracker_download_attachment() {
   printf 'Downloaded %s (id %s) -> %s\n' "$att_name" "$att_id" "$dest"
 }
 
-# tracker_find OPTS_JSON — OPTS = {query, open, limit, as_json, types:[...]}.
+# tracker_find OPTS_JSON — OPTS = {query, open, done, estimated, fix_version, limit, as_json, types:[...]}.
 # Search the project via JQL and print one compact line per match (newest first):
 #   "<KEY> | <Status> | <Type> | <Summary>  ::  <Description>", or raw issues JSON.
 # The dedup lookup behind /clarifying-ticket. NOTE: Jira's `summary ~` is a word/text
 # match (not a raw substring); pick a distinctive whole token.
+#
+# --fix-version → `fixVersion = <v>`. JQL accepts the version's numeric ID bare (the number
+# in a release-report URL) and its NAME quoted, so one flag serves both without a version
+# lookup. All-digits → bare id; anything else → @json-quoted name.
 #
 # Uses POST /rest/api/3/search/jql — the enhanced search Atlassian migrated to after
 # REMOVING the classic POST /rest/api/3/search (changelog CHANGE-2046; the old endpoint
@@ -767,11 +810,12 @@ tracker_download_attachment() {
 # enough issues are collected (only --limit 0 / "all" pages the whole board); the final
 # slice trims any overshoot from the last page.
 tracker_find() {
-  local opts="$1" query open done_only estimated limit as_json types_json jql token acc resp body count tmpdir
+  local opts="$1" query open done_only estimated fix_version limit as_json types_json jql token acc resp body count tmpdir
   query="$(printf '%s' "$opts" | jq -r '.query // ""')"
   open="$(printf '%s' "$opts" | jq -r '.open // false')"
   done_only="$(printf '%s' "$opts" | jq -r '.done // false')"
   estimated="$(printf '%s' "$opts" | jq -r '.estimated // false')"
+  fix_version="$(printf '%s' "$opts" | jq -r '.fix_version // ""')"
   limit="$(printf '%s' "$opts" | jq -r '.limit // 50')"
   as_json="$(printf '%s' "$opts" | jq -r '.as_json // false')"
   types_json="$(printf '%s' "$opts" | jq -c '.types // []')"
@@ -798,12 +842,13 @@ tracker_find() {
   done
 
   jql="$(jq -rn --arg proj "$JIRA_PROJECT_KEY" --arg q "$query" --argjson open "$open" \
-      --argjson done "$done_only" --arg est "$est_clause" --argjson types "$types_json" '
+      --argjson done "$done_only" --arg est "$est_clause" --arg fv "$fix_version" --argjson types "$types_json" '
     ( [ (if ($proj|length) > 0 then "project = " + $proj else empty end),
         (if ($q|length)    > 0 then "summary ~ " + ($q | @json) else empty end),
         (if $open              then "statusCategory != Done" else empty end),
         (if $done              then "statusCategory = Done"  else empty end),
         (if ($est|length)  > 0 then $est else empty end),
+        (if ($fv|length)   > 0 then "fixVersion = " + (if ($fv|test("^[0-9]+$")) then $fv else ($fv|@json) end) else empty end),
         (if ($types|length)> 0 then "issuetype in (" + ($types | map(@json) | join(", ")) + ")" else empty end)
       ] )
     | (if length > 0 then join(" AND ") + " " else "" end) + "ORDER BY created DESC"

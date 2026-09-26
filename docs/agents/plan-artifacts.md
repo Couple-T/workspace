@@ -18,12 +18,25 @@ One plan file **per touched repo**, inside that repo:
 | Logged bugs (bug round) | `<repo>/agent_logs/<KEY>-bugs.md` |
 | Run report | `<repo>/agent_logs/<KEY>-report.md` |
 | Production case file | `<script-repo>/agent_logs/<CASE>-report.md` |
+| dev-cycle run state | `<workspace-root>/agent_logs/<KEY>-dev-cycle-state/<repo>-<milestone>.json` |
 
 The **case file** is the one artifact that is not per touched repo: a production case is
 investigated across whatever repos the symptom crosses and often names none of them, so it lands in
 the repo declared `kind: script` — the same repo that holds the reusable troubleshooting scripts its
 runbook cites. `<CASE>` is the ticket key when one exists, else `<YYYY-MM-DD>-<short-slug>`. Written
 by **oncall** via `/case-report`.
+
+The **dev-cycle run state** is the second artifact that is not per touched repo — it is per *run*.
+It is written by the run's own phase agents and read by the next invocation of the same ticket, so
+it lives in a directory at the workspace root beside `<KEY>-DEV-CYCLE-SUMMARY.md`, never inside a
+product repo. It is **one file per checkpoint** (`<repo>-<milestone>.json`, e.g.
+`front-end-built.json`), not one shared file — a phase agent's tool grant is an explicit allowlist
+of specific Bash patterns with no shell-append primitive in it, so a single append-only file was
+unwritable by design; the Write tool every phase agent already has replaces a whole file, and a
+distinct path per checkpoint means up to eight parallel build agents never touch the same file and
+a re-run just overwrites its own. It is never committed: the workspace root's `.gitignore` covers
+`agent_logs/`, same as every product repo. See
+`docs/adr/0018`.
 
 `<KEY>` is the ticket key (`APP-1944`). `<repo>` is the repo's directory name,
 which is why the same ticket produces `APP-1944-your-api-plan.md` and
@@ -51,7 +64,7 @@ their build agents receive a path that does not exist where they are standing.
 A plan is not a report about several repos. It is the input contract for one
 repo's build agent.
 
-The workflow derives these paths in `.claude/workflows/dev-cycle.js` (see
+The workflow derives these paths in `.claude/workflows/src/dev-cycle.js` (see
 `planMeta`); it is the executable expression of this document, not a second
 source of truth.
 
@@ -64,10 +77,21 @@ into a service's history where no reviewer wants it.
 
 Publish a plan **by reference**:
 
-- onto the ticket — `scripts/tracker/add-ticket-comment.sh` (prose follows the
-  workspace `language` policy; the `.md` file itself is always English)
 - as a shareable page — publish the HTML render as a Claude **Artifact** and
   hand over the URL
+- onto the ticket — as the single `[plans · <KEY>]` durable record, which is **nothing but
+  links**: one line per repo, rendered from the `artifact_published` run-state rows so it never
+  has to be merged by hand ([ADR 0026](../adr/0026-a-ticket-is-a-record-not-a-transcript.md))
+
+**A plan's BODY does not go on the ticket.** It is a working artifact superseded by the next
+planning pass, which is the same reason `agent_logs/` is git-ignored — and a ticket run seven times
+would otherwise carry seven of them with no way to tell which is current. If neither
+`planning.to_html` nor `artifacts.enabled` produced a URL, **post nothing**: not an empty record,
+not a filesystem path no teammate can open.
+
+The one exception is the QA **BDD test plan**, which stays a body under
+`[qa-plan · <repo>]` — it is the artifact the team reads to know what will be tested, not an
+implementation plan. The QA **automation** plan is never published at all.
 
 `git add -f` to get one committed anyway is blocked by
 `.claude/hooks/dev-wrapper/pretool-git-guard.sh`. If a path genuinely belongs in
@@ -100,6 +124,11 @@ and `pretool-notify-guard.sh` will block a chat message that cites the local
 | `pretool-notify-guard.sh` | a chat message citing `agent_logs/` or a URL-less `.html` |
 
 Regression suite: `.claude/hooks/dev-wrapper/guards-selftest.sh`.
+
+`pretool-plan-path-guard.sh` deliberately does **not** inspect the run-state file above: it only
+examines basenames matching `*-plan.md`/`*-plan.html`, and a `.json` path exits at its early
+extension check. `guards-selftest.sh` pins that with an explicit allow case
+(`run-state json ignored`) rather than leaving it as an untested gap.
 
 ## History
 

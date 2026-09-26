@@ -1,6 +1,9 @@
 ---
 name: tdd
-description: Test-driven development with red-green-refactor loop. Use when user wants to build features or fix bugs using TDD, mentions "red-green-refactor", wants integration tests, or asks for test-first development.
+description: >-
+  Test-driven development with the red-green-refactor loop. Use when building a feature or fixing
+  a bug test-first, when the user mentions red-green-refactor, or when they want integration
+  tests.
 ---
 
 # Test-Driven Development
@@ -87,6 +90,10 @@ Rules:
 - Only enough code to pass current test
 - Don't anticipate future tests
 - Keep tests focused on observable behavior
+- Run the SCOPED test, not the suite, while looping — one spec/module at a time
+- Send a verbose runner to a file and read the signal: `<test cmd> > /tmp/tdd.log 2>&1` then
+  `grep -n -E 'FAIL|panic|assert|error' /tmp/tdd.log` or `tail -n 30 /tmp/tdd.log`. The failure
+  line is what you need; the 40 KB around it is not
 
 ### 4. Refactor
 

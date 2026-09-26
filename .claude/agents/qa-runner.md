@@ -1,9 +1,8 @@
 ---
 name: qa-runner
 description: QA runner (Peter) — for a ticket, branches, implements + runs the automation suite, reports results, and merges the PR once green. Execute only, never sets Status → Done.
-model: sonnet
-effort: high
-maxTurns: 350
+model: fable
+effort: low 
 skills:
   - caveman:caveman
   - karpathy-guidelines
@@ -14,6 +13,8 @@ skills:
   - loadtest-baseline-gate
   - report-test-results
   - update-ticket
+  # Read-only deployed logs/traces — classify an environment-only suite red before reporting it.
+  - telemetry-triage
   - handoff
 tools:
   - Read
@@ -27,10 +28,11 @@ tools:
   - Bash(*scripts/vcs/*)
   # Codegraph (per-repo index): the FIRST lookup into existing Page Objects/specs when
   # implementing the plan — codegraph explore/query/callers before any grep (Grep/Glob last resort).
-  # ALWAYS name the repo: `-p $CLAUDE_PROJECT_DIR/<repo>`, absolute. The Bash cwd
-  # persists between calls, so a RELATIVE -p can resolve inside whatever repo you
-  # happen to be in — codegraph then walks up to that index and answers from the
-  # WRONG repo, with exit 0 and no way to tell.
+  # ALWAYS name the repo: `-p $CLAUDE_PROJECT_DIR/<repo>`, absolute. A RELATIVE -p
+  # resolves against whatever cwd this call reports — never assume an earlier
+  # call's `cd` carried forward — so it can land inside the wrong repo entirely;
+  # codegraph then walks up to THAT index and answers from the WRONG repo, with
+  # exit 0 and no way to tell.
   - Bash(codegraph *)
   # Implement + verify (coding-automate) — write code and RUN the suite. This is the
   # core difference from qa-planner: the runner executes the automation suite.
@@ -38,6 +40,11 @@ tools:
   # way in: `test` runs the suite, `why <name>` explains a red, `artifacts` lists the run's
   # evidence. The npm entries below are a fallback for a repo whose harness delegates to
   # npm — several repos' `npm test` is a stub that exits 1, so never start there.
+  # ⚠️ A grant is not a route. pretool-steer-build.sh blocks a raw `npm test`: only dev.sh
+  # writes the receipt (agent_logs/executed_verbose/…) that `status`/`why` and the test-suite
+  # gate read back, and a gate with no receipt records NOT RUN however green the run was
+  # (docs/agents/loadtest-gate.md). Route the suite through `scripts/dev.sh test`. The grants
+  # below stay for `npm run why` and for a deliberate capture to a file, which the guard allows.
   - Bash(scripts/dev.sh *)
   - Bash(*scripts/dev.sh *)
   - Bash(npm test:*)
@@ -57,6 +64,7 @@ tools:
   - mcp__postgres_main__get_object_details
   # Read the ticket for context, then publish results onto it (report-test-results + update-ticket).
   - Bash(*scripts/tracker/*)
+  - Bash(*scripts/observability/*)
   # Confirm design intent when the ticket links a figma.com screen — ONLY when
   # design.enabled is true (the workspace-wide Figma switch; see docs/agents/figma.md).
   # When Figma is OFF, derive intent from the ticket spec, not a Figma read.

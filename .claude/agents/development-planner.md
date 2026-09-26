@@ -4,12 +4,13 @@ description: Senior planning specialist (20 yrs). Given a ticket number (e.g. FM
 model: opus
 permissionMode: plan
 effort: high
-maxTurns: 100
 skills:
   - caveman:caveman
   - ticket-kickoff
   - write-interactive-docs
   - diagram-ticket
+  # Read-only deployed logs/traces — ground a fix plan when source alone cannot explain runtime behavior.
+  - telemetry-triage
 tools:
   - Read
   - Grep
@@ -35,10 +36,11 @@ tools:
   - Bash(git ls-files:*)
   - Bash(git check-ignore:*)
   - Bash(git remote:*)
-  # ALWAYS name the repo: `-p $CLAUDE_PROJECT_DIR/<repo>`, absolute. The Bash cwd
-  # persists between calls, so a RELATIVE -p can resolve inside whatever repo you
-  # happen to be in — codegraph then walks up to that index and answers from the
-  # WRONG repo, with exit 0 and no way to tell.
+  # ALWAYS name the repo: `-p $CLAUDE_PROJECT_DIR/<repo>`, absolute. A RELATIVE -p
+  # resolves against whatever cwd this call reports — never assume an earlier
+  # call's `cd` carried forward — so it can land inside the wrong repo entirely;
+  # codegraph then walks up to THAT index and answers from the WRONG repo, with
+  # exit 0 and no way to tell.
   - Bash(codegraph *)
   - Bash(*scripts/diagram/*)
   # Interactive debugger (read-only investigation): the `debugging-code` skill drives `dap` to step
@@ -46,6 +48,7 @@ tools:
   # codegraph + reading can't reveal HOW execution reaches the buggy state. Investigate, never fix.
   - Bash(dap *)
   - Bash(*scripts/tracker/*)
+  - Bash(*scripts/observability/*)
   - mcp__claude_ai_Figma__get_screenshot
   - mcp__claude_ai_Figma__get_metadata
   - mcp__claude_ai_Figma__get_design_context
@@ -138,7 +141,7 @@ This is a **multi-repo workspace** (Next.js web apps, the Rust backend, Postgres
    - **Implementation steps** — ordered small **vertical slices**, each a TDD cycle + its own conventional commit: behavior added, key test(s), public interface touched.
    - **Edge cases & risks** — error/failure paths, empty/loading/boundary states, concurrency & data integrity, migrations, localization (where applicable).
    - **Definition of done** — what Noah must satisfy before handing to QA.
-7. **Never commit the plan.** `agent_logs/` is git-ignored on purpose; a plan is published *by reference* (a ticket comment, or an Artifact URL for the HTML render) — see `docs/agents/plan-artifacts.md`. `git add -f` to force one in is blocked by a hook, and rightly so.
+7. **Never commit the plan.** `agent_logs/` is git-ignored on purpose; a plan is published *by reference* — an Artifact URL for the HTML render, collected with every other repo's into the ticket's single `[plans · <KEY>]` record. No URL (`planning.to_html` off, `artifacts.enabled` off, or the publish never happened) means **nothing goes on the ticket**: not the plan body, not an empty record, not a path no teammate can open — see `docs/agents/plan-artifacts.md`. `git add -f` to force one in is blocked by a hook, and rightly so.
 
 8. **Report what you could NOT verify — with the command that would.** A claim you inferred but never measured (a query plan, a timing, a row count, a runtime behaviour) is returned as an explicit unverified item carrying the exact command that settles it — e.g. `aiworks run <repo>` then an `EXPLAIN (ANALYZE, BUFFERS)`, or `scripts/dev.sh test`. Never present an unmeasured claim as a finding, and never let "the local service was down" be the end of the sentence: the caller has the grants you lack and can run it. Say what you'd run.
 

@@ -216,7 +216,7 @@ print_summary() {
   [[ $((TOK_IN + TOK_OUT + TOK_CR + TOK_CW)) -gt 0 ]] && printf '%sClaude usage this run:%s in=%d out=%d cache(r=%d w=%d)  total cost=$%s\n' "$c_step" "$c_off" "$TOK_IN" "$TOK_OUT" "$TOK_CR" "$TOK_CW" "$TOK_COST"
   # The dev-cycle.js CONFIG mirror is regenerated FROM workspace.config.yaml by step 2.6
   # (scripts/aiworks-config.sh) — there is nothing to paste by hand anymore.
-  printf '%sNext:%s the .claude/workflows/dev-cycle.js CONFIG is auto-generated from workspace.config.yaml (regenerated at step 2.6; re-run `aiworks config` any time). Then `mani list projects`.\n' "$c_step" "$c_off"
+  printf '%sNext:%s the .claude/workflows/src/dev-cycle.js CONFIG is auto-generated from workspace.config.yaml (regenerated at step 2.6; re-run `aiworks config` any time). Then `mani list projects`.\n' "$c_step" "$c_off"
 }
 # Append a literal line to a file iff absent. Returns 0 if it added it, 1 if already
 # present. Guarantees the file ends in a newline first so lines never merge.
@@ -812,8 +812,9 @@ fi
 # today, but the "<skill>|<source>" form keeps multi-source support. Already-present skills are
 # skipped. Project scope is guaranteed by being inside the repo with a .claude/ marker + -y (no
 # --global).
-# NOTE: caveman is deliberately absent from THIS list. For Claude Code it is the user-scope
-# `caveman@caveman` plugin (enabledPlugins in the meta repo's .claude/settings.json) and the agents
+# NOTE: caveman is deliberately absent from THIS list. For Claude Code it is the project-scope
+# `caveman@caveman` plugin (enabledPlugins in this repo's own .claude/settings.json, installed by
+# ensure_claude_plugins — docs/adr/0035) and the agents
 # invoke `caveman:caveman` themselves, so installing it through the `skills` CLI as well would be
 # redundant.
 # It does NOT follow that a repo carries no caveman file — read on before deleting one. Every repo
@@ -842,8 +843,9 @@ else
     if [[ -d "$REPO_DIR/.claude/skills/$s" && "$FORCE" -ne 1 ]]; then already+=("$s"); continue; fi
     # --agent claude-code (NOT '*'): '*' installs to EVERY agent the CLI knows (~40 — eve, codex,
     # cursor, cline, …), scattering per-agent dirs into the repo (e.g. eve's `agent/skills/`, plus
-    # a `.agents/skills/` canonical + `.claude/skills/` symlinks). This is a Claude Code workspace,
-    # so install only claude-code → a single clean `.claude/skills/<name>/` real dir, no stray dirs.
+    # multiple agent-owned roots, including a real `.agents/skills/`, which would collide with
+    # this framework's Codex-facing directory symlink. Install only claude-code so the one real
+    # canonical copy lands at `.claude/skills/<name>/`.
     npx -y skills@latest add "$src" --skill "$s" --agent claude-code -y >/dev/null 2>&1; npx_rc=$?
     if   [[ "$npx_rc" -eq 0 ]]; then installed+=("$s")
     elif [[ "$(classify_rc "$npx_rc")" == signal ]]; then crashed+=("$s (signal $((npx_rc - 128)))")   # npx/node killed on launch, NOT an install failure
@@ -979,7 +981,7 @@ mkdir -p "$REPO_DIR/.claude"
 # A COPY, not a symlink: each repo is an independent clone, so a link up to the
 # workspace root dangles for anyone who clones the repo on its own. Same call as
 # the Cursor hook-shim (see scripts/cursor/hook-shim.template.sh).
-WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh pretool-hcat-size-guard.sh pretool-hrun-pipe-guard.sh)
+WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh pretool-hcat-size-guard.sh pretool-bash-context-guard.sh pretool-hrun-pipe-guard.sh)
 if [[ -d "$ROOT/.claude/hooks/dev-wrapper" ]]; then
   mkdir -p "$REPO_DIR/.claude/hooks/dev-wrapper"
   hooks_new=(); hooks_upd=()
@@ -999,6 +1001,17 @@ if [[ -d "$ROOT/.claude/hooks/dev-wrapper" ]]; then
 else
   skip "9. no $ROOT/.claude/hooks to seed from — copy your hook scripts into $PATH_REL/.claude/hooks/ by hand"
 fi
+# 9a. .cursorignore — a COPY, not a symlink, same reasoning as the hooks above (independent clone).
+CI_SRC="$ROOT/.cursorignore"; CI_DST="$REPO_DIR/.cursorignore"
+if [[ -f "$CI_SRC" ]]; then
+  if [[ -f "$CI_DST" ]] && cmp -s "$CI_SRC" "$CI_DST"; then
+    skip "9a. .cursorignore already matches the workspace root"
+  else
+    cp "$CI_SRC" "$CI_DST" && ok "synced .cursorignore from workspace root"
+  fi
+else
+  skip "9a. no $ROOT/.cursorignore to seed from"
+fi
 # 9b. settings.json — hardcoded baseline (modeled on a Flutter app, minus sonar), merged to keep plugins.
 SETTINGS_FILE="$REPO_DIR/.claude/settings.json"
 read -r -d '' BASE_SETTINGS <<'JSON'
@@ -1008,7 +1021,6 @@ read -r -d '' BASE_SETTINGS <<'JSON'
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "HCAT_GATE_BYTES": "65536",
     "HCAT_GATE_NO_SNIFF": "1",
-    "DANGI_NUDGE_BYTES": "32768",
     "DANGI_NO_NOTIFY": "1",
     "HEADROOM_UPDATE_CHECK": "off",
     "HF_HUB_OFFLINE": "1",
@@ -1049,6 +1061,7 @@ read -r -d '' BASE_SETTINGS <<'JSON'
       { "matcher": "Bash",  "hooks": [
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hcat-size-guard.sh", "timeout": 10 },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-bash-context-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh", "timeout": 30 }
       ] },
@@ -1101,6 +1114,13 @@ if have jq; then
   # not something to switch on across 21 existing ones. `env` is an OBJECT, so `*` deep-merges it
   # and a repo's own variables survive.
   #
+  # DANGI_NUDGE_BYTES is DELETED explicitly (the `del` in the jq below) rather than merely dropped
+  # from the baseline: `*` can add and overwrite keys, never remove one, so a key this baseline
+  # stops sending stays in all 21 existing files forever. It has to go because it does not exist —
+  # the headroom plugin reads DANGI_NO_NOTIFY and DANGI_HUGE_BYTES, and grepping the installed
+  # plugin for DANGI_NUDGE_BYTES returns nothing at all. It never raised any threshold; it read as
+  # a tuned nudge while the nudge fired at the plugin's own default the whole time.
+  #
   # `PONYTAIL_` converges for the same reason. Those two knobs are not preferences: DEFAULT_MODE
   # pins the benchmarked `full` level so a stray ~/.config/ponytail/config.json on one machine
   # cannot quietly hand a money path the `ultra` persona, and SUBAGENT_MATCHER is the cost lever —
@@ -1122,18 +1142,19 @@ if have jq; then
   # adds only what is missing and preserves the repo's own entries and their order.
   #
   # Why these two rules travel with the hooks rather than being each repo's call: `hcat` is the
-  # headroom plugin's reader, and the plugin is installed at USER scope, so it is live in a
-  # repo-only session whether or not that repo knows about it. The deny half is the one that
+  # headroom plugin's reader, and the plugin is installed in every project that declares it
+  # (docs/adr/0035), so it is live in a repo-only session whether or not that repo knows about it. The deny half is the one that
   # matters — it is defense in depth beside pretool-env-guard.sh for the same reason
   # Read(**/.env) is denied even though the hook already blocks it. The allow half only buys
   # determinism over the auto-mode classifier.
   hcat_allow='["Bash(hcat *)"]'
-  hcat_deny='["Bash(hcat *.env)","Bash(hcat *.env.*)"]'
+  hcat_deny='["Bash(hcat *.env)","Bash(hcat *.env.*)","Bash(hcat *socks.auth)"]'
   if merged="$(printf '%s\n%s\n' "$existing" "$base_for_merge" \
         | jq -s --argjson ha "$hcat_allow" --argjson hd "$hcat_deny" '
             (.[0] * .[1])
             | .permissions.allow = ((.permissions.allow // []) as $a | $a + ($ha - $a))
             | .permissions.deny  = ((.permissions.deny  // []) as $d | $d + ($hd - $d))
+            | del(.env.DANGI_NUDGE_BYTES)
           ' 2>/dev/null)"; then
     if [[ -f "$SETTINGS_FILE" ]] && [[ "$merged" == "$(cat "$SETTINGS_FILE")" ]]; then
       skip "9. .claude/settings.json already matches the baseline"
@@ -1220,18 +1241,16 @@ cd "$ROOT"
 fi
 step "11. Back at the workspace root ($ROOT)"
 
-# ── 11.1 the Cursor face of everything seeded above ────────────────────────────
-# Steps 5-9 wrote the Claude-side config (CLAUDE.md, .claude/rules, skills, hooks,
-# settings.json). Cursor reads none of those paths, so project them: symlinks for
-# everything whose format already matches, generated files for hooks/permissions.
-# Idempotent and best-effort — a repo that gains rules later just needs a re-run.
-step "11.1. Project the agent config onto Cursor (.cursor/ + AGENTS.md) in $PATH_REL/"
-if [[ ! -x "$ROOT/scripts/aiworks-cursor.sh" ]]; then
-  skip "11.1. scripts/aiworks-cursor.sh not found — run 'aiworks cursor $REPO_NAME' later"
-elif "$ROOT/scripts/aiworks-cursor.sh" "$REPO_NAME" >/dev/null 2>&1; then
-  ok "Cursor layer projected for $REPO_NAME"
+# ── 11.1 selected Harness projections for everything seeded above ──────────────
+# Steps 5-9 wrote the canonical Claude-side config. The registry now projects whichever
+# organization Harnesses are selected, including safe cleanup for a deselected one.
+step "11.1. Project the agent config onto selected Harnesses in $PATH_REL/"
+if [[ ! -x "$ROOT/scripts/aiworks-harnesses.sh" ]]; then
+  skip "11.1. aiworks-harnesses.sh not found — run 'aiworks harnesses sync $REPO_NAME' later"
+elif "$ROOT/scripts/aiworks-harnesses.sh" sync "$REPO_NAME" >/dev/null 2>&1; then
+  ok "selected Harness layers projected for $REPO_NAME"
 else
-  skip "11.1. 'aiworks cursor $REPO_NAME' reported issues — run it directly to see them"
+  skip "11.1. Harness projection reported issues — run 'aiworks harnesses sync $REPO_NAME' directly"
 fi
 
 # ── summary ──────────────────────────────────────────────────────────────────────

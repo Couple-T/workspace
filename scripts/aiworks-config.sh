@@ -4,7 +4,7 @@
 # CONFIG block FROM workspace.config.yaml.
 #
 # WHY THIS EXISTS
-#   Workflow scripts (.claude/workflows/dev-cycle.js) run in an engine sandbox with NO
+#   Workflow scripts (.claude/workflows/src/dev-cycle.js) run in an engine sandbox with NO
 #   filesystem access — they cannot read workspace.config.yaml at runtime. So the workflow
 #   carries its own in-source MIRROR of the config (TICKET_PREFIX, the status map, the
 #   auto-merge / planning flags, and the REPOS registry) in an AIWORKS-MANAGED block.
@@ -32,6 +32,9 @@
 #   quality_gate.provider            → const QUALITY_GATE            (dev-cycle.js; 'none' ⇒ guardian gate skips+passes)
 #   review.level                     → const REVIEW_LEVEL            (dev-cycle.js; 'strict' ⇒ must-fixes only, no nice-to-have)
 #   loadtest.*                       → const LOADTEST                (dev-cycle.js; the base-branch non-degradation gate)
+#   test_suite.max_fix_rounds        → const TEST_SUITE              (dev-cycle.js; the cross-repo gate's own repair loop)
+#   dev_cycle.token_budget           → const DEV_CYCLE               (dev-cycle.js; the run's own spend ceiling)
+#   notify.dm_on_incomplete          → const NOTIFY_DM                (dev-cycle.js; a Slack member id DMed on a non-complete ending)
 #   language                         → const LANGUAGE                (dev-cycle.js AND prd.js; 'en' default | 'th' ⇒ English spine, Thai prose)
 #   planning.auto_approve            → const AUTO_APPROVE_PLAN
 #   planning.to_html                 → const PLAN_TO_HTML
@@ -44,14 +47,17 @@
 #   image_generation.enabled         → const IMAGE_GEN_ENABLED          (prd.js only)
 #   image_generation.quality         → const IMAGE_GEN_QUALITY          (prd.js only)
 #   image_generation.max_per_request → const IMAGE_GEN_MAX_PER_REQUEST  (prd.js only)
-#   branch_model.{feature,fix}_base  → each repo's base.{feature,fix} (kind may override)
+#   branch_model.{feature,fix}_base  → each repo's base.{feature,fix}, for EVERY kind
 #   products[].repos[]               → const REPOS  (one entry per repo)
 #       url               → the REPOS key (repo name) + path default
 #       kind              → the role/gate DEFAULTS below (plan/build/review/guard/perf/
-#                           testSuite/green/guardianFocus/base) — the single source of truth
+#                           testSuite/green/guardianFocus) — the single source of truth
 #                           for what each kind means in the workflow
 #       suite_kind        → which flavour of test-suite ('load' arms the base-branch
 #                           non-degradation gate — docs/agents/loadtest-gate.md)
+#       feature_base / fix_base → this repo's OWN branch policy, overriding branch_model.
+#                           The only way a repo on `develop → staging → main` states that
+#                           without editing generated code (docs/adr/0025).
 #       path / distribute / auto_merge / green / guardian_focus → optional per-repo overrides
 #
 # ALSO GENERATES — the multi-root <workspace>.code-workspace file (one folder root per repo)
@@ -89,8 +95,8 @@
 #   --config <file>     workspace.config.yaml to read   (default: <workspace>/workspace.config.yaml)
 #   --config-local <f>  the personal override to CHECK   (default: <workspace>/workspace.config.local.yaml)
 #                       Read by the advisory guards only — never baked into the generated mirror.
-#   --target <file>     dev-cycle.js to rewrite          (default: <workspace>/.claude/workflows/dev-cycle.js)
-#   --prd-target <file> prd.js to rewrite (its design CONFIG) (default: <workspace>/.claude/workflows/prd.js)
+#   --target <file>     dev-cycle.js to rewrite          (default: <workspace>/.claude/workflows/src/dev-cycle.js)
+#   --prd-target <file> prd.js to rewrite (its design CONFIG) (default: <workspace>/.claude/workflows/src/prd.js)
 #   --workspace <file>  <name>.code-workspace to (re)generate (default: <workspace>/<basename>.code-workspace)
 #   -n, --dry-run      print the generated block(s) + the .code-workspace to stdout; write nothing.
 #   -q, --quiet        only print on change/error (suppress the "in sync" line).
@@ -127,8 +133,8 @@ done
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 [[ -n "$WC" ]]         || WC="$ROOT/workspace.config.yaml"
-[[ -n "$TARGET" ]]     || TARGET="$ROOT/.claude/workflows/dev-cycle.js"
-[[ -n "$PRD_TARGET" ]] || PRD_TARGET="$ROOT/.claude/workflows/prd.js"
+[[ -n "$TARGET" ]]     || TARGET="$ROOT/.claude/workflows/src/dev-cycle.js"
+[[ -n "$PRD_TARGET" ]] || PRD_TARGET="$ROOT/.claude/workflows/src/prd.js"
 # The multi-root workspace file is named after the workspace-root basename (deterministic),
 # e.g. <root>/aiworks.code-workspace. Override the whole path with --workspace.
 WS_NAME="$(basename "$ROOT")"
@@ -361,6 +367,19 @@ RL_RAW='strict' # review.level — 'strict' (must-fixes only) unless the org dec
 # match the workflow's fallbacks; every one is a number the gate reads at runtime.
 LT_TOL='10'; LT_NOISE_RUNS='2'; LT_NOISE_CEIL='2'; LT_FIX_ROUNDS='2'
 LT_CACHE='~/.cache/aiworks/loadtest-baselines'
+# test_suite.max_fix_rounds — the cross-repo gate's own bounded red-triage loop (C4), and the
+# per-red attempt bound its scoped quality check retries within one round (docs/adr/0024).
+TS_FIX_ROUNDS='3'
+# test_suite.max_suite_repair_attempts — a suite that COULD NOT RUN is a must-fix, not a halt
+# (docs/adr/0027). Never a verdict: no receipt means the gate did not run.
+TS_MAX_REPAIR='3'
+# review.* — the review loop's own bounds. max_rounds is the ONE terminal bound; the rest are
+# per-condition attempt budgets for the states that used to halt a repo mid-review.
+RV_MAX_ROUNDS='14'; RV_MAX_REGRESSION='3'; RV_MAX_STALL='3'; RV_MAX_ESCALATION='3'
+# dev_cycle.token_budget — the run's own spend ceiling (C9), and notify.dm_on_incomplete (C10).
+BD_MAX_CONT='3'
+DC_TOKEN_BUDGET='2000000'
+NOTIFY_DM=''
 STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
                   # in declared order. The workflow drives a monotonic subset (STATUS_ORDER); the
                   # rest are carried for humans/other tools — so a rich board isn't silently dropped.
@@ -376,6 +395,7 @@ while IFS=$'\t' read -r k v; do
     NOTIFY_ENABLED)  NT_RAW="$v" ;;
     NOTIFY_PROVIDER) NOTIFY_PROVIDER="$v" ;;
     NOTIFY_CHANNEL)  NOTIFY_CHANNEL="$v" ;;
+    NOTIFY_DM)       NOTIFY_DM="$v" ;;
     DESIGN_ENABLED)     DESIGN_EN_RAW="$v" ;;
     DESIGN_FIGMA_KEY)   DESIGN_KEY="$v" ;;
     DESIGN_PAGE_NAMING) DESIGN_PAGE="$v" ;;
@@ -389,6 +409,14 @@ while IFS=$'\t' read -r k v; do
     LT_NOISE_CEILING)   LT_NOISE_CEIL="$v" ;;
     LT_MAX_FIX_ROUNDS)  LT_FIX_ROUNDS="$v" ;;
     LT_BASELINE_CACHE)  LT_CACHE="$v" ;;
+    TS_MAX_FIX_ROUNDS)  TS_FIX_ROUNDS="$v" ;;
+    TS_MAX_REPAIR)      TS_MAX_REPAIR="$v" ;;
+    RV_MAX_ROUNDS)      RV_MAX_ROUNDS="$v" ;;
+    RV_MAX_REGRESSION)  RV_MAX_REGRESSION="$v" ;;
+    RV_MAX_STALL)       RV_MAX_STALL="$v" ;;
+    RV_MAX_ESCALATION)  RV_MAX_ESCALATION="$v" ;;
+    BD_MAX_CONT)        BD_MAX_CONT="$v" ;;
+    DC_TOKEN_BUDGET)    DC_TOKEN_BUDGET="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
 done < <(
@@ -410,6 +438,7 @@ done < <(
     sec=="notify"       && /^  enabled:/         { print "NOTIFY_ENABLED\t"  val($0); next }
     sec=="notify"       && /^  provider:/        { print "NOTIFY_PROVIDER\t" val($0); next }
     sec=="notify"       && /^  channel:/         { print "NOTIFY_CHANNEL\t"  val($0); next }
+    sec=="notify"       && /^  dm_on_incomplete:/ { print "NOTIFY_DM\t"      val($0); next }
     sec=="design"       && /^  enabled:/         { print "DESIGN_ENABLED\t"     val($0); next }
     sec=="design"       && /^  figma_file_key:/  { print "DESIGN_FIGMA_KEY\t"   val($0); next }
     sec=="design"       && /^  page_naming:/     { print "DESIGN_PAGE_NAMING\t" val($0); next }
@@ -418,11 +447,19 @@ done < <(
     sec=="image_generation" && /^  max_per_request:/ { print "IMG_MAX\t"     val($0); next }
     sec=="quality_gate" && /^  provider:/            { print "QUALITY_GATE\t" val($0); next }
     sec=="review"       && /^  level:/               { print "REVIEW_LEVEL\t" val($0); next }
+    sec=="review"       && /^  max_rounds:/          { print "RV_MAX_ROUNDS\t"  val($0); next }
+    sec=="review"       && /^  max_regression_fixes:/    { print "RV_MAX_REGRESSION\t" val($0); next }
+    sec=="review"       && /^  max_stall_reattempts:/    { print "RV_MAX_STALL\t"      val($0); next }
+    sec=="review"       && /^  max_escalation_attempts:/ { print "RV_MAX_ESCALATION\t" val($0); next }
+    sec=="test_suite"   && /^  max_suite_repair_attempts:/ { print "TS_MAX_REPAIR\t"   val($0); next }
+    sec=="build"        && /^  max_continuation_passes:/ { print "BD_MAX_CONT\t"     val($0); next }
     sec=="loadtest"     && /^  tolerance_pct:/        { print "LT_TOLERANCE\t"      val($0); next }
     sec=="loadtest"     && /^  noise_runs:/           { print "LT_NOISE_RUNS\t"     val($0); next }
     sec=="loadtest"     && /^  noise_ceiling_multiple:/ { print "LT_NOISE_CEILING\t" val($0); next }
     sec=="loadtest"     && /^  max_fix_rounds:/       { print "LT_MAX_FIX_ROUNDS\t" val($0); next }
     sec=="loadtest"     && /^  baseline_cache:/       { print "LT_BASELINE_CACHE\t" val($0); next }
+    sec=="test_suite"   && /^  max_fix_rounds:/       { print "TS_MAX_FIX_ROUNDS\t" val($0); next }
+    sec=="dev_cycle"    && /^  token_budget:/         { print "DC_TOKEN_BUDGET\t"   val($0); next }
   ' "$WC"
 )
 AUTO_MERGE="$(jsbool "$AM_RAW" true)"
@@ -441,6 +478,15 @@ case "$QUALITY_GATE" in sonarqube|none) ;; *) QUALITY_GATE='none' ;; esac   # cl
 [[ "$LT_NOISE_CEIL" =~ ^[0-9]+$ ]] && [[ "$LT_NOISE_CEIL" -ge 1 ]] || LT_NOISE_CEIL='2'
 [[ "$LT_FIX_ROUNDS" =~ ^[0-9]+$ ]]  || LT_FIX_ROUNDS='2'
 LT_CACHE="${LT_CACHE:-~/.cache/aiworks/loadtest-baselines}"
+[[ "$TS_FIX_ROUNDS" =~ ^[0-9]+$ ]]    || TS_FIX_ROUNDS='3'
+[[ "$TS_MAX_REPAIR" =~ ^[0-9]+$ ]]    || TS_MAX_REPAIR='3'
+# max_rounds is the run's ONLY terminal review bound now, so a 0 or a typo must not disarm it.
+[[ "$RV_MAX_ROUNDS" =~ ^[0-9]+$ ]] && [[ "$RV_MAX_ROUNDS" -ge 1 ]] || RV_MAX_ROUNDS='14'
+[[ "$RV_MAX_REGRESSION" =~ ^[0-9]+$ ]] || RV_MAX_REGRESSION='3'
+[[ "$RV_MAX_STALL" =~ ^[0-9]+$ ]]      || RV_MAX_STALL='3'
+[[ "$RV_MAX_ESCALATION" =~ ^[0-9]+$ ]] || RV_MAX_ESCALATION='3'
+[[ "$BD_MAX_CONT" =~ ^[0-9]+$ ]]      || BD_MAX_CONT='3'
+[[ "$DC_TOKEN_BUDGET" =~ ^[0-9]+$ ]]  || DC_TOKEN_BUDGET='2000000'
 REVIEW_LEVEL="$(printf '%s' "${RL_RAW:-strict}" | tr '[:upper:]' '[:lower:]')"
 case "$REVIEW_LEVEL" in strict|thorough) ;; *) REVIEW_LEVEL='strict' ;; esac   # clamp to the two levels (default strict)
 LANGUAGE="$(printf '%s' "${LANG_RAW:-en}" | tr '[:upper:]' '[:lower:]')"
@@ -453,6 +499,16 @@ fi
 # ── 2. kind → role/gate DEFAULTS (the one authoritative table) ────────────────────
 # `kind` is a FREE-FORM, tech-agnostic development-context label (frontend, backend,
 # web-app, service, migration, generic, …) — the tech is captured by `lang`, NOT the kind.
+#
+# EVERY archetype takes its bases from `branch_model` — feature/* → feature_base, fix/* →
+# fix_base. A test-suite repo used to be the exception, given fix_base for BOTH kinds on the
+# reasoning that a suite repo has no develop flow. Measured, that was simply false: suite repos
+# had `origin/HEAD` on the feature base with the fix base 99 and 157 commits behind, one of them
+# a 16-file scaffold last touched a year earlier. A ticket's suite branch was therefore cut off a
+# dead trunk, and since `workspace.config.yaml` carried no per-repo base at all, the only way to
+# say otherwise was to edit generated code. The exception is gone; a repo that genuinely differs
+# says so with `feature_base:` / `fix_base:` on its own `repos[]` entry (docs/adr/0025).
+#
 # Behaviour is decided by ARCHETYPE, and there are exactly three:
 #   test-suite → QA pipeline: qa-planner/qa-runner build the suite, no code review, and this
 #                repo PROVIDES the cross-repo test-suite gate. The ONE behaviourally-special kind.
@@ -472,7 +528,7 @@ kind_defaults() {
   case "$kind" in
     test-suite)
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
-        qa-planner qa-runner null false false true "$FIX_BASE" "$FIX_BASE" \
+        qa-planner qa-runner null false false true "$FEATURE_BASE" "$FIX_BASE" \
         'the ticket + regression specs (scoped `npm test -- <specs>`, POM) green on every target platform the suite covers — the full-suite run is on-demand' \
         '' ;;
     document|documentation|fixture|mock|mocks)
@@ -493,7 +549,7 @@ repos_body=""
 repo_count=0
 folders_tsv=""   # accumulates "<folder name>\t<folder path>\n" per repo, in declared order,
                  # for the multi-root <name>.code-workspace `folders` array (built in step 6).
-while IFS=$'\037' read -r url kind path dist green gf am sk kfr; do   # \037 (US): empty fields preserved
+while IFS=$'\037' read -r url kind path dist green gf am sk kfr bf bx; do   # \037 (US): empty fields preserved
   [[ -n "$url" ]] || continue
   name="${url%.git}"; name="${name##*/}"; name="${name##*:}"
   [[ -n "$name" ]] || { warn "could not derive a repo name from url '$url' — skipped"; continue; }
@@ -509,6 +565,10 @@ while IFS=$'\037' read -r url kind path dist green gf am sk kfr; do   # \037 (US
   # per-repo overrides (else the kind default)
   [[ -n "$green" ]] && d_green="$green"
   [[ -n "$gf" ]]    && d_gf="$gf"
+  # A repo whose branch policy is not the workspace's own says so here, and the config —
+  # not generated code — is then the source of truth for it (docs/adr/0025).
+  [[ -n "$bf" ]]    && d_basef="$bf"
+  [[ -n "$bx" ]]    && d_basex="$bx"
 
   # distribute: none/empty → null, else 'value'
   local_dist='null'
@@ -548,9 +608,10 @@ done < <(
       else if(k~/^path:/) path=val(k); else if(k~/^distribute:/) dist=val(k)
       else if(k~/^green:/) green=val(k); else if(k~/^guardian_focus:/) gf=val(k)
       else if(k~/^auto_merge:/) am=val(k); else if(k~/^suite_kind:/) sk=val(k)
-      else if(k~/^known_false_reds:/) kfr=val(k) }
-    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am,sk,kfr }
-      url="";kind="";path="";dist="";green="";gf="";am="";sk="";kfr="" }
+      else if(k~/^known_false_reds:/) kfr=val(k)
+      else if(k~/^feature_base:/) bf=val(k); else if(k~/^fix_base:/) bx=val(k) }
+    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am,sk,kfr,bf,bx }
+      url="";kind="";path="";dist="";green="";gf="";am="";sk="";kfr="";bf="";bx="" }
     /^products:[ \t]*$/ { inp=1; next }
     inp && /^  - id:/ { flush(); inrepos=0; next }
     inp && /^    repos:[ \t]*$/ { inrepos=1; next }
@@ -610,6 +671,7 @@ const PLAN_TO_HTML = ${TO_HTML}     // from workspace.config.yaml planning.to_ht
 const NOTIFY = ${NOTIFY}        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
 const NOTIFY_PROVIDER = $(jsq "$NOTIFY_PROVIDER") // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
 const NOTIFY_CHANNEL = $(jsq "$NOTIFY_CHANNEL")  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
+const NOTIFY_DM = $(jsq "${NOTIFY_DM:-U00000000000}")  // from workspace.config.yaml notify.dm_on_incomplete; a Slack MEMBER id — every non-complete ending DMs it instead of posting to the channel
 const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
 const QUALITY_GATE = $(jsq "$QUALITY_GATE")     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const REVIEW_LEVEL = $(jsq "$REVIEW_LEVEL")     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
@@ -620,6 +682,22 @@ const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-
   noiseCeilingMultiple: ${LT_NOISE_CEIL},     // noise floor above tolerancePct × this ⇒ verdict 'unavailable' (env too coarse to judge)
   maxFixRounds: ${LT_FIX_ROUNDS},             // attributed-regression → developer fix → re-run loops before halting
   baselineCache: $(jsq "$LT_CACHE"),
+}
+const TEST_SUITE = {   // from workspace.config.yaml test_suite.*; read by the Test-suite phase red-gate triage loop
+  maxFixRounds: ${TS_FIX_ROUNDS},             // classified-red → fix → scoped quality check → re-run loops
+  maxSuiteRepairAttempts: ${TS_MAX_REPAIR},   // a suite that COULD NOT RUN: repair attempts before it is RECORDED unverified (docs/adr/0027)
+}
+const REVIEW = {   // from workspace.config.yaml review.*; the review loop's bounds (docs/adr/0027)
+  maxRounds: ${RV_MAX_ROUNDS},                // reviewer pass + fix pass per repo — the ONE terminal bound
+  maxRegressionFixes: ${RV_MAX_REGRESSION},   // a fix that caused a new blocking problem, handed straight back
+  maxStallReattempts: ${RV_MAX_STALL},        // same finding set + no new commit ⇒ ESCALATE the brief, then retry
+  maxEscalationAttempts: ${RV_MAX_ESCALATION},// cross-repo fix + scoped re-gate, per (repo, finding)
+}
+const BUILD = {   // from workspace.config.yaml build.*; the build phase's own bound (docs/adr/0032)
+  maxContinuationPasses: ${BD_MAX_CONT},  // a \`partial\`/\`blocked\` handoff is CONTINUED this many times before it is RECORDED
+}
+const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
+  tokenBudget: ${DC_TOKEN_BUDGET},        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable
 }
 const STATUS = {
 ${status_body}}

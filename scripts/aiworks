@@ -9,6 +9,8 @@
 #   aiworks sync   [<product>|<repo>] [options]   # onboard repos from config   (→ aiworks-sync.sh)
 #   aiworks remove <repo>|--all    [options]   # offboard a repo (or all)    (→ aiworks-remove.sh)
 #   aiworks config                 [options]   # regen the workflow CONFIG   (→ aiworks-config.sh)
+#   aiworks harnesses              [args…]     # select/reconcile Harnesses  (→ aiworks-harnesses.sh)
+#   aiworks workflow               [args…]     # run canonical Workflow      (→ aiworks-workflow.sh)
 #   aiworks update                 [options]   # upgrade the prerequisites   (→ aiworks-update.sh)
 #   aiworks gc                     [options]   # reclaim worktree disk       (→ aiworks-gc.sh)
 #   aiworks setup                  [args…]     # workspace setup             (→ .superset/setup.sh)
@@ -78,6 +80,13 @@ Commands:
              clone instead of "go make a token". `--fix` runs the owner commands (never its
              own repair logic) after showing the plan; exit 1 on any failure, `--strict` also
              on a warning.
+  fix        The one-word repair pass: `doctor --deep --fix -y`. Looks at everything, runs the
+             owner command for every finding that HAS one, then re-runs the same checks and
+             reports which findings actually cleared — a command exiting 0 is not evidence that
+             the thing it was meant to fix is gone. What is left is what a person has to decide
+             or type themselves (a secret, a branch-model call, a rules file's scope); each is
+             listed under "needs you" with the command. Takes doctor's own options: `-n` to
+             preview, `--only <group>` to narrow.
   add        Onboard ONE repo: register it (workspace.config.yaml products[] + mani.d +
              mani.yaml), clone it, build the codegraph index, install the agent skill packs,
              seed hooks/permissions, seed the default coding-standards rules
@@ -96,7 +105,8 @@ Commands:
   remove     Offboard a repo (or every repo, with --all): deregister it from
              workspace.config.yaml products[].repos[], mani.d/<product>.yaml, mani.yaml and
              the .gitignore, unlink the workspace adapters (optionally --purge the clone).
-  config     Regenerate the dev-cycle workflow's CONFIG block (.claude/workflows/dev-cycle.js)
+             `--harnesses <id>[,<id>]` removes a Harness projection instead (→ harnesses remove).
+  config     Regenerate the dev-cycle workflow's CONFIG block (.claude/workflows/src/dev-cycle.js)
              FROM workspace.config.yaml — the workflow can't read the FS at runtime, so it keeps
              an in-source mirror — AND the multi-root <workspace>.code-workspace `folders` array
              (one root per repo + the meta-repo, so VS Code/Cursor show each repo as its own
@@ -109,6 +119,23 @@ Commands:
              .cursor/{hooks.json,cli.json,hooks/hook-shim.sh}, and the enabled plugins'
              skills linked into .claude/skills (git-ignored) so Cursor can see them too.
              add / sync run this automatically. Use --check in CI.
+  codex      Project the canonical Claude-side agent config onto Codex for the root and every
+             repo: AGENTS.md + .agents/skills symlinks, generated .codex agents/hooks/rule index,
+             MCP config and native status line. --remove deletes only files marked as
+             generator-owned. Use --check in CI: it is the only form that verdicts — 0 in sync,
+             1 for drift a reconcile closes, 2 for drift only a person can (a real path where
+             the canonical link belongs, a generated file someone edited, a rules file with no
+             frontmatter). A reconcile itself exits 0 and prints what it could not do.
+  harnesses  List, configure, reconcile, check, or remove Harnesses. `list` is the shared set in
+             workspace.config.yaml; `list --active` is what this machine runs — the local file
+             wins outright when it names any. `sync` projects the ACTIVE set and only ever
+             adds/updates: dropping an id from a config file deletes nothing. `remove <id>` is
+             the one path that does (generator-owned files only) and drops the id from both
+             config files. The registry is data-driven so a future Harness adds an adapter
+             entry rather than another setup branch.
+  workflow   Execute one canonical .claude/workflows/src script through a selected Harness adapter.
+             Normal chat entry points are `$dev-cycle`/`$prd`/`$brd` in Codex and
+             `/dev-cycle`/`/prd`/`/brd` in Cursor; this command is their deterministic runtime.
   update     Upgrade the workspace's PREREQUISITE tooling — the half `setup` does not do
              (its ensure_* helpers only install what is MISSING, never move a tool forward).
              Upgrades each tool through the installer that owns it on THIS machine — brew
@@ -127,9 +154,9 @@ Commands:
              deletes from worktrees it has proven are idle. Run with no arguments to REPORT.
              `--install-schedule` adds a weekly launchd job for the UI-Delete leftovers, which
              nothing else collects (slack-dispatch sweeps only its OWN worktrees).
-  setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
-             adapter .env, link adapters into each repo + git-exclude the links so they never
-             dirty the product repo). Pass-through — forwards any extra args.
+  setup      Run the workspace setup hook: first-run Harness picker + selected CLI install/login,
+             then mani sync, adapter seeding/linking, Harness projection, dependencies and MCP.
+             Pass-through — forwards options such as --harnesses and --reconfigure-harnesses.
   run        Run the workspace run hook: exec .superset/run.sh verbatim. Pass-through —
              forwards any extra args. (Errors clearly if .superset/run.sh does not exist.)
   teardown   Run the workspace teardown hook: exec .superset/teardown.sh verbatim (remove the
@@ -153,6 +180,9 @@ Examples:
   aiworks doctor --only adapters -v     # one group, every passing check shown
   aiworks doctor --fix -n               # what --fix WOULD run, run nothing
   aiworks doctor --json --strict        # CI: machine-readable, a warning fails too
+  # …or just repair everything that has an owner command, and verify it actually cleared:
+  aiworks fix                           # = doctor --deep --fix -y, then re-checks the findings
+  aiworks fix -n                        # the same plan, nothing run
   # fast path — declare repos under products: in workspace.config.yaml, then:
   aiworks sync                          # onboard every repo in the config
   aiworks sync your-product --dry-run   # preview just the your-product product
@@ -163,12 +193,13 @@ Examples:
   aiworks remove your-api --purge    # deregister + delete the clone (refuses if dirty/unpushed)
   aiworks remove --all                  # offboard EVERY onboarded repo (config-only; keeps clones)
   aiworks remove --all --purge --force  # …and delete every clone too (force past dirty/unpushed)
+  aiworks remove --harnesses codex      # delete the Codex projection (sync never does this)
   # Cursor face of the same config (add / sync already do this for you):
   aiworks cursor                        # root + every repo
   aiworks cursor <repo>                 # just one repo
   aiworks cursor --check                # verify only; exit 1 on drift (CI)
   # keep the host toolchain current (setup only ever installs what is missing):
-  aiworks update                        # every group: brew, rust, pnpm, gcloud, claude, …
+  aiworks update                        # every group: brew, rust, pnpm, uv, gcloud, claude, …
   aiworks update -n                     # preview — print each command, change nothing
   aiworks update --only claude,plugins  # just the Claude Code CLI + its plugins
   aiworks update --skip mcp --check-deps  # skip the image pull; report outdated repo deps
@@ -213,11 +244,19 @@ superset_hook() {
 cmd="${1:-}"; [[ $# -gt 0 ]] && shift
 case "$cmd" in
   doctor)         exec "$AIWORKS_BASH" "$DIR/aiworks-doctor.sh" "$@" ;;
+  # `fix` is the one-word form of the only invocation anybody actually wants when something is
+  # off: look at EVERYTHING (--deep), repair what has an owner command, and re-check that the
+  # findings really cleared. Extra args pass through, so `aiworks fix -n` still previews and
+  # `aiworks fix --only triage` still narrows. -y is implied — the whole point of the alias.
+  fix)            exec "$AIWORKS_BASH" "$DIR/aiworks-doctor.sh" --deep --fix -y "$@" ;;
   add)            exec "$AIWORKS_BASH" "$DIR/aiworks-add.sh" "$@" ;;
   sync)           exec "$AIWORKS_BASH" "$DIR/aiworks-sync.sh" "$@" ;;
   remove|rm)      exec "$AIWORKS_BASH" "$DIR/aiworks-remove.sh" "$@" ;;
   config)         exec "$AIWORKS_BASH" "$DIR/aiworks-config.sh" "$@" ;;
   cursor)         exec "$AIWORKS_BASH" "$DIR/aiworks-cursor.sh" "$@" ;;
+  codex)          exec "$AIWORKS_BASH" "$DIR/aiworks-codex.sh" "$@" ;;
+  harnesses)      exec "$AIWORKS_BASH" "$DIR/aiworks-harnesses.sh" "$@" ;;
+  workflow)       exec "$AIWORKS_BASH" "$DIR/aiworks-workflow.sh" "$@" ;;
   update)         exec "$AIWORKS_BASH" "$DIR/aiworks-update.sh" "$@" ;;
   voice)          exec "$AIWORKS_BASH" "$DIR/aiworks-voice.sh" "$@" ;;
   gc)             exec "$AIWORKS_BASH" "$DIR/aiworks-gc.sh" "$@" ;;

@@ -1,24 +1,16 @@
 ---
 name: write-interactive-docs
 description: >-
-  Write a self-contained, interactive HTML document that explains something to a
-  human in plain language — using diagrams, tables, tabs, charts, callouts and
-  comparison sections instead of a wall of text — themed to match the project it
-  came from, with one-click export of the whole page or any single section to
-  Markdown or JSON for feeding to an AI. Use this whenever the user wants to
-  DOCUMENT, EXPLAIN, WRITE UP, or VISUALIZE something for people to read:
-  architecture/system/codebase explainers, design docs, ADRs, RFCs, "how does X
-  work" write-ups, solution proposals, option/trade-off comparisons, onboarding
-  guides, runbooks, research summaries, or turning a PRD/README/markdown into a
-  rich readable page. Trigger it for phrasings like "make a doc/page", "write
-  this up", "explain this visually", "create an interactive explainer", "turn
-  this into HTML docs", "document this so the team gets it", or a shareable
-  single-file HTML explainer — even if they don't say "interactive". ALSO use it
-  to UPDATE or MODIFY an existing interactive doc — partial edits like "tweak this
-  section", "restyle it", "fix that diagram", "make the diagram interactive", or
-  "add a section" — editing just the requested part instead of rebuilding. Prefer
-  this over a plain Markdown reply whenever the user wants something polished,
-  visual, or shareable.
+  Write a self-contained interactive HTML document that explains something to a human - diagrams,
+  tables, tabs, charts, callouts, comparisons instead of a wall of text - themed to its project,
+  with one-click export of the page or any section to Markdown/JSON. For architecture and codebase
+  explainers, design docs, ADRs, RFCs, "how does X work", solution proposals, trade-off
+  comparisons, onboarding guides, runbooks, research summaries, or turning a PRD/README/markdown
+  into a rich readable page. Triggers: DOCUMENT, EXPLAIN, WRITE UP, VISUALIZE for people to read;
+  "make a doc/page", "write this up", "explain this visually", "turn this into HTML docs", a
+  shareable single-file explainer - even without the word "interactive". ALSO for UPDATING one
+  ("tweak this section", "restyle it", "fix that diagram", "add a section") - editing just that
+  part. Prefer this over a plain Markdown reply when the result should be polished or shareable.
 model: sonnet
 effort: low 
 ---
@@ -194,7 +186,7 @@ silently. When ON, after the verifier passes:
 > CSP-safe prep — it is a plain `node` script), then **stop and hand the publish back**.
 > Return the `.artifact.html` path with an explicit *needs publishing by the caller* flag,
 > and say the same thing in your closing summary. Your caller has the tool and finishes
-> steps 2–5 — the publish, the **ticket comment carrying the URL**, and the `<meta>`
+> steps 2–5 — the publish, the **ticket record carrying the URL**, and the `<meta>`
 > write-back. Name the ticket `<KEY>` in your hand-back so the caller can post it.
 > Silently skipping the publish is the failure this note exists to prevent: it leaves a doc
 > whose entire purpose was being shareable sitting at a path only your machine can open, and
@@ -219,7 +211,21 @@ silently. When ON, after the verifier passes:
 3. **Put the URL on the ticket** (whenever the doc belongs to one — a plan, a spec, a
    write-up produced for `<KEY>`). A URL that lives only in a chat reply is lost by the next
    day; the ticket is where the next person looks, and where a later phase re-reads the plan.
-   Post it through the tracker adapter, never the tracker's own API/MCP:
+   Post it through the tracker adapter, never the tracker's own API/MCP.
+
+   **An implementation plan is a durable record, not a comment** (`docs/adr/0026`). A ticket's
+   plan links live in ONE ticket-wide `[plans · <KEY>]` record — one `` - `<repo>` — <url> ``
+   line per repo, every repo in the same record — refreshed after each publish, never a second
+   comment and never one comment per repo:
+   ```
+   scripts/tracker/upsert-ticket-comment.sh <KEY> --marker "[plans · <KEY>]" < <body>
+   ```
+   The body's first line is exactly `**[plans · <KEY>]**`; rebuild the whole list from every
+   `agent_logs/<KEY>-dev-cycle-state/*-artifact_published.json` that exists, so the record always
+   shows every page published so far. **Published nothing, post nothing** — no URL means no
+   record at all, not an empty one and not a local path (`docs/agents/plan-artifacts.md`).
+
+   Any OTHER doc (a spec, a write-up) is a genuine one-off:
    ```
    scripts/tracker/add-ticket-comment.sh <KEY> "…the URL + one line on what the page is…"
    ```

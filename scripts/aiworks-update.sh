@@ -14,25 +14,38 @@
 #              cask). Each is upgraded ONLY if brew actually owns it here, so a jq from /usr/bin or
 #              a pnpm from nvm is left alone rather than shadowed by a second copy. The list is the
 #              one `aiworks doctor` reports currency for, so the command it names can actually fix
-#              what it flagged — keep the two in step.
+#              what it flagged — keep the two in step. A tool brew does not own is triaged rather
+#              than blanket-skipped: OS-shipped (/usr/bin) is reported "system" because the vendor
+#              updates it, and one with a group of its own (pnpm, uv) is left to that group.
 #   rust       rustup update — the Rust toolchain (any Rust service/repo in the workspace).
-#   pnpm       corepack prepare pnpm@latest, but ONLY when brew does not own pnpm (else the brew
-#              group already handled it). Stays inside the CURRENT node; never switches node.
+#   pnpm       whichever updater owns the pnpm on PATH: brew (already done by the brew group), a
+#              standalone install under PNPM_HOME (pnpm self-update — corepack would install a
+#              second copy the standalone one shadows), else corepack, else npm. Stays inside the
+#              CURRENT node; never switches node.
+#   uv         uv self update, but only for the standalone installer. Brew-owned uv is handled by
+#              the brew group so the updater never replaces a package-managed binary.
 #   gcloud     gcloud components update.
 #   claude     claude update — the Claude Code CLI.
+#   cursor     cursor-agent update — the Cursor CLI.
+#   codex      upgrade the Codex CLI through the installer that owns it: brew cask, brew formula,
+#              npm global, else the CLI's own `codex update` (a standalone install owned by no
+#              package manager). Only a build with none of those is left alone.
 #   codegraph  codegraph upgrade — the per-repo code index CLI.
 #   graphify   uv tool upgrade graphifyy — this repo's doc-graph CLI (prose only).
 #   plugins    claude plugin marketplace update, then `claude plugin update` for every plugin in
-#              .claude/settings.json enabledPlugins. Needs a Claude Code restart to take effect.
+#              .claude/settings.json enabledPlugins — at PROJECT scope, in the root and in every
+#              clone that carries a copy (plus a leftover user-scope copy if the machine has one),
+#              because the CLI's own default (-s user) leaves a project copy to rot.
+#              Needs a Claude Code restart to take effect.
 #   skills     npx skills update -p — the third-party Agent Skills declared in skills-lock.json
 #              at the workspace ROOT (project scope only; see the note below on the other scopes).
 #              There is no binary to version-probe, so "updated" is derived from each skill's
 #              computedHash in the lock; -v lists the per-skill hash change. This is the ONE group
-#              that rewrites TRACKED files (skills-lock.json + .agents/skills/**) — it never
+#              that rewrites TRACKED files (skills-lock.json + .claude/skills/**) — it never
 #              commits: the changed paths are printed for you to review.
 #              A LOCALLY PATCHED skill is protected. The CLI rewrites every skill file on every run,
 #              so this group 3-way merges each rewritten file — ours (HEAD) + the upstream baseline
-#              committed under .agents/.skills-upstream/ + the new upstream copy — keeping BOTH the
+#              committed under .claude/.skills-upstream/ + the new upstream copy — keeping BOTH the
 #              upstream change and the local patch. With no baseline yet the local version wins and
 #              the baseline is seeded (re-run to take upstream on top); on overlapping edits the
 #              local version is kept and the new upstream copy is parked at <path>.upstream.new —
@@ -76,7 +89,7 @@ cd "$ROOT"
 # shellcheck source=/dev/null
 . "$ROOT/.superset/lib.sh"
 
-ALL_GROUPS="brew rust pnpm gcloud claude codegraph graphify plugins skills mcp"
+ALL_GROUPS="brew rust pnpm uv gcloud claude cursor codex codegraph graphify plugins skills mcp"
 
 # ── args ─────────────────────────────────────────────────────────────────────────
 DRY=0 CHECK_DEPS=0 ONLY="" SKIP=""
@@ -170,8 +183,12 @@ conclude "aiworks update — $ROOT"
 # at `aiworks update --only brew`, so a name it flags but this list omits is a warn no command can
 # clear (gh and pnpm were both in that hole). A tool absent from this machine is skipped by
 # brew_owns, so listing one costs nothing.
-BREW_FORMULAE="mani glab gh jq dap k6 pnpm"
+BREW_FORMULAE="mani glab gh jq dap k6 pnpm uv"
 BREW_CASKS="ngrok"
+# Of those, the ones a LATER group updates through their own installer when brew is not the owner.
+# Without this the summary shows them "skipped — not brew-owned" ten lines above the step that
+# actually moved them.
+SELF_UPDATING="pnpm uv"
 if want brew; then
   if ! command -v brew >/dev/null 2>&1; then
     warn "Homebrew not installed — skipping the brew group."
@@ -181,8 +198,22 @@ if want brew; then
     for f in $BREW_FORMULAE; do
       if brew_owns "$f"; then upgrade "brew upgrade $f" "$f" brew upgrade "$f"
       else
-        log "$f: not brew-owned here ($(command -v "$f" 2>/dev/null || echo 'not installed')) — leaving it alone."
-        record "$f" "skipped" "$(tool_version "$f")" "not brew-owned"
+        f_path="$(command -v "$f" 2>/dev/null || true)"
+        case " $SELF_UPDATING " in
+          *" $f "*)
+            log "$f: not brew-owned (${f_path:-not installed}) — the $f group owns it here." ;;
+          *)
+            case "$f_path" in
+              # OS-shipped (jq is /usr/bin/jq on a stock macOS): the vendor updates it. Nothing to
+              # run here, and nothing WRONG either — "skipped" reads like an unmet need it is not.
+              /usr/bin/*|/bin/*|/usr/sbin/*|/sbin/*)
+                log "$f: OS-shipped ($f_path) — the system updates it, not this script."
+                record "$f" "system" "$(tool_version "$f")" "OS-managed" ;;
+              *)
+                log "$f: not brew-owned here (${f_path:-not installed}) — leaving it alone."
+                record "$f" "skipped" "$(tool_version "$f")" "not brew-owned" ;;
+            esac ;;
+        esac
       fi
     done
     for c in $BREW_CASKS; do
@@ -207,8 +238,14 @@ fi
 
 # ── pnpm (only when brew is not the owner — else the brew group already did it) ───
 if want pnpm; then
+  pnpm_path="$(command -v pnpm 2>/dev/null || true)"
   if brew_owns pnpm; then
     log "pnpm is brew-owned — handled by the brew group."
+  elif [[ -n "$pnpm_path" && -n "${PNPM_HOME:-}" && "$pnpm_path" == "$PNPM_HOME"/* ]]; then
+    # Standalone install (pnpm's own installer, under PNPM_HOME). corepack would write a SECOND
+    # pnpm into ITS shim dir, which this one shadows — so the version on PATH never moves and the
+    # step reports "current" forever. `pnpm self-update` replaces the copy actually in use.
+    upgrade "pnpm self-update" "pnpm" pnpm self-update
   elif command -v corepack >/dev/null 2>&1; then
     upgrade "corepack prepare pnpm@latest" "pnpm" corepack prepare pnpm@latest --activate
   elif command -v npm >/dev/null 2>&1; then
@@ -216,6 +253,17 @@ if want pnpm; then
   else
     warn "no corepack and no npm — cannot update pnpm."
     record "pnpm" "skipped" "$(tool_version pnpm)" "-"
+  fi
+fi
+
+# ── uv (only when the standalone installer owns it) ──────────────────────────────
+if want uv; then
+  if brew_owns uv; then
+    log "uv is brew-owned — handled by the brew group."
+  elif command -v uv >/dev/null 2>&1; then
+    upgrade "uv self update" "uv" uv self update
+  else
+    record "uv" "skipped" "absent" "-"
   fi
 fi
 
@@ -234,6 +282,39 @@ if want claude; then
     upgrade "claude update" "claude" claude update
   else
     record "claude" "skipped" "absent" "-"
+  fi
+fi
+
+# ── cursor ──────────────────────────────────────────────────────────────────────
+if want cursor; then
+  cursor_bin=""
+  if command -v cursor-agent >/dev/null 2>&1; then cursor_bin="cursor-agent"
+  elif command -v agent >/dev/null 2>&1; then cursor_bin="agent"; fi
+  if [[ -n "$cursor_bin" ]]; then
+    upgrade "$cursor_bin update" "$cursor_bin" "$cursor_bin" update
+  else
+    record "cursor" "skipped" "absent" "-"
+  fi
+fi
+
+# ── codex ───────────────────────────────────────────────────────────────────────
+if want codex; then
+  if ! command -v codex >/dev/null 2>&1; then
+    record "codex" "skipped" "absent" "-"
+  elif brew_owns codex --cask; then
+    upgrade "brew upgrade --cask codex" "codex" brew upgrade --cask codex
+  elif brew_owns codex; then
+    upgrade "brew upgrade codex" "codex" brew upgrade codex
+  elif command -v npm >/dev/null 2>&1 && npm list -g @openai/codex >/dev/null 2>&1; then
+    upgrade "npm install -g @openai/codex@latest" "codex" npm install -g @openai/codex@latest
+  elif codex update --help >/dev/null 2>&1; then
+    # Standalone install (the official installer keeps versioned copies under ~/.codex and links
+    # the current one onto PATH). No package manager owns it, but the CLI updates ITSELF in
+    # place — the only updater that can, and the one that install method expects.
+    upgrade "codex update" "codex" codex update
+  else
+    warn "codex: no owner this script recognises and no 'codex update' subcommand — left alone."
+    record "codex" "skipped" "$(tool_version codex)" "unknown owner"
   fi
 fi
 
@@ -264,21 +345,55 @@ fi
 
 # ── claude plugins ───────────────────────────────────────────────────────────────
 # The plugins the workspace DECLARES (.claude/settings.json enabledPlugins) — the same list
-# ensure_claude_plugins installs at user scope during setup, so update reads the same source.
+# ensure_claude_plugins installs at PROJECT scope during setup, so update reads the same source
+# AND refreshes the same copies.
+#
+# `claude plugin update` defaults to USER scope, and the project copy it never touched is what
+# rotted here: measured 2026-09-04, this root carried a caveman 19 days behind the machine's
+# user-scope install, while `aiworks doctor --fix` could only DELETE that project copy — which
+# the next `aiworks update`/`setup` put straight back. A warn no command could clear, on the
+# ruleset every session and all 16 agent definitions preload.
+#
+# So every EXISTING copy of a declared plugin is refreshed: each project copy under this
+# workspace (the root and every clone), updated IN the project that owns it because -s project
+# resolves the project from the CWD — plus a pre-existing user-scope copy, which nothing here
+# creates any more but which rots the same way if it is left behind.
 if want plugins; then
-  if ! command -v claude >/dev/null 2>&1; then
-    record "plugins" "skipped" "no claude CLI" "-"
-  elif ! command -v jq >/dev/null 2>&1; then
-    warn "jq unavailable — cannot read enabledPlugins; update plugins by hand (claude plugin update <plugin>@<marketplace>)."
+  if ! command -v jq >/dev/null 2>&1; then
+    warn "jq unavailable — cannot read enabledPlugins; update plugins by hand (claude plugin update <plugin>@<marketplace> -s project)."
     record "plugins" "skipped" "no jq" "-"
   else
-    upgrade "claude plugin marketplace update" "" claude plugin marketplace update
     plugin_keys="$(jq -r '.enabledPlugins // {} | keys[]' .claude/settings.json 2>/dev/null)"
-    if [[ -z "$plugin_keys" ]]; then
-      log "no plugins declared in .claude/settings.json."
-    else
-      for key in $plugin_keys; do upgrade "claude plugin update $key" "" claude plugin update "$key"; done
+    if command -v claude >/dev/null 2>&1; then
+      upgrade "claude plugin marketplace update" "" claude plugin marketplace update
+      for key in $plugin_keys; do
+        found=0
+        for d in "$ROOT" "$ROOT"/*/; do
+          d="${d%/}"
+          [[ "$d" == "$ROOT" || -e "$d/.git" ]] || continue
+          phys="$(cd "$d" 2>/dev/null && pwd -P)" || continue
+          [[ -n "$(claude_plugin_scope_version "$key" project "$phys")" ]] || continue
+          if [[ "$d" == "$ROOT" ]]; then lbl="root"; else lbl="${d#"$ROOT"/}"; fi
+          upgrade "claude plugin update $key ($lbl)" "" claude_plugin_run_in "$d" update "$key"
+          found=1
+        done
+        if [[ -n "$(claude_plugin_scope_version "$key" user)" ]]; then
+          upgrade "claude plugin update $key (user scope)" "" claude plugin update "$key" -s user -y
+          found=1
+        fi
+        # Nothing installed anywhere is not something update can fix — the install is
+        # ensure_claude_plugins (`aiworks doctor` names it). Recorded so it is not silent.
+        [[ "$found" == 0 ]] && record "claude plugin $key" "skipped" "not installed" "-"
+      done
       warn "plugins updated — RESTART Claude Code for the new versions to load."
+    else
+      record "claude plugins" "skipped" "no claude CLI" "-"
+    fi
+    if command -v codex >/dev/null 2>&1; then
+      upgrade "codex plugin marketplace upgrade" "" codex plugin marketplace upgrade
+      warn "Codex marketplaces refreshed — restart Codex for changed native plugin components."
+    else
+      record "codex plugins" "skipped" "no codex CLI" "-"
     fi
   fi
 fi
@@ -306,14 +421,14 @@ skills_hashes() {  # → "<name>\t<hash>" per skill, sorted by name
 # on the first live run here: 35 local lines vanished under a "current" verdict.
 #
 # So keep a baseline mirror — the upstream copy as of the LAST update, committed under
-# .agents/.skills-upstream/. With it every rewritten file is a real 3-way merge: ours (HEAD,
+# .claude/.skills-upstream/. With it every rewritten file is a real 3-way merge: ours (HEAD,
 # patched) + base (old upstream) + theirs (new upstream), so an upstream change AND a local patch
 # both survive. Without it (first run, or a skill installed since) the LOCAL version wins — the
 # only choice that cannot destroy work — and the baseline is seeded for the next run.
-SK_BASE_DIR=".agents/.skills-upstream"
+SK_BASE_DIR=".claude/.skills-upstream"
 
-sk_modified() {  # tracked files under .agents/skills that this run rewrote
-  git status --porcelain -- .agents/skills 2>/dev/null | awk '/^[ MARC]M/ { print substr($0, 4) }'
+sk_modified() {  # tracked files under .claude/skills that this run rewrote
+  git status --porcelain -- .claude/skills 2>/dev/null | awk '/^[ MARC]M/ { print substr($0, 4) }'
 }
 
 sk_reconcile() {  # → SK_MERGED / SK_KEPT / SK_CONFLICT, each a space-separated path list
@@ -322,7 +437,7 @@ sk_reconcile() {  # → SK_MERGED / SK_KEPT / SK_CONFLICT, each a space-separate
   ours="$(mktemp -t aiworks-sk)"; theirs="$(mktemp -t aiworks-sk)"; merged="$(mktemp -t aiworks-sk)"
   while IFS= read -r p; do
     [[ -n "$p" && -f "$p" ]] || continue
-    base="$SK_BASE_DIR/${p#.agents/skills/}"
+    base="$SK_BASE_DIR/${p#.claude/skills/}"
     cp "$p" "$theirs"
     git show "HEAD:$p" >"$ours" 2>/dev/null || continue   # not in HEAD → no local version to protect
     if [[ ! -f "$base" ]]; then
@@ -346,10 +461,10 @@ sk_seed_baseline() {  # <mark-file> — baseline the files the CLI actually WROT
   # would then merge cleanly over it and delete the patch for good.
   local mark="$1" p base n=0
   while IFS= read -r p; do
-    base="$SK_BASE_DIR/${p#.agents/skills/}"
+    base="$SK_BASE_DIR/${p#.claude/skills/}"
     [[ -f "$base" ]] && continue
     mkdir -p "$(dirname "$base")" && cp "$p" "$base" && n=$((n + 1))
-  done < <(find .agents/skills -type f -newer "$mark" ! -name '*.upstream.new' 2>/dev/null)
+  done < <(find .claude/skills -type f -newer "$mark" ! -name '*.upstream.new' 2>/dev/null)
   [[ "$n" -gt 0 ]] && log "seeded $n upstream baseline file(s) under $SK_BASE_DIR/"
   return 0
 }
@@ -423,8 +538,8 @@ if want skills; then
       fi
       if [[ "$sk_rc" -lt 128 ]]; then
         # Integrity: every skill in the lock must still be REACHABLE at .claude/skills/<name> — the
-        # CLI owns that entry (a symlink into .agents/skills/ here). A rewrite that drops or dangles
-        # it takes the skill out of every session with no error anywhere, so check rather than trust.
+        # .claude/skills is canonical and .agents/skills is its Codex-facing directory symlink.
+        # A rewrite that drops a canonical entry takes the skill out of every selected Harness.
         sk_broken=""
         while IFS=$'\t' read -r sk_name _; do
           [[ -z "$sk_name" || "$sk_name" == "(whole lock)" ]] && continue
@@ -438,7 +553,7 @@ if want skills; then
         # The lock, the skill files AND the baseline mirror are tracked here, so an update dirties the
         # tree. It is never committed for you — a merged skill file is new content whose diff the
         # author has to read, and the baseline bump belongs in the same commit as the merge it explains.
-        sk_dirty="$(git status --short -- skills-lock.json .agents/skills "$SK_BASE_DIR" 2>/dev/null)"
+        sk_dirty="$(git status --short -- skills-lock.json .claude/skills "$SK_BASE_DIR" 2>/dev/null)"
         if [[ -n "$sk_dirty" ]]; then
           warn "the skills update touched TRACKED files — review and commit them yourself:"
           printf '%s\n' "$sk_dirty" | sed 's/^/        /'

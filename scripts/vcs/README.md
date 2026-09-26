@@ -11,7 +11,9 @@ remote** when unset. All commands run against the repo in the current directory.
 | `open-pr.sh`        | Open (or reuse) a PR/MR for HEAD → BASE; prints the URL + `number=`. `--media <ref>` (repeatable) attaches visual results to the body |
 | `find-prs.sh`       | Print the URL of every OPEN PR/MR in the current repo whose **title or source branch contains the ticket key** — one per line (read-only; never pushes/creates) |
 | `upload-media.sh`   | Host media (image/video files, a dir of them, or http(s) URLs) and print an embeddable **## Visual results** markdown section |
-| `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` |
+| `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` + `approved=<yes\|no\|unknown>` + `target_branch=` + `source_branch=` (`--approved` prints just the last) |
+| `retarget-pr.sh`    | Repoint an OPEN PR/MR at a different base (`--base <branch>`), then read the new target back from the forge. Approvals survive a retarget; close+reopen does not |
+| `update-pr.sh`      | Re-describe an OPEN PR/MR — `--title`, `--body`/`--body-file` (`-` = stdin). REPLACES the description, never appends; prints `updated=`. The repair for a body that went stale under review |
 | `pr-comment.sh`     | Comment on a PR/MR (inline at `--path`:`--line` where supported) — review comments must anchor + quote code (see Notes) |
 | `pr-comments.sh`    | Print a PR/MR's comments / review notes as plain text |
 | `pr-threads.sh`     | List a PR/MR's resolvable **review threads** with their thread ids + resolved state (so a fix can be tied back to a thread) |
@@ -19,7 +21,17 @@ remote** when unset. All commands run against the repo in the current directory.
 | `merge-pr.sh`       | **Squash-merge server-side** so the web PR/MR shows *Merged*, then prints pr-view |
 | `pr-approve.sh`     | **The reviewer's PASS signal** — register a host approval (+ post a one-line verdict via `--body`). Decoupled from merge; the merge stays gated on `vcs.auto_merge` |
 
-`open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, `pr-resolve-thread.sh`, `merge-pr.sh`, and `pr-approve.sh` accept `--dry-run`.
+`open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, `pr-resolve-thread.sh`, `merge-pr.sh`,
+`retarget-pr.sh`, `update-pr.sh`, and `pr-approve.sh` accept `--dry-run`.
+
+**Why `pr-view.sh` prints the branches.** It always fetched the whole PR/MR object —
+`target_branch` included — and printed three of its fields, so the one question a pipeline needs to
+ask, *does this PR/MR target the branch the run said?*, had no answer through the adapter, and
+reaching past it to `glab`/`gh` is forbidden. That is why no gate ever checked it, and why one
+measured run reported its clean finish with every MR of a four-repo ticket pointed at a branch
+nobody had asked for. `retarget-pr.sh` is the repair half, and it does **not** decide what the right
+base is — pass the base the run recorded
+([ADR 0025](../../docs/adr/0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md)).
 
 ## Layout
 
@@ -30,12 +42,18 @@ vcs/
 ├── gitlab.sh          # glab implementation
 ├── default-branch.sh  open-pr.sh  pr-view.sh  pr-comment.sh  pr-comments.sh
 ├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh  pr-approve.sh
+├── retarget-pr.sh     update-pr.sh find-prs.sh  list-prs.sh  close-pr.sh
+├── approve-selftest.sh       # offline regression for the approval read + write (stubbed CLI)
+├── open-pr-selftest.sh       # offline regression for the open-PR/MR FAILURE paths (stubbed CLI)
+├── update-pr-selftest.sh     # offline regression for re-describing a PR/MR (stubbed CLI)
+├── repo-target-selftest.sh   # offline regression: every native glab/gh subcommand names its repo
+├── target-branch-selftest.sh # offline regression for reading + changing a target branch
 └── .env.example       # optional VCS_PROVIDER override
 ```
 
 A provider impl defines: `vcs_require_config`, `vcs_open_pr`, `vcs_pr_view`,
 `vcs_pr_comment`, `vcs_pr_comments`, `vcs_pr_threads`, `vcs_pr_resolve_thread`,
-`vcs_merge_pr`, `vcs_approve_pr`, `vcs_upload_media`. **To add a host**
+`vcs_merge_pr`, `vcs_approve_pr`, `vcs_pr_approved`, `vcs_upload_media`. **To add a host**
 (e.g. Bitbucket), drop a new `<provider>.sh` implementing those — nothing else changes.
 Shared media helpers (`vcs_is_image`, `vcs_is_media`, `vcs_media_md`,
 `vcs_media_asset_name`) live in `lib.sh`.
@@ -48,6 +66,16 @@ Handled by the provider CLI, not this adapter:
 
 ## Notes
 
+- **Naming the repo (`VCS_REPO`).** Every call acts on the current directory's `origin`
+  remote unless `VCS_REPO` names another repo — which it must in a multi-repo run, where
+  several agents share one shell and the cwd cannot say which repo was meant. The forge
+  wants a **project path** (`group/subgroup/project` on GitLab, `owner/repo` on GitHub),
+  and the adapter accepts any of the three forms a caller actually has in hand: that path,
+  a clone URL (`git@host:group/project.git`, `https://host/owner/repo.git` — what
+  `git remote get-url origin` and `workspace.config.yaml`'s `repos[].url` print), or the
+  **bare repo id**, which it resolves through the `repos[].url` declared for that id. A
+  bare id nothing declares is refused **before** the call — sent to the forge it returns
+  `404 Project Not Found`, which reads like a broken adapter rather than a wrong argument.
 - **Attaching visual results.** `open-pr.sh --media <ref>` (repeatable: file, directory,
   or http(s) URL) hosts each item and appends a **## Visual results** section to the body.
   Hosting differs by provider: **GitLab** uses the project uploads API (images and video
@@ -86,6 +114,36 @@ Handled by the provider CLI, not this adapter:
   Off ⇒ approve and leave the PR/MR open for a human; on ⇒ the reviewer approves, then merges.
   A host may forbid approving your **own** PR/MR — a non-issue in the pipeline, where the
   reviewer is never the author.
+- **The approval is READABLE, and approving twice is a no-op.** `pr-view.sh <n> --approved`
+  prints `yes` / `no` / `unknown`, which is how a review gate answers "has this already
+  passed?" without re-deriving a whole review (see `docs/agents/review-ledger.md` §5).
+  `unknown` is **not** `no` — it means the forge would not answer, and no caller may skip a
+  gate on an unanswered question. `pr-approve.sh` reads the same signal first and returns
+  early on `yes`, so a re-run of an already-passed gate cannot stack a second identical
+  verdict on the PR/MR. Where a forge has approvals disabled entirely, the fallback verdict
+  note carries `VCS_APPROVAL_MARKER` (`✅ APPROVED`) as its first characters and *is* the
+  readable record — which is why that marker is a constant in `lib.sh` and not a caller's
+  wording choice.
+
+  `scripts/vcs/approve-selftest.sh` is the regression for both halves, and it runs **offline**
+  because the branches worth proving cannot be shown by a live call: the idempotent early
+  return is an assertion that *nothing was posted* (invisible from outside — the stub logs
+  every CLI invocation so the test can assert `mr note` was never called), a project that
+  requires zero approvals answering `"approved": true` with an empty `approved_by`, and an
+  approvals endpoint that refuses on demand. No network, no credentials, no MR touched.
+- **A create that fails must SAY so — and must not claim nothing was created.** `vcs_open_pr`
+  captures the CLI's combined output *and* its exit status, then reports both. The reason it now
+  does: the GitLab side captured the output and died one line later, on
+  `url="$(… | grep -oE …)"` — `grep` exits 1 when it matches nothing, `pipefail` promotes that to
+  the pipeline's status, and a failing assignment is fatal under `set -e`, so the diagnostic the
+  capture existed for never ran. Every failing create surfaced as **exit 1 with zero bytes**; nine
+  reproductions were read as "glab prints nothing for this project" while glab's error sat in a
+  variable nobody got to print. `github.sh` had carried the missing `|| true` since it was written.
+  Second half of the same contract: a create can fail *after* the server made the PR/MR (a webhook
+  erroring the response, a dropped connection after the POST), so before reporting failure the
+  adapter re-runs the same open-PR/MR query the reuse path uses and returns what the forge actually
+  has. `scripts/vcs/open-pr-selftest.sh` is the regression for both, offline — a healthy forge
+  cannot be asked to fail on demand, and "the CLI was never invoked" is only visible by watching it.
 - "PR" maps to a GitLab **merge request**; a PR `number` is the **MR IID**.
 - Inline-at-line comments are a true review comment on both hosts: GitHub posts a PR
   review comment, GitLab a **positioned MR discussion** on the new side of the diff

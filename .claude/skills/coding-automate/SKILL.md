@@ -1,6 +1,11 @@
 ---
 name: coding-automate
-description: Implement an approved automation plan in THIS repo's Page Object Model and verify it. Reads agent_logs/<KEY>-automation-plan.md (the plan to follow) with agent_logs/<KEY>-testcases.md as the reference for expected behaviour/assertions, writes/extends Page Objects and specs strictly POM — each test titled with its TC id and ending in a screenshot capture — then verifies with `scripts/dev.sh test`. On a red run, investigate with `scripts/dev.sh why test`, fix automation issues and re-run; log genuine app bugs to agent_logs/<KEY>-bugs.md. This is the implement+execute step after plan-automate — it writes test code and runs the suite.
+description: >-
+  Implement an approved automation plan in THIS repo's Page Object Model and verify it. Follows
+  agent_logs/<KEY>-automation-plan.md against <KEY>-testcases.md, writes Page Objects and specs
+  strictly POM - each test titled with its TC id, ending in a screenshot - then verifies with
+  `scripts/dev.sh test`. On red, drill with `why test`, fix automation issues and re-run; log
+  genuine app bugs to agent_logs/<KEY>-bugs.md. The implement+execute step after plan-automate.
 argument-hint: "[FM-ticket]"
 arguments: [ticket]
 ---
@@ -43,6 +48,9 @@ Follow `CLAUDE.md`'s POM rules without exception. Hold to the workspace **coding
 
 - Run **`scripts/dev.sh test`** (plus the repo's own sub-mode if the plan calls for one, e.g. `test api` / `test all`). It writes the verbose log and prints a one-line summary; just run it.
 - Green → check **`scripts/dev.sh artifacts`** lists a capture for each scenario you automated. A green run with no rows means §3 step 5 didn't take effect — fix that before reporting, or the results report has nothing to attach.
+- The harness already writes the verbose log and prints one summary line — keep it that way. For any
+  command that does NOT (a raw runner, a container bring-up), redirect it (`> /tmp/run.log 2>&1`)
+  and read it with `grep`/`tail`. Never paste a full run log into context.
 - Then go to §6.
 
 ## 5. On a red run — investigate with `why`, then triage

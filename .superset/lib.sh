@@ -328,6 +328,30 @@ ensure_jq() {
   return 0
 }
 
+# Ensure `uv` is available for the workspace's Python-backed tools and triage MCP servers.
+# The official installer owns standalone installs; setup only invokes it when uv is absent.
+ensure_uv() {
+  if command -v uv >/dev/null 2>&1; then
+    log "uv already installed ($(uv --version 2>/dev/null))."
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    warn "uv not found and curl is unavailable — install it by hand: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    return 0
+  fi
+  log "uv not found — installing…"
+  run_glance "uv: official installer" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' || true
+  if [[ -x "$HOME/.local/bin/uv" && ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+  if command -v uv >/dev/null 2>&1; then
+    log "uv installed ($(uv --version 2>/dev/null))."
+  else
+    warn "uv still not on PATH after install — restart the shell, then re-run setup."
+  fi
+  return 0
+}
+
 # Install jq from the standard apt repos (Debian/Ubuntu). Returns non-zero (so the caller
 # can fall back to the static binary) when root/sudo is unavailable or any apt step fails.
 install_jq_apt() {
@@ -522,8 +546,116 @@ ensure_headroom() {
   return 0
 }
 
+# ── active Agent Harness CLIs + authentication ───────────────────────────────
+# Called only by the MAIN workspace setup. Superset worktrees reuse machine-global binaries and
+# login state and never open installers or browser auth flows.
+_selected_harnesses() {
+  local root="${1:-$PWD}"
+  python3 "$root/scripts/harnesses/config.py" list \
+    --config "$root/workspace.config.yaml" \
+    --config-local "$root/workspace.config.local.yaml" \
+    --registry "$root/scripts/harnesses/registry.json" \
+    --fallback
+}
+
+_cursor_cli() {
+  if command -v cursor-agent >/dev/null 2>&1; then command -v cursor-agent
+  elif command -v agent >/dev/null 2>&1; then command -v agent
+  else return 1
+  fi
+}
+
+_harness_present() {
+  case "$1" in
+    claude) command -v claude >/dev/null 2>&1 ;;
+    cursor) _cursor_cli >/dev/null 2>&1 ;;
+    codex)  command -v codex >/dev/null 2>&1 ;;
+    *)      return 1 ;;
+  esac
+}
+
+_install_harness() {
+  local id="$1"
+  case "$id" in
+    claude)
+      command -v curl >/dev/null 2>&1 || return 1
+      run_glance "Harness: install Claude Code" sh -c 'curl -fsSL https://claude.ai/install.sh | bash'
+      ;;
+    cursor)
+      command -v curl >/dev/null 2>&1 || return 1
+      run_glance "Harness: install Cursor CLI" sh -c 'curl https://cursor.com/install -fsS | bash'
+      ;;
+    codex)
+      if command -v npm >/dev/null 2>&1; then
+        run_glance "Harness: install Codex CLI" npm install -g @openai/codex
+      elif command -v brew >/dev/null 2>&1; then
+        run_glance "Harness: install Codex CLI" brew install --cask codex
+      else
+        return 1
+      fi
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+_harness_authenticated() {
+  case "$1" in
+    claude) claude auth status >/dev/null 2>&1 ;;
+    cursor) "$(_cursor_cli)" status >/dev/null 2>&1 ;;
+    codex)  codex login status >/dev/null 2>&1 ;;
+    *)      return 1 ;;
+  esac
+}
+
+_login_harness() {
+  case "$1" in
+    claude) claude auth login ;;
+    cursor) "$(_cursor_cli)" login ;;
+    codex)  codex login ;;
+    *)      return 1 ;;
+  esac
+}
+
+ensure_agent_harnesses() {
+  local root="$PWD" id failed=0 selected
+  command -v python3 >/dev/null 2>&1 || { warn "python3 unavailable — cannot resolve the Harness set."; return 1; }
+  selected="$(_selected_harnesses "$root")" || { warn "active Harness configuration is invalid."; return 1; }
+  export PATH="$HOME/.local/bin:$HOME/.cursor/bin:$PATH"
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    if ! _harness_present "$id"; then
+      if [[ ! -t 0 ]]; then
+        warn "$id Harness CLI is missing; run interactive 'aiworks setup' on the main workspace."
+        failed=1
+        continue
+      fi
+      log "Installing selected Harness: $id…"
+      _install_harness "$id" || { warn "could not install selected Harness: $id"; failed=1; continue; }
+      export PATH="$HOME/.local/bin:$HOME/.cursor/bin:$PATH"
+    fi
+    if ! _harness_present "$id"; then
+      warn "$id installer completed but its CLI is not on PATH; reopen the shell and rerun setup."
+      failed=1
+      continue
+    fi
+    if ! _harness_authenticated "$id"; then
+      if [[ ! -t 0 ]]; then
+        warn "$id is not authenticated; run its login command before non-interactive setup."
+        failed=1
+        continue
+      fi
+      log "Authenticating selected Harness: $id…"
+      _login_harness "$id" || true
+    fi
+    if _harness_authenticated "$id"; then log "$id Harness: installed and authenticated."
+    else warn "$id Harness authentication is still incomplete."; failed=1; fi
+  done <<< "$selected"
+  return "$failed"
+}
+
 # Ensure every plugin this workspace declares in .claude/settings.json `enabledPlugins` is
-# actually INSTALLED, at USER scope. Best-effort + idempotent. macOS bash 3.2 safe.
+# actually INSTALLED, at PROJECT scope — in the workspace root AND in every clone beside it that
+# declares one. Best-effort + idempotent. macOS bash 3.2 safe.
 #
 # Why this exists: declaring a plugin in a committed settings.json is NOT installing it —
 # measured, and it is the kind of thing that reads as working. With `enabledPlugins` +
@@ -531,36 +663,53 @@ ensure_headroom() {
 # still answered NOT-FOUND for `caveman:caveman`, while the workspace root (where the plugin
 # was genuinely installed) answered AVAILABLE. Same probe, so the difference is the install.
 #
-# USER scope, not project: one install then covers the workspace root AND every repo clone
-# AND any other project — a repo-only session is a first-class way to work here (see
-# docs/agents/submodules.md and the Cursor doc's "open one repo at a time"), and caveman is
-# supposed to hold no matter where a session starts. Project scope would mean one install per clone
-# that drift apart.
+# PROJECT scope, not user: a workspace's dependencies are declared in the workspace, so they are
+# installed where they are declared — the committed settings.json says which plugins this
+# workspace needs, and the install that satisfies it belongs to the same project, not to the
+# machine of whoever cloned it. That also gives `aiworks update` something it can actually keep
+# current: it refreshes the copies this function created, in the projects it created them in.
+# The cost is one install per project rather than one per machine, which is why this walks the
+# root plus every clone that declares the plugin instead of installing once and hoping the
+# reach is machine-wide. A repo-only session (docs/agents/submodules.md, the Cursor doc's "open
+# one repo at a time") is still first-class: its own clone carries its own install.
+# A pre-existing USER-scope copy is never removed — it belongs to the person's other projects.
 #
 # This matters most for caveman: it is the workspace's output-compression baseline, preloaded
 # by all 16 agent definitions. Without the install those 16 preloads resolve to nothing.
 ensure_claude_plugins() {
   command -v claude >/dev/null 2>&1 || { log "claude CLI not found — skipping plugin install."; return 0; }
-  command -v jq >/dev/null 2>&1     || { warn "jq unavailable — cannot read enabledPlugins; install workspace plugins by hand (claude plugin install <plugin>@<marketplace> -s user)."; return 0; }
+  command -v jq >/dev/null 2>&1     || { warn "jq unavailable — cannot read enabledPlugins; install workspace plugins by hand (claude plugin install <plugin>@<marketplace> -s project)."; return 0; }
   # setup.sh cd's to the workspace root before anything runs (`cd "$(dirname "$0")/.."`), and
   # the rest of lib.sh anchors on $PWD for the same reason. Not SUPERSET_ROOT_PATH — that is a
   # DIFFERENT thing (the source worktree a fresh one copies its local state from).
-  local settings="$PWD/.claude/settings.json"
-  [[ -f "$settings" ]] || { log "no .claude/settings.json — no plugins declared."; return 0; }
+  local root="$PWD" dir
+  for dir in "$root" "$root"/*/; do
+    dir="${dir%/}"
+    # The root always counts; a sibling directory only when it is a clone (node_modules/, docs/
+    # and the generated mirrors carry no .git and declare no plugins of their own).
+    [[ "$dir" == "$root" || -e "$dir/.git" ]] || continue
+    [[ -f "$dir/.claude/settings.json" ]] || continue
+    ensure_claude_plugins_in "$dir"
+  done
+  return 0
+}
 
-  local reg="$HOME/.claude/plugins/installed_plugins.json" key mp src
+# The per-project half of ensure_claude_plugins. Separate so `aiworks update` can reuse the same
+# path resolution, and so a single project can be reconciled on its own.
+ensure_claude_plugins_in() {  # <project-dir>
+  local dir="$1" settings="$1/.claude/settings.json"
+  local reg="$HOME/.claude/plugins/installed_plugins.json" key mp src phys
+  phys="$(cd "$dir" 2>/dev/null && pwd -P)" || phys="$dir"
   while IFS= read -r key; do
     [[ -n "$key" ]] || continue
-    # The registry's schema has already changed once under us (a flat map became
-    # {version, plugins:{…}}), so read both shapes rather than the current one.
-    if [[ -f "$reg" ]] && jq -e --arg k "$key" \
-         '(((.plugins // .)[$k]) // []) | any(.scope == "user")' "$reg" >/dev/null 2>&1; then
-      log "plugin $key already installed (user scope)."
+    if [[ -n "$(claude_plugin_scope_version "$key" project "$phys")" ]]; then
+      log "plugin $key already installed (project scope: $dir)."
       continue
     fi
     mp="${key#*@}"
     # A marketplace the workspace declares may be unknown to this machine. Add it from
     # extraKnownMarketplaces before installing, or the install has nowhere to resolve from.
+    # Marketplaces are machine-wide, so this is done once per key, not once per project.
     if ! claude plugin marketplace list 2>/dev/null | grep -q "$mp"; then
       src="$(jq -r --arg m "$mp" '(.extraKnownMarketplaces[$m].source.repo) // empty' "$settings" 2>/dev/null)"
       if [[ -n "$src" ]]; then
@@ -570,9 +719,103 @@ ensure_claude_plugins() {
         warn "marketplace $mp is unknown and .claude/settings.json declares no source for it — $key will not install."
       fi
     fi
-    run_glance "plugin: install $key" claude plugin install "$key" -s user \
-      || warn "claude plugin install $key -s user failed — install it by hand, or agents that preload it get nothing."
+    # -s project resolves the project from the CWD, so the install has to RUN in that project.
+    run_glance "plugin: install $key ($dir)" claude_plugin_run_in "$dir" install "$key" \
+      || warn "claude plugin install $key -s project failed in $dir — install it by hand, or agents that preload it get nothing."
   done < <(jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value == true) | .key' "$settings" 2>/dev/null)
+  return 0
+}
+
+# `claude plugin <verb> <key> -s project`, run inside <project-dir>. A function rather than an
+# inline subshell so run_glance/upgrade can take it as a command.
+claude_plugin_run_in() {  # <project-dir> <verb> <plugin-key>
+  ( cd "$1" && claude plugin "$2" "$3" -s project -y )
+}
+
+# The version the plugin registry records for one plugin at one scope, or "" when it has no entry
+# there. For scope=project the projectPath is matched on the RESOLVED path, never the recorded
+# string: the registry stores whatever path the session was opened with, and on macOS a /var/…
+# symlink of /private/var/… is the same directory spelled two ways.
+claude_plugin_scope_version() {  # <plugin-key> <scope> [project-dir]
+  local key="$1" scope="$2" want="${3:-}" reg="$HOME/.claude/plugins/installed_plugins.json" ep ev
+  [[ -f "$reg" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  if [[ "$scope" != project ]]; then
+    # The registry's schema has already changed once under us (a flat map became
+    # {version, plugins:{…}}), so read both shapes rather than the current one.
+    jq -r --arg k "$key" --arg s "$scope" \
+      '(((.plugins // .)[$k]) // [])[] | select(.scope == $s) | .version' "$reg" 2>/dev/null | head -1
+    return 0
+  fi
+  while IFS="$(printf '\t')" read -r ep ev; do
+    [[ -n "$ep" ]] || continue
+    [[ "$(cd "$ep" 2>/dev/null && pwd -P)" == "$want" ]] && { printf '%s\n' "$ev"; return 0; }
+  done <<EOF
+$(jq -r --arg k "$key" '(((.plugins // .)[$k]) // [])[] | select(.scope == "project") | "\(.projectPath)\t\(.version)"' "$reg" 2>/dev/null)
+EOF
+  return 0
+}
+
+ensure_codex_plugins() {
+  command -v codex >/dev/null 2>&1 || { log "Codex CLI not selected/present — skipping native Codex plugins."; return 0; }
+  command -v jq >/dev/null 2>&1 || { warn "jq unavailable — cannot reconcile Codex plugins."; return 0; }
+  local settings="$PWD/.claude/settings.json" src key
+  [[ -f "$settings" ]] || return 0
+  # Register every explicitly sourced marketplace first. Codex derives its marketplace id from
+  # the snapshot manifest; adding an existing source is idempotent or a harmless warning.
+  while IFS= read -r src; do
+    [[ -n "$src" ]] || continue
+    codex plugin marketplace list 2>/dev/null | grep -qF "$src" && continue
+    run_glance "Codex plugin marketplace: $src" codex plugin marketplace add "$src" \
+      || warn "Codex could not add marketplace $src — projected components remain the fallback."
+  done < <(jq -r '.extraKnownMarketplaces // {} | to_entries[] | .value.source.repo // empty' "$settings" 2>/dev/null)
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    run_glance "Codex plugin: $key" codex plugin add "$key" \
+      || warn "Codex native plugin $key unavailable — projected/vendored components will be checked instead."
+  done < <(jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value == true) | .key' "$settings" 2>/dev/null)
+  return 0
+}
+
+ensure_harness_plugins() {
+  local resolved selected
+  resolved="$(_selected_harnesses "$PWD")" || { warn "active Harness configuration is invalid."; return 1; }
+  selected=" $(printf '%s\n' "$resolved" | tr '\n' ' ') "
+  case "$selected" in *" claude "*) ensure_claude_plugins || true ;; esac
+  case "$selected" in *" codex "*) ensure_codex_plugins || true ;; esac
+  # Cursor reads canonical/projected components directly. Its CLI currently manages marketplace
+  # sources but exposes no non-interactive native plugin install command, so there is no fake
+  # install step here.
+  return 0
+}
+
+ensure_harness_statuslines() {
+  local resolved selected
+  resolved="$(_selected_harnesses "$PWD")" || { warn "active Harness configuration is invalid."; return 1; }
+  selected=" $(printf '%s\n' "$resolved" | tr '\n' ' ') "
+  command -v jq >/dev/null 2>&1 || { warn "jq unavailable — cannot configure Harness status lines."; return 0; }
+  case "$selected" in
+    *" cursor "*)
+      local cfg="${AIWORKS_CURSOR_CONFIG:-$HOME/.cursor/cli-config.json}" tmp command
+      mkdir -p "$(dirname "$cfg")" 2>/dev/null || return 0
+      [[ -f "$cfg" ]] || printf '{}\n' > "$cfg"
+      if jq -e '.statusLine? // empty' "$cfg" >/dev/null 2>&1; then
+        log "Cursor status line already configured — preserving the user's command."
+      else
+        command='bash -c '\''root=$(git rev-parse --show-toplevel 2>/dev/null || pwd); script="$root/.claude/hooks/caveman-statusline/statusline.sh"; [ -f "$script" ] && exec bash "$script"'\'''
+        tmp="$(mktemp -t aiworks-cursor-statusline)" || return 0
+        if jq --arg command "$command" '.statusLine = {type:"command", command:$command}' "$cfg" > "$tmp" \
+          && mv "$tmp" "$cfg"; then
+          log "Cursor status line configured from the canonical Claude statusline when inside an aiworks workspace."
+        else
+          rm -f "$tmp"
+          warn "could not update $cfg; run /statusline in Cursor."
+        fi
+      fi
+      ;;
+  esac
+  # Codex's richest supported footer is project-scoped and generated in .codex/config.toml.
+  # Claude's user statusLine may already be chained by another tool, so setup never overwrites it.
   return 0
 }
 

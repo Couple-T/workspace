@@ -1,6 +1,12 @@
 ---
 name: report-test-results
-description: Gather the automation run results for a ticket and report them on the ticket as a concise, human-readable summary WITH the run's own screenshots embedded in the comment. Reads the run summary (`scripts/dev.sh why test`), the run's artifacts (`scripts/dev.sh artifacts`), the logged bugs (agent_logs/<KEY>-bugs.md), and the test plan (agent_logs/<KEY>-testcases.md), then writes a per-TC results table to agent_logs/<KEY>-report.md and posts it with the evidence attached. Reports the same way whether the suite passed or failed. Reports only — does not run the suite or write test code.
+description: >-
+  Report a finished automation run on its ticket as a human-readable verdict WITH the run's own
+  screenshots embedded - ONE durable comment per suite repo, keyed by a `[test-report - <repo>]`
+  marker and UPDATED in place on every re-run rather than posted again. Reads `scripts/dev.sh why
+  test` + `artifacts`, the logged bugs and the test plan; writes a per-TC table to
+  agent_logs/<KEY>-report.md and posts it with the evidence. Same shape green or red. Reports only
+  - never runs the suite or writes test code.
 argument-hint: "[ticket]"
 arguments: [ticket]
 ---
@@ -23,6 +29,17 @@ Turn a finished automation run into a short, readable verdict on the ticket — 
 - **Test plan — the row source:** read **`agent_logs/<KEY>-testcases.md`**. Its `TC<nnn>` scenarios are the rows of the results table and define what each should do (its `Then`). If it says **"Nothing to test"**, there are no results to report — say so and stop. Keep any **Regressions** list for the coverage note.
 - **Coverage context:** read **`agent_logs/<KEY>-automation-plan.md`** if present, to know which scenarios were **Automatable / Partial / Manual-only** — so an un-run scenario is reported as *not automated*, never silently dropped or counted as a pass.
 - **Bug details:** read **`agent_logs/<KEY>-bugs.md`** if present — the reproducible app bugs `coding-automate` logged. These populate the failure rows.
+- **The PREVIOUS report for this suite repo**, because this comment is updated in place, not re-posted:
+
+  ```sh
+  scripts/tracker/find-ticket-comment.sh <KEY> --marker "[test-report · <this repo>]"
+  ```
+
+  Nothing back (exit 0, no output) = first run of this suite on this ticket. Output = line 1 is
+  the comment id, the rest is last run's body: keep its **Run history** lines, and read the
+  highest `r<n>` there so this run is `r<n+1>`. That is where the round number comes from —
+  nothing passes one in, and counting the history is correct whether a workflow or a person
+  triggered the run.
 
 ## 2. Determine the results — `scripts/dev.sh why test`
 
@@ -32,6 +49,9 @@ The freshest verdict lives in the run log, and `why` reads it without a re-run:
 - **No log** (`no test run yet` / `no logs for 'test'`) → there are no results to report. Stop and tell the user to run `/coding-automate <KEY>` first — **don't fabricate a result.**
 - The `SUMMARY:` lines are the harness's own account of what ran, and their shape **is** the report's shape. One tool that ran → one result column. Several (`cypress … newman …`) → one column each. Be faithful to what the summary actually says: if the run is one combined flow rather than per-test results, report at that granularity and note it rather than inventing per-scenario detail.
 - Map each test-plan `TC<nnn>` to its outcome: ✅ pass, ❌ fail, or — not automated (Manual-only/Partial from the plan).
+- If a repo's `why` output is still long, put it in a file and pull the rows you report
+  (`scripts/dev.sh why test > /tmp/why.log 2>&1` then `grep -n -E 'SUMMARY|✗|failed' /tmp/why.log`).
+  The report needs per-TC outcomes, not the transcript.
 
 ## 3. Collect the evidence — `scripts/dev.sh artifacts`
 
@@ -54,6 +74,31 @@ Read **`report-template.md`** (next to this skill), fill every `{{ … }}` place
 - **Results table** — one row per test-plan `TC<nnn>`: `TC · Scenario · Result · Evidence · Notes`. Keep cells terse.
 - **Failures** — **only if any ❌.** One short block per failing `TC`: expected (the plan's `Then`) vs actual, the `why` signal, and the failure screenshot. No raw logs.
 - **Coverage** — automated count vs total planned, which scenarios were not automated (with a one-line reason), the regression checks' status if the plan listed any, and the run-wide artifacts (video, report).
+- **Run history** — rendered from the ledger file, never re-typed. Append **one** line for this run, then render the whole file:
+  ```sh
+  printf 'r%s\t%s\t%s\n' "<n>" "$(date -u +%Y-%m-%dT%H:%MZ)" "<result, e.g. 5/5 + 4/4 green>" \
+    >> agent_logs/<KEY>-test-report-history.tsv
+  awk -F'\t' '{printf "- %s · %s · %s\n", $1, $2, $3}' agent_logs/<KEY>-test-report-history.tsv
+  ```
+  **Do not carry the old lines forward by hand.** Re-merging history into a rewritten body is a
+  lossy operation performed by a language model, repeatedly — measured, it produced a report that
+  contradicted its own run three times over (wrong pass/fail counts, a `grep=` label for a filter
+  nobody ran, the wrong spec name). The ledger *is* the history; you only ever append to it.
+
+Three things in that template are **identity, not content**, and a run that gets them wrong
+breaks something downstream rather than just reading oddly:
+
+- **The marker line** `**[test-report · <repo>]**` — the first line, the exact repo directory
+  name, brackets and all. It is what §5 finds the comment by. Do not translate it under `th`,
+  do not reword it, do not merge two repos into one marker: **one comment per suite repo**, and
+  a ticket run through four suite repos carries four, each rewritten by its own repo's next run.
+- **The run stamp** — `run r<n> · <UTC> · candidate <repo@sha,…>`. `dev-cycle` proves its
+  test-suite gate really ran by having a second agent find *this* run's result on the ticket. In
+  place of a new comment each time, that stamp is the only thing separating this run's report
+  from the last one's — get it wrong and a green gate is recorded as **not run**.
+- **The run-history lines** — the only audit trail that survives an in-place update, since the
+  body above is always just the latest run. They come from the ledger file (§4); never rewrite or
+  prune a line, and never re-type the earlier ones from the previous record.
 
 ## 5. Post it to the ticket — with the evidence in the comment
 
@@ -62,14 +107,45 @@ Attaching and embedding is **`/update-ticket`'s** job — read its §4 for the e
 - **A failing `TC`** → its `fail-screenshot`, **alone on its own line** inside that TC's Failures block, so it renders wide (~446px). A reviewer has to actually look at this one.
 - **Passing `TC`s** → their `screenshot`s, **all on ONE line** under the Results table, so they render as a thumbnail strip. This is proof-of-record, not something anyone reads one by one.
 - **The rendered run report** (§3) → one line under Coverage.
-- **Video** → attach only when a failure is a sequence a still cannot show. It is large and rarely opened.
+- **Video → always, when the run produced one.** Green or red. A results table tells the team what
+  happened; a video is the only artifact that shows them *the product doing it*, and that is the
+  context a team actually watches when it wants to trust a suite it did not run itself. This rule
+  used to read "attach only when a failure is a sequence a still cannot show — it is large and
+  rarely opened", and the measured outcome was that no video ever reached a ticket at all.
 
-Rename every file before upload — `<KEY>-TC001-fail.png`, `<KEY>-report.png` — into `agent_logs/<KEY>-artifacts/`, suffixing the round (`-r2`) on a re-run. Then post the finished Markdown verbatim via stdin:
+  **Order and budget**, so a big regression run cannot silently blow past the tracker's limit:
+  1. Failing specs' videos first, then the rest, then the run-wide video (`TC-id` = `-`).
+  2. Attach in that order while the running total stays under **25 MB** (`du -k` each file first).
+  3. Everything you did not attach gets a named line under Coverage — file, size, and its path:
+     `_Not attached_ — \`full_regression.mp4\` (41 MB, over the 25 MB budget): agent_logs/<KEY>-artifacts/full_regression.mp4`
+
+  Never silently drop one. A report that omits evidence without saying so reads as a report that
+  had none, which is the same failure mode as a gate that passes without running.
+- **Videos go under Coverage**, each on its own line under a `**Run video**` heading (a video is
+  not a table cell). Jira renders an attached video as a playable media card; on a provider that
+  cannot embed, the upload dies loud and the words still post — say which you got.
+
+Rename every file before upload — `<KEY>-TC001-fail.png`, `<KEY>-report.png` — into `agent_logs/<KEY>-artifacts/`, suffixing the round (`-r2`) on a re-run. Then **update this suite repo's own report comment**, rather than adding another one:
 
 ```sh
-scripts/tracker/add-ticket-comment.sh <KEY> < agent_logs/<KEY>-report.md
+scripts/tracker/upsert-ticket-comment.sh <KEY> --marker "[test-report · <this repo>]" < agent_logs/<KEY>-report.md
 ```
 
+- **`upsert`, never `add`.** A ticket is re-run — a red fix round, a resumed invocation, a
+  second `dev-cycle` — and each run used to leave another full report behind, so the ticket
+  became a stack of near-identical tables and nobody could tell which was current. One comment
+  per suite repo, rewritten. `add-ticket-comment.sh` here is the bug, not the fallback.
+- **It is a WRITER: run it bare.** No pipe, no `&&`, no `$( )`, no heredoc — a compound call
+  falls out of the allow rules and is denied *silently* (`../../../CLAUDE.md`). The reader half
+  (`find-ticket-comment.sh`, §1) may be piped freely.
+- The call **fails** if the body does not contain its own marker — that is deliberate, an
+  unmarked report is invisible to the next run. Fix the body, don't switch scripts.
+- **Every provider updates in place.** jira and linear rewrite the comment; notion keeps the
+  record as one callout block on the page (its comment API cannot update), so there the report
+  moves to the bottom of the page each round instead of staying put. Either way there is exactly
+  one report per suite repo and the audit can read it back.
+- If the adapter WARNs that it could not update, say so in your report-back rather than
+  presenting it as an update.
 - Preview with `--dry-run` if unsure of the resolved ticket.
 - **Only Jira embeds images.** On another provider the upload dies loud and the comment still posts — the words are the deliverable, the pictures are the proof. Say which you got.
 - Moving the ticket's **Status** is **not** this skill's job — that's `/update-ticket`. Mention it if the run warrants it; don't change it here.
@@ -77,4 +153,4 @@ scripts/tracker/add-ticket-comment.sh <KEY> < agent_logs/<KEY>-report.md
 ## 6. Requirements & report back
 
 - Needs `scripts/tracker/.env` configured for the active `TRACKER_PROVIDER` (plus `curl` + `jq`) — see `scripts/tracker/README.md`. If a tracker script errors (no creds, ticket not found, empty body), **surface the exact error and stop** — don't retry blindly.
-- Finish by reporting back: the overall verdict, the path to `agent_logs/<KEY>-report.md`, the posted comment id (or the dry-run preview), and **how many artifacts were attached** — including "none" when the run captured nothing.
+- Finish by reporting back: the overall verdict, the path to `agent_logs/<KEY>-report.md`, the comment id and **whether it was updated or newly created**, the run number you stamped (`r<n>`), and **how many artifacts were attached** — including "none" when the run captured nothing.

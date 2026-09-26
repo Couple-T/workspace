@@ -1,7 +1,7 @@
 # `aiworks doctor` — what is missing, and the command that fixes it
 
 Every repair in this workspace already has an owner. `aiworks sync` clones and onboards,
-`aiworks setup` links the adapters, `aiworks cursor` regenerates the Cursor mirror,
+`aiworks setup` links the adapters, `aiworks harnesses sync` regenerates selected projections,
 `aiworks update` moves the tooling forward. What was missing was the surface that tells you
 **which of them you need to run** — before a half-finished workspace announces itself three
 steps later as an adapter dying on a missing token, an agent grepping a repo that was never
@@ -10,6 +10,8 @@ cloned, or a guard that silently stopped firing because its hook lost its `+x` b
 ```
 aiworks doctor [<repo>] [--repo a,b] [--only g,…] [--skip g,…]
                [--deep] [--json] [--strict] [--fix [-y]] [-n] [-v] [-h]
+
+aiworks fix [<any doctor option>]     # = doctor --deep --fix -y, then re-checks the findings
 ```
 
 A default run is **offline and about 4 seconds**. It is safe to run at any time, from any
@@ -47,7 +49,49 @@ A fix is only automatable when running it unattended is the whole answer. Anythi
 an editor, anything whose fix is to go read something, and anything printed as `see: …` (an
 install this script has no business performing on your machine — a node switch moves the
 global bin dir; Docker Desktop is a GUI app; `scripts/k8s/bootstrap-sa.sh` grants IAM on a GCP
-project and needs an owner to run it) is listed under **needs you** instead.
+project and needs an owner to run it) is listed under **needs you** instead. A fix that does
+not parse as a shell command lands there too, whatever it starts with: a finding whose fix is
+prose is advice, and advice must never reach `eval`.
+
+### `aiworks fix`, and why `--fix` re-checks itself
+
+`aiworks fix` is the one-word form of the invocation anybody actually wants: `doctor --deep
+--fix -y`. It takes doctor's own options, so `aiworks fix -n` still previews and
+`aiworks fix --only triage` still narrows.
+
+**"The command exited 0" is not "the finding is gone."** Measured on a real workspace: `--fix`
+reported `3 fixed · 0 failed` and a re-run returned a byte-identical finding set. All three
+owner commands exited 0 while closing nothing — one skipped its own stale MCP registration as
+if a stranger had written it, one only ever reported failure under `--check`, and one
+re-projected a config file nobody had edited. So `--fix` re-runs the same scope afterwards and
+reports what actually cleared, and **the exit code comes from that second pass** — the first
+pass describes a workspace that no longer exists.
+
+```
+  1 ran · 0 failed · 2 need you
+  re-checked: 1 cleared · 2 still open
+    still open  CLAUDE.md over the 100-line budget
+    still open  no .graphifyignore
+```
+
+The referee is one check at the only place nothing can bypass, so a future finding whose owner
+command silently no-ops is caught without anybody having to remember this failure mode. What
+it cannot do is invent a fix: a finding a person owns stays open, by design, and is named.
+
+Two rules follow for anyone adding a check:
+
+- **Never register a command that cannot close the finding.** `./aiworks config` re-projects
+  the mirror *from* `workspace.config.yaml`; it cannot decide what that file should say. Such a
+  finding takes `$EDITOR <the file>` as its fix and names the mechanical follow-up in the
+  detail text.
+- **A detector must say what it could not close, and the fix must not be that detector.**
+  `aiworks codex --check` exits 1 for drift a reconcile will close and **2** for drift it will
+  not (a real path where the canonical link belongs, a generated file somebody edited, a rules
+  file whose scope only its author can decide); doctor routes the 2 to **needs you** with the
+  paths, rather than re-running a command that will refuse identically forever. The *reconcile*
+  form still exits 0 — it did everything it was allowed to do — because the projector interface
+  says so and because failing it made `aiworks sync` warn on every run of a workspace holding
+  one hand-written `AGENTS.md`. Put the verdict in the check, never in the repair.
 
 ## How a check is scored
 
@@ -56,9 +100,14 @@ project and needs an owner to run it) is listed under **needs you** instead.
 | `✓ pass` | fine |
 | `✗ fail` | work is blocked right now — a repo is missing, a token is unset, a hook lost `+x` |
 | `! warn` | degraded or stale but usable — an index is old, a budget is over, a worktree is orphaned |
-| `· skip` | deliberately off (`<feature>.enabled: false`) or `--deep`-only on a default run |
+| `· skip` | deliberately off (`<feature>.enabled: false`), `--deep`-only on a default run, or advisory |
 
 A switched-off feature is a decision, not a defect, and never scores against you.
+
+Advisory shares the `·` tier for the same reason. A warning is a claim that something can be
+put right; an observation about a session that has already ended, or about a Harness you chose
+to run only on this machine, cannot be. Scored as warnings they became permanent entries under
+`--fix`'s **needs you**, standing in front of the findings that were still actionable.
 
 **Exit 0** when nothing failed, **1** when something did, **2** on misuse (not a workspace, an
 unknown flag, an undeclared repo name, `--fix` with no TTY and no `-y`). `--strict` promotes
@@ -73,28 +122,47 @@ Groups 1–8 run offline by default. 9–12 need `--deep`.
 | 1 | `workspace` | `mani.yaml` present · the config parses and declares repos · no comments in `workspace.config[.local].yaml` · no typo'd feature switch · root `CLAUDE.md` within its 100-line budget |
 | 2 | `repos` | every declared repo is cloned with a valid HEAD · `mani.d` and `products[]` still agree · each clone is git-ignored |
 | 3 | `adapters` | per provider: the `.env` exists and every **required** var is set · the provider CLI is installed · writer scripts are executable · the `.git/info/exclude` trap · `notify` / `observability` skipped when their `enabled` flag is false |
-| 4 | `per-repo` | `scripts/dev.sh` present and executable · `CLAUDE.md` within 100 lines · adapter symlinks (`tracker` + `vcs`) · `.codegraph/` · `skills-lock.json` · no rules file scoped with `globs:` and no `paths:` |
-| 5 | `agent-cfg` | every hook named in `.claude/settings.json` exists and is executable · `.claude/skills` installed · the Cursor mirror is projected · every plugin `enabledPlugins` declares is actually INSTALLED at user scope (`aiworks sync` only declares it) |
+| 4 | `per-repo` | `scripts/dev.sh` present and executable · `CLAUDE.md` within 100 lines · adapter symlinks (`tracker` + `vcs`) · `.codegraph/` · `skills-lock.json` · no rules file scoped with `globs:` and no `paths:` · **the feature base the workflow mirror will use, against the remote's own default** |
+| 5 | `agent-cfg` | every canonical hook exists and is executable · `.claude/skills` installed · selected Cursor/Codex projections present and, under `--deep`, drift-free · declared plugin components installed or projected |
 | 6 | `tooling` | the prerequisite binaries are on PATH, each missing one named with the installer that actually owns it |
 | 7 | `voice` | delegates `aiworks voice status` — skipped unless `voice.enabled` |
 | 8 | `triage` | the three read-only triage MCPs are registered (offline) · `--deep` · the Kubernetes triage identity reads and cannot write — skipped unless `triage.enabled` |
 | 9 | `mcp` | `--deep` · the shared MCP compose stack is up |
 | 10 | `services` | `--deep` · every host port published by `.superset/mcp-compose.yml` answers |
 | 11 | `credentials` | `--deep` · each adapter's own reader authenticates against the live API |
-| 12 | `disk` | `--deep` · delegates `aiworks gc` and reads its orphan **count** |
+| 12 | `disk` | `--deep` · delegates `aiworks gc`, reads its orphan **count**, and reads its **refusals** — an orphan gc will not touch is not something `--fix` can clear |
 
 Narrow with `--only` / `--skip`, or pass a repo name (`aiworks doctor your-app`) to look at
 one repo — the groups that are not repo-scoped then report as skipped.
+
+### The base check, and why it grades in two tiers
+
+The base a ticket's branch is cut from lives as a constant in the generated workflow mirror, and
+nothing validated it. Measured on a real ticket: two repos were projected onto a base 99 and 157
+commits behind their actual trunk — one of them a 16-file scaffold last touched a year earlier — so
+a ticket's branch was cut off a dead branch, missing shared code the specs import, at the cost of a
+whole round per repo. Group 4 now compares what the mirror will use against
+`git symbolic-ref refs/remotes/origin/HEAD` in the clone:
+
+- **absent from the remote → FAIL.** Not a style question: the open-PR step hard-stops on a base
+  that is not there, so no ticket can finish in that repo until it is corrected.
+- **present, but not the remote's default → WARN.** Sometimes entirely legitimate — a repo really
+  can run its own branch policy. The warning says how to declare that deliberately (`feature_base:`
+  on the repo's `products[].repos[]` entry) rather than inheriting a workspace default that does not
+  fit it. See
+  [ADR 0025](../adr/0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md).
+
+The full detail line is ellipsised in the text view; `--json` carries it whole.
 
 ### What is deliberately *not* checked, and why
 
 A green tick that means nothing is worse than an honest gap, so three things are left unproven
 on purpose:
 
-- **Cursor drift** and **version currency** are `--deep`, not because they need the network but
+- **Harness projection drift** and **version currency** are `--deep`, not because they need the network but
   because they are slow: `aiworks cursor --check` walks every repo (~8s) and `brew outdated`
   costs ~13s. Both are four times the whole command's budget. The default run answers the cheap
-  half of each — is the Cursor projection even *there*, is the binary even on PATH.
+  half of each — is the selected projection even *there*, is the binary even on PATH.
 - **Version currency covers the brew-owned half only.** `aiworks update -n` cannot answer it:
   dry-run prints the commands it *would* run and closes with "0 version(s) moved" whether or not
   anything is behind. rustup, gcloud, claude and codegraph carry their own updaters and are not
@@ -161,11 +229,11 @@ doctor learning about it.
 ## Selftest
 
 ```
-./scripts/aiworks-doctor-selftest.sh      # 39 cases, writes nothing
+./scripts/aiworks-doctor-selftest.sh      # writes nothing outside its own fixtures
 ```
 
 Fixtures are built from scratch in a temp dir, so the suite runs in a clone with no live
-config. Two families of case matter most:
+config. Three families of case matter most:
 
 - **The leak test** plants a recognisable fake secret in a fixture `.env` and greps every byte
   doctor emits — both streams, in text, `-v`, `--json`, `--strict` and `--fix -n`, and again
@@ -176,3 +244,8 @@ config. Two families of case matter most:
   worktrees on a workspace whose `gc` output said `orphaned: 0`. All three looked entirely
   convincing in real output. Every false positive costs somebody a real investigation, so the
   shapes that must stay quiet are pinned as cases.
+- **The referee.** One case runs `--fix` for real — the only one that does, and its fixture is
+  built so the entire plan is a single `chmod +x` inside the temp dir, with every other finding
+  routed to *needs you*. It asserts that a closed finding is counted as cleared, that a
+  surviving one is named, and that the exit code follows the second pass rather than the first.
+  Without it, "reports fixed, finding persists" is a regression nothing would catch.

@@ -1,6 +1,11 @@
 ---
 name: review
-description: Review the changes since a fixed point (commit, branch, tag, or merge-base) and render one verdict — are the originating ticket's requirements genuinely met? Verifies the diff against the repo's own knowledge (structure, design patterns, docs, ADRs, standards) along two parallel axes — Spec (is the bar cleared?) and Standards (does the implementation hold up?) — reported side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to "review since X".
+description: >-
+  Review the changes since a fixed point (commit, branch, tag, merge-base) and render one verdict:
+  are the originating ticket's requirements genuinely met? Judges the diff against the repo's own
+  structure, patterns, docs, ADRs and standards along two parallel axes - Spec (is the bar
+  cleared?) and Standards (does the implementation hold up?) - reported side by side. Use for a
+  branch, a PR, work-in-progress changes, or "review since X".
 ---
 
 # Review
@@ -64,6 +69,16 @@ comparison is against the merge-base). Note the commit list via
 `git log <fixed-point>..HEAD --oneline`, and the **changed symbols** (the
 functions/classes/methods the diff touches) — both sub-agents trace their blast radius
 with the codegraph instrument (`basis.md` §3).
+
+Bound what enters context. A diff or a log large enough to hesitate over goes to a file first —
+`git diff <fixed-point>...HEAD > /tmp/review-diff.patch` — then read it by hunk
+(`grep -n '^+++' /tmp/review-diff.patch`, then `sed -n '<from>,<to>p'`) or with `hcat`. Read the
+whole diff ONCE; a later round re-reads only the hunks its own findings name (see §6). One review
+in a measured run read a 118 KB diff three times and found nothing new on the second or third.
+
+Orient with the index before crawling files: `codegraph query -p "$PWD/<repo>" <symbol>` (the `-p`
+MUST be absolute — a guard blocks the relative form) answers "where is this and who calls it"
+without a multi-file read. Grep/Glob are for what the index does not carry.
 
 ### 2. Identify the spec source (the requirements — the bar)
 
@@ -161,6 +176,16 @@ the worst single issue. At **strict** the report carries must-fixes only (no nic
 section) — that is the level working, not an omission. The Spec axis carries the verdict — **but a bottom-line breach (a coding-standards
 must-fix, `basis.md` §2) caps the verdict at "partially met" no matter how clean Spec
 is.** The instrument findings are the evidence that a "met" is real.
+
+### 6. Re-visit (a later round on the same change)
+
+A re-visit is **not** a review. Its whole scope is the must-fix list you already raised: for each
+one, confirm the fix and the reply resolve it, and raise nothing new. Do not re-run §1–§4, do not
+re-read the diff end to end, do not re-derive findings — a second full pass produces new findings
+the author cannot close inside the round budget, which is how a review loop stops converging.
+Two things a re-visit DOES redo: the suite (the code changed, so last round's green proves nothing
+about this commit) and the one exception — a NEW blocking problem the fix itself introduced.
+Report that loudly as a regression rather than folding it into the list.
 
 ## Why two axes
 

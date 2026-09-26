@@ -32,7 +32,11 @@
 # from whatever an org happens to have configured changes meaning when someone edits it. The
 # few cases that need the real workspace skip themselves when there isn't one.
 #
-# WRITES NOTHING. Every run is read-only or --fix -n; no case ever passes --fix without -n.
+# WRITES NOTHING OUTSIDE ITS FIXTURES. Every run is read-only or --fix -n, with one exception:
+# case 21 has to prove that --fix's own referee tells a closed finding from a surviving one, and
+# that can only be observed by letting it run. Its fixture is built so the entire plan is a
+# single `chmod +x` on a file inside the temp dir; every other finding there is routed to
+# "needs you", so nothing reaches the network, a daemon, or anything outside $T.
 #
 set -uo pipefail
 
@@ -142,8 +146,11 @@ run() {
 # would ever use.
 stage() {  # stage <fixture-dir> — prints the staged script's dir
   local w="$1"
-  mkdir -p "$w/scripts"
+  mkdir -p "$w/scripts/harnesses"
   cp "$SCRIPT" "$w/scripts/aiworks-doctor.sh"
+  cp "$ROOT/scripts/aiworks-harnesses.sh" "$w/scripts/"
+  cp "$ROOT/scripts/harnesses/config.py" "$ROOT/scripts/harnesses/registry.json" "$w/scripts/harnesses/"
+  chmod +x "$w/scripts/aiworks-harnesses.sh"
   chmod +x "$w/scripts/aiworks-doctor.sh"
 }
 
@@ -154,6 +161,39 @@ W="$T/healthy"; make_ws "$W"; stage "$W"
 OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk 2>&1)"; RC=$?
 ck_exit "healthy fixture exits 0" 0 "$RC"
 ck "healthy fixture reports no failure" "0 fail" "$OUT"
+
+# ── 1b · the ACTIVE set (local over shared) drives the projection checks ─────────
+# A Harness the shared file names but this machine's local file omits is advisory only: sync
+# neither refreshes nor removes its projection here, so its absence is not a finding.
+W="$T/local-harnesses"; make_ws "$W"; stage "$W"
+printf 'harnesses:\n  - claude\n  - cursor\n  - codex\n' >> "$W/workspace.config.yaml"
+printf 'harnesses:\n  - claude\n' > "$W/workspace.config.local.yaml"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only agent-cfg -v 2>&1)"; RC=$?
+ck_exit "a shared-only Codex is not a failure" 0 "$RC"
+ck "doctor reports the supported Harness set" "Supported Harness set" "$OUT"
+ck "doctor reports the active Harness set" "Active Harness set" "$OUT"
+ck "doctor reports the shared-only Harnesses" "shared-only Harness" "$OUT"
+ck "…naming them" "cursor codex" "$OUT"
+ck "…and does not check their projections" "ABSENT:codex projection incomplete" "$OUT"
+
+# A Harness a person activates only on their machine IS projected by sync (the local file wins),
+# so the doctor checks that projection like any other — and it is not an error to name one.
+W="$T/local-only-harness"; make_ws "$W"; stage "$W"
+printf 'harnesses:\n  - claude\n  - cursor\n' >> "$W/workspace.config.yaml"
+printf 'harnesses:\n  - claude\n  - codex\n' > "$W/workspace.config.local.yaml"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only agent-cfg 2>&1)"; RC=$?
+ck_exit "a local-only Codex projection is checked" 1 "$RC"
+ck "a local-only Harness does not invalidate the set" "ABSENT:active Harness set is invalid" "$OUT"
+ck "…the active set drives the projection check"      "codex projection incomplete"           "$OUT"
+ck "…and cursor, shared-only here, is advisory"       "shared-only Harness"                   "$OUT"
+
+# An id no registry entry claims is still a typo in a file a person owns, and still fails.
+W="$T/invalid-local-harnesses"; make_ws "$W"; stage "$W"
+printf 'harnesses:\n  - claude\n  - cursor\n' >> "$W/workspace.config.yaml"
+printf 'harnesses:\n  - nosuchharness\n' > "$W/workspace.config.local.yaml"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only agent-cfg 2>&1)"; RC=$?
+ck_exit "an invalid local Harness set fails doctor" 1 "$RC"
+ck "doctor names the invalid active set" "active Harness set is invalid" "$OUT"
 
 # ── 2 · not a workspace at all ────────────────────────────────────────────────────
 W2="$T/notaws"; mkdir -p "$W2/scripts"; cp "$SCRIPT" "$W2/scripts/"; chmod +x "$W2/scripts/aiworks-doctor.sh"
@@ -366,6 +406,16 @@ ck "reads a literal published port"          "25999" "$OUT"
 # header, and a macOS mktemp dir (/var/folders/…/T/…vd380000gn/…) can contain the digits.
 # A substring assertion on a number alone is a coin flip on someone else's temp path.
 ck "ignores the container-side port"         "ABSENT:port 8000" "$OUT"
+# The speed marker is the only warning a person gets before answering `yes` to --fix, and
+# this fix is `compose up -d --quiet-pull`: on a machine that has not pulled these images it
+# is a download that prints nothing, under a runner that captures its output. Marked fast it
+# was a silent multi-minute wait indistinguishable from a hang. `nc` is stubbed so the ports
+# read closed whatever happens to be listening on the machine running the suite.
+mkdir -p "$W/bin"; printf '#!/usr/bin/env bash\nexit 1\n' > "$W/bin/nc"; chmod +x "$W/bin/nc"
+OUT="$(PATH="$W/bin:$PATH" "$W/scripts/aiworks-doctor.sh" --deep --only services --fix -n 2>&1)"
+PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+ck "a closed port still offers to start the stack" "mcp-services.sh up" "$PLAN_SEC"
+ck "…marked slow, because a cold run pulls images" "slow"              "$PLAN_SEC"
 : > "$W/.superset/mcp-compose.yml"
 OUT="$("$W/scripts/aiworks-doctor.sh" --deep --only services 2>&1)"
 ck "an empty compose says so, not a false pass" "publishes no host ports" "$OUT"
@@ -380,21 +430,22 @@ else
   skipc "live workspace run (no config in this clone)"
 fi
 
-# ── 19 · plugin scope drift + the caveman restart marker ──────────────────────────
+# ── 19 · plugin scope + the caveman restart marker ────────────────────────────────
 # Both checks read machine state ($HOME plugin registry, $CLAUDE_CONFIG_DIR activation flag), so
-# each case points those at a crafted directory instead of the real one. The pair that matters is
-# 19a/19c: the check must fire on DIVERGENCE and stay silent on mere duplication, because a
-# project-scope entry re-appears on its own and a warn nobody can clear is the defect this file
-# already pins for `gh` currency.
+# each case points those at a crafted directory instead of the real one. What matters here is the
+# scope the workspace installs at: PROJECT (docs/adr/0035). So a declared plugin with no project
+# copy for THIS workspace is the finding even when the machine carries a user-scope one, and the
+# fix for two copies that have parted must REFRESH them — the uninstall this check used to
+# prescribe was a warn no command could clear, because setup and update put the copy right back.
 W="$T/pluginscope"; make_ws "$W"; stage "$W"
 printf '{"hooks":{},"enabledPlugins":{"caveman@caveman":true}}\n' > "$W/.claude/settings.json"
 FH="$T/fakehome"; mkdir -p "$FH/.claude/plugins"
 
-mk_reg() {  # mk_reg <user-version> <project-version>
+mk_reg() {  # mk_reg <user-version> <project-version> [project-lastUpdated]
   cat > "$FH/.claude/plugins/installed_plugins.json" <<JSON
 {"version":1,"plugins":{"caveman@caveman":[
  {"scope":"user","version":"$1","lastUpdated":"2026-07-20T11:15:27.000Z"},
- {"scope":"project","projectPath":"$W","version":"$2","lastUpdated":"2026-07-01T00:00:00.000Z"}]}}
+ {"scope":"project","projectPath":"$W","version":"$2","lastUpdated":"${3:-2026-07-20T11:15:27.000Z}"}]}}
 JSON
 }
 # -v so a PASSING check's detail line is visible too — the "duplicate but in step" case asserts on
@@ -404,38 +455,49 @@ run_ps() { HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor
 mk_reg NEW999 OLD111
 printf 'full' > "$FH/.claude/.caveman-active"; touch -t 202607010000 "$FH/.claude/.caveman-active"
 OUT="$(run_ps)"
-ck "a diverged project-scope copy is a finding"   "drifted from user scope" "$OUT"
+ck "a project copy out of step with user scope is a finding" "out of step" "$OUT"
 ck "the finding names the plugin"                 "caveman@caveman"         "$OUT"
 ck "an update after the last activation warns"    "updated since the last activation" "$OUT"
-# The rendered owner command is width-truncated ("… (+1 more)"), and the half that gets cut is the
-# settings.json restore — the half whose absence breaks the whole team. Assert on --json, which
-# carries the command whole.
+# The rendered owner command is width-truncated ("… (+1 more words)"), so assert on --json, which
+# carries it whole. Both halves matter: the fix must be the refresh, and it must NOT be the
+# uninstall — that one deleted the plugin's line from the committed settings.json and was undone
+# by the next setup/update, which is how this finding used to survive its own fix.
 JOUT="$(HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor.sh" --only agent-cfg --json 2>&1)"
-ck "the fix restores the committed settings.json" "git checkout -- .claude/settings.json" "$JOUT"
+ck "the fix refreshes both copies"      "update --only plugins"    "$JOUT"
+ck "the fix never deletes the project copy" "ABSENT:plugin uninstall" "$JOUT"
 
 mk_reg SAME777 SAME777
 touch -t 202608010000 "$FH/.claude/.caveman-active"
 OUT="$(run_ps)"
-ck "a duplicate at the SAME version is not a finding" "ABSENT:drifted from user scope" "$OUT"
+ck "copies in step are not a finding"                 "ABSENT:out of step" "$OUT"
 ck "activation after the update is not a finding"     "ABSENT:updated since the last activation" "$OUT"
-ck "the duplicate is still reported as context"       "project-scope duplicate" "$OUT"
+ck "the project install is reported"                  "installed at project scope" "$OUT"
 
+# The restart check reads THIS project's copy, not the machine's. Project installed 2026-08-15,
+# user 2026-07-20, marker 2026-08-01: only the project stamp is newer than the activation, so a
+# check still reading the user entry would stay silent here.
+mk_reg SAME777 SAME777 "2026-08-15T04:47:02.000Z"
+OUT="$(run_ps)"
+ck "the restart check compares this project's copy" "updated since the last activation" "$OUT"
+
+mk_reg SAME777 SAME777
 rm -f "$FH/.claude/.caveman-active"
 OUT="$(run_ps)"
 ck "no activation marker skips rather than warns" "ABSENT:updated since the last activation" "$OUT"
 
-# A DECLARED plugin with no user-scope entry at all. This is the state `aiworks sync` leaves —
-# it converges enabledPlugins everywhere and never installs — and nothing else reported it, so a
-# teammate ran sync, saw the skills resolve, and had no hooks. The pass line has to disappear
-# with it: "declared plugins are user-scope only" printed beside the warn would read as fine.
+# A DECLARED plugin with no project-scope entry for THIS workspace, while the machine carries a
+# user-scope one. That is the state `aiworks sync` leaves — it converges enabledPlugins
+# everywhere and never installs — and a machine-wide copy does not stand in for it: nothing keeps
+# it in step with what this workspace declares. The pass line has to disappear with the warn.
 cat > "$FH/.claude/plugins/installed_plugins.json" <<'JSON'
 {"version":1,"plugins":{"caveman@caveman":[
+ {"scope":"user","version":"USR111","lastUpdated":"2026-07-20T11:15:27.000Z"},
  {"scope":"project","projectPath":"/nowhere","version":"OLD111","lastUpdated":"2026-07-01T00:00:00.000Z"}]}}
 JSON
 OUT="$(run_ps)"
-ck "a declared-but-uninstalled plugin is a finding" "declared plugin(s) not installed" "$OUT"
+ck "a plugin with no copy in THIS project is a finding" "not installed in this project" "$OUT"
 ck "the finding names the plugin"                   "caveman@caveman"                   "$OUT"
-ck "it does not also claim the scope is clean"      "ABSENT:user-scope only"            "$OUT"
+ck "a user-scope copy does not clear it"            "ABSENT:declared plugin(s) installed" "$OUT"
 JOUT="$(HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor.sh" --only agent-cfg --json 2>&1)"
 ck "the fix runs the one script that owns the install" "ensure_claude_plugins" "$JOUT"
 
@@ -457,6 +519,23 @@ OUT="$("$W/scripts/aiworks-doctor.sh" --only triage 2>&1)"; RC=$?
 ck_exit "a disabled triage keeps exit 0"  0 "$RC"
 ck "a disabled triage reads as skipped"   "triage.enabled is false"          "$OUT"
 ck "a disabled triage checks nothing"     "ABSENT:kubernetes triage identity" "$OUT"
+
+# a triage server whose source does not parse dies on import — every session then sees
+# CONNECTION_CLOSED while the registration still reads green. The doctor runs the parse +
+# undefined-name guard over the server entry files and scripts/lib, so the outage is a FAIL.
+W="$T/triage-broken"; make_ws "$W"; stage "$W"
+cp "$ROOT/scripts/python-sources-selftest.sh" "$W/scripts/"
+mkdir -p "$W/scripts/db"; printf 'x = "\n' > "$W/scripts/db/pg_triage_mcp.py"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only triage 2>&1)"; RC=$?
+ck_exit "a broken triage source fails the doctor"      1 "$RC"
+ck "the finding names the broken source"              "triage MCP source broken"      "$OUT"
+ck "the fix line points at the guard"                 "scripts/python-sources-selftest.sh" "$OUT"
+W="$T/triage-healthy-src"; make_ws "$W"; stage "$W"
+cp "$ROOT/scripts/python-sources-selftest.sh" "$W/scripts/"
+mkdir -p "$W/scripts/db"; printf 'x = 1\n' > "$W/scripts/db/pg_triage_mcp.py"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only triage 2>&1)"; RC=$?
+ck_exit "a healthy triage source keeps exit 0"         0 "$RC"
+ck "a healthy triage source raises no finding"        "ABSENT:triage MCP source broken" "$OUT"
 
 # ── 21 · the savings badge can be wired and still measure nothing ─────────────────
 # The plugin's doctor copies scripts/statusline.sh to ~/.claude but never scripts/lib/, and the
@@ -548,6 +627,201 @@ printf '{"statusLine":{"type":"command","command":"printf %%s my-own-bar"}}\n' \
 OUT="$(run_chain)"
 ck "a bar without the badge is still a finding" "savings badge not wired"              "$OUT"
 ck "it does not claim a chain that is not there" "ABSENT:wired through a chained"      "$OUT"
+
+# ── base drift (docs/adr/0025) ────────────────────────────────────────────────────
+# The base a run cuts a branch from lived only as a constant in the generated workflow mirror, and
+# nothing validated it. Measured: repos projected onto a base 99 and 157 commits behind their real
+# trunk, one of them a 16-file scaffold a year stale, so a ticket's branch was cut off a dead
+# branch and a whole round went into finding out. This is the check that says so BEFORE the run.
+#
+# base_fixture <dir> <projected-base> [origin-head-branch] — stages the mirror the check reads and
+# the remote-tracking refs it compares against. No remote is needed: update-ref writes the same
+# refs/remotes/origin/* a fetch would, which is exactly what the check inspects.
+# -v, because the default view collapses a passing check to a count and ellipsises a long
+# detail line ("… (+31 more words)") — both of which these cases assert on.
+dr() { "$1/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>&1; }
+# The text view ellipsises a long detail at ~96 chars even under -v; --json is the channel
+# that carries it whole, so a case asserting on the tail of a detail reads that instead.
+drj() { "$1/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --json 2>&1; }
+base_fixture() {
+  local w="$1" projected="$2" head_branch="${3:-}"
+  mkdir -p "$w/.claude/workflows/src"
+  { printf "const REPOS = {\n"
+    printf "  'demo-repo': {\n"
+    printf "    path: 'demo-repo', kind: 'backend',\n"
+    printf "    base: { feature: '%s', fix: 'main' },\n" "$projected"
+    printf "  },\n}\n"; } > "$w/.claude/workflows/src/dev-cycle.js"
+  local r="$w/demo-repo" sha
+  sha="$(git -C "$r" rev-parse HEAD 2>/dev/null)"
+  [[ -n "$head_branch" ]] || return 0
+  git -C "$r" update-ref "refs/remotes/origin/$head_branch" "$sha" 2>/dev/null
+  git -C "$r" symbolic-ref "refs/remotes/origin/HEAD" "refs/remotes/origin/$head_branch" 2>/dev/null
+}
+
+# 20a — projected base agrees with what the remote calls its default: silent, and green.
+W="$T/base-ok"; make_ws "$W"; stage "$W"; base_fixture "$W" develop develop
+git -C "$W/demo-repo" update-ref refs/remotes/origin/develop "$(git -C "$W/demo-repo" rev-parse HEAD)" 2>/dev/null
+OUT="$(dr "$W")"
+ck "a base matching origin/HEAD passes"        "feature base vs origin/HEAD" "$OUT"
+ck "…and raises no drift warning"              "ABSENT:disagrees with origin/HEAD" "$OUT"
+
+# 20b — projected base EXISTS but is not the remote's default: warn, and name both sides. This is
+# the shape that is sometimes legitimate (a repo really on its own branch policy), so it must not
+# be a failure — it must tell you how to declare it.
+W="$T/base-drift"; make_ws "$W"; stage "$W"
+base_fixture "$W" main develop
+git -C "$W/demo-repo" update-ref refs/remotes/origin/main "$(git -C "$W/demo-repo" rev-parse HEAD)" 2>/dev/null
+OUT="$(dr "$W")"
+ck "drift against origin/HEAD is reported"     "feature base disagrees with origin/HEAD" "$OUT"
+ck "…naming the base the run would use"        "uses main"        "$OUT"
+ck "…and what the remote actually points at"   "origin/HEAD→develop" "$OUT"
+ck "…and how to declare it deliberately"       "feature_base"     "$(drj "$W")"
+ck "drift is a warning, not a failure"         "ABSENT:1 fail"    "$OUT"
+
+# 20c — projected base is not on the remote AT ALL. Not a style question: the open-PR precondition
+# hard-stops on it, so no ticket can finish in that repo until it is fixed.
+W="$T/base-gone"; make_ws "$W"; stage "$W"
+base_fixture "$W" release/9.9 develop
+OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>&1)"; RC=$?
+ck "a base absent from the remote FAILS"       "does not exist on the remote" "$OUT"
+ck "…naming the repo and the branch"           "demo-repo(→release/9.9)"      "$OUT"
+ck "…and saying what it costs"                 "no ticket can finish"         "$OUT"
+ck_exit "…so the run exits non-zero"           1 "$RC"
+
+# ── 21 · --fix is refereed by a second pass, not by an exit code ──────────────────
+# Measured on a real workspace: `--fix -y` reported "3 fixed · 0 failed" and a re-run returned a
+# byte-identical finding set. All three owner commands exited 0 while closing nothing — one
+# skipped its own stale registration as foreign, one only ever failed under --check, one stood in
+# for a config edit nobody had made. So the doctor re-runs the same scope and reports what
+# actually cleared, and the VERDICT comes from that second pass rather than the stale first one.
+#
+# The fixture breaks two things at once: a chmod the fix really closes, and an over-budget
+# CLAUDE.md whose fix is an editor — so one finding must clear and the other must be named as
+# still open. The fixture also has no .graphifyignore, which is the second survivor the count
+# below expects. This is the only case that runs --fix for real; every command it can reach is
+# a chmod inside $T.
+W="$T/refereed"; make_ws "$W"; stage "$W"
+chmod -x "$W/demo-repo/scripts/dev.sh"
+{ printf '# repo\n'; for i in $(seq 1 130); do printf 'line %s\n' "$i"; done; } > "$W/demo-repo/CLAUDE.md"
+# BOTH machine-global headroom inputs are pinned at empty fixture paths because this case asserts
+# on a COUNT of surviving findings: the context-window drift check samples the developer's own
+# session transcripts (AIWORKS_TRANSCRIPT_DIR), and the badge price-table check reads the real
+# savings ledger (HEADROOM_STATE_DIR — an unpriced session there adds a third survivor). Unpinned,
+# the suite passed or failed by how the machine had been used that week — which is not a test.
+# HOME is deliberately NOT pinned: the sibling headroom checks read the real plugin registry, so
+# moving HOME just makes THOSE fire and breaks the same count.
+OUT="$(AIWORKS_TRANSCRIPT_DIR="$T/no-transcripts" HEADROOM_STATE_DIR="$T/no-headroom-ledger" \
+       "$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --fix -y 2>&1)"; RC=$?
+ck "the runner says it RAN a command, not that it fixed one"  "✓ ran"        "$OUT"
+ck "a second pass re-checks the findings"                    "re-checked:"  "$OUT"
+ck "…counting the one that really cleared"                   "1 cleared"    "$OUT"
+ck "…and the two it did not"                                 "2 still open" "$OUT"
+ck "…named, so nobody has to diff two runs by eye"  "still open  CLAUDE.md over the 100-line budget" "$OUT"
+[[ -x "$W/demo-repo/scripts/dev.sh" ]] && ok "the fix really ran" \
+                                       || bad "the fix really ran" "dev.sh is still not executable"
+ck_exit "the verdict follows the re-check, not the first pass" 0 "$RC"
+# Same run under --strict: what survived is a warning, and --strict fails on one.
+OUT="$(AIWORKS_TRANSCRIPT_DIR="$T/no-transcripts" HEADROOM_STATE_DIR="$T/no-headroom-ledger" \
+       "$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --fix -y --strict 2>&1)"; RC=$?
+ck_exit "a warning that survived the fix still fails --strict" 1 "$RC"
+
+# 21b — the referee must survive being invoked by a RELATIVE path. The script cd's to $ROOT
+# during startup, so re-invoking itself as "$0" resolves against the wrong directory: the child
+# produced nothing, the run printed "could not re-check", and the verdict silently fell back to
+# the PRE-FIX pass. Measured: `cd demo-repo && ../scripts/aiworks-doctor.sh --fix -y` exited 1
+# over a finding the chmod had already closed. Every other case here uses an absolute path,
+# which is exactly why none of them caught it.
+W="$T/refereed-rel"; make_ws "$W"; stage "$W"
+chmod -x "$W/demo-repo/scripts/dev.sh"
+OUT="$(cd "$W/demo-repo" && ../scripts/aiworks-doctor.sh --skip mcp,services,credentials,disk --fix -y 2>&1)"; RC=$?
+ck "a relative invocation still re-checks"      "re-checked:"          "$OUT"
+ck "…and does not claim it could not"           "ABSENT:could not re-check" "$OUT"
+ck_exit "…so the closed failure exits 0"        0 "$RC"
+
+# 21c — a CRLF rules file HAS frontmatter. The canonical reader (parse_frontmatter in
+# scripts/codex/common.py) compares lines[0].strip(), so `---\r` is valid there; comparing
+# `head -n 1` to `---` byte for byte made every CRLF rules file a permanent false positive,
+# routed to "needs you", telling the reader to add the block the file already has.
+W="$T/crlf-rules"; make_ws "$W"; stage "$W"
+printf -- '---\r\ndescription: d\r\npaths:\r\n  - "src/**"\r\n---\r\nbody\r\n' \
+  > "$W/demo-repo/.claude/rules/crlf.md"
+OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>&1)"
+ck "a CRLF rules file is not called frontmatter-less" "ABSENT:no YAML frontmatter" "$OUT"
+ck "…and its scoping is read correctly"               "ABSENT:globs:' and no 'paths:" "$OUT"
+# …while a file with genuinely no frontmatter is still named.
+printf '# just a heading\n\n- a rule\n' > "$W/demo-repo/.claude/rules/bare.md"
+OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>&1)"
+ck "a file with no frontmatter at all is reported"    "rules file with no YAML frontmatter" "$OUT"
+ck "…naming the file"                                 "demo-repo/.claude/rules/bare.md"     "$OUT"
+
+# ── 24 · an advisory finding is never fed to eval ─────────────────────────────────
+# Measured: the context-window drift finding shipped without the `see:` prefix that routes a
+# finding to "needs you", so `--fix` planned its prose as a command and the run died on
+# `bash: eval: syntax error near unexpected token ('` — one malformed finding taking down every
+# fix behind it. A fix argument is either a command or advice; advice must never reach eval.
+if ! command -v jq >/dev/null 2>&1; then
+  skipc "an advisory fix is routed to the human, not to eval (needs jq)"
+else
+  W="$T/drift-advice"; make_ws "$W"; stage "$W"
+  mkdir -p "$T/drift-transcripts/proj"
+  printf '{"message":{"usage":{"cache_read_input_tokens":400000,"input_tokens":12}}}\n' \
+    > "$T/drift-transcripts/proj/session.jsonl"
+  OUT="$(AIWORKS_TRANSCRIPT_DIR="$T/drift-transcripts" \
+         "$W/scripts/aiworks-doctor.sh" --only headroom --fix -n 2>&1)"
+  MANUAL_SEC="$(printf '%s\n' "$OUT" | sed -n '/needs you/,$p')"
+  PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+  ck "a drifted session is still reported"        "ran past 300k of context" "$OUT"
+  ck "…never as a command to run"                 "ABSENT:compact at ~150k"  "$PLAN_SEC"
+  ck "…and nothing is fed to eval"                "ABSENT:syntax error"      "$OUT"
+  # It is advisory now, not a warning: the sessions it names have already ended, so no run of
+  # anything clears it and it leaves on its own when the transcript ages out of the window.
+  # Queued under "needs you" it was a permanent entry in front of the actionable findings.
+  ck "…nor queued as work for a person"           "ABSENT:ran past"          "$MANUAL_SEC"
+fi
+
+# ── 25 · an orphan gc refuses is not something --fix can clear ───────────────────
+# Measured: two orphans held uncommitted work, so `aiworks gc` skipped both and exited 0 —
+# refusing on purpose is not an error. `--fix` ran the registered command, printed `✓ ran`,
+# removed nothing, and the finding came back byte-identical on the re-check and on every run
+# after it. The count alone cannot tell the two cases apart; gc's own refusal lines can.
+fake_gc() {  # fake_gc <fixture-dir> <orphan-count> <blocked-count>
+  local w="$1" n="$2" b="$3" i
+  mkdir -p "$w/scripts"
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'printf "\\n==> Superset worktrees under /tmp/wt\\n"\n'
+    printf 'printf "    live: 0   ·   orphaned: %s   ·   idle threshold: 3d\\n"\n' "$n"
+    printf 'printf "\\n==> Orphans — worktrees Superset no longer lists\\n"\n'
+    for ((i = 0; i < b; i++)); do
+      printf 'printf "    ! skip  a/w%s  — demo-repo has 3 uncommitted file(s)  (--force to override)\\n"\n' "$i"
+    done
+    # The artifact section prints `! skip` too. A whole-output grep counts these and calls a
+    # removable orphan un-removable, which is why the real check reads only gc's own section.
+    printf 'printf "\\n==> Build artifacts in idle worktrees\\n"\n'
+    printf 'printf "    ! skip  a/unrelated  — younger than 3d\\n"\n'
+  } > "$w/scripts/aiworks-gc.sh"
+  chmod +x "$w/scripts/aiworks-gc.sh"
+}
+
+W="$T/gc-all-blocked"; make_ws "$W"; stage "$W"; fake_gc "$W" 2 2
+OUT="$("$W/scripts/aiworks-doctor.sh" --only disk --deep --fix -n 2>&1)"
+PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+MANUAL_SEC="$(printf '%s\n' "$OUT" | sed -n '/needs you/,$p')"
+ck "orphans gc refuses are named as such"   "none of them removable"          "$OUT"
+ck "…and are not queued for --fix"          "ABSENT:gc --orphans"             "$PLAN_SEC"
+ck "…they go to the person instead"         "orphaned worktree"               "$MANUAL_SEC"
+
+W="$T/gc-removable"; make_ws "$W"; stage "$W"; fake_gc "$W" 2 0
+OUT="$("$W/scripts/aiworks-doctor.sh" --only disk --deep --fix -n 2>&1)"
+PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+ck "an orphan gc can remove keeps its fix"  "./aiworks gc --orphans --artifacts" "$PLAN_SEC"
+ck "…and is not called un-removable"        "ABSENT:none of them removable"      "$OUT"
+
+W="$T/gc-partly-blocked"; make_ws "$W"; stage "$W"; fake_gc "$W" 2 1
+OUT="$("$W/scripts/aiworks-doctor.sh" --only disk --deep --fix -n 2>&1)"
+PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+ck "a partly removable set still runs gc"   "./aiworks gc --orphans --artifacts" "$PLAN_SEC"
+ck "…and says how many it will refuse"      "1 of them gc will refuse"           "$OUT"
 
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"

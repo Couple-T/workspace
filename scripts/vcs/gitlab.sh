@@ -10,31 +10,126 @@ vcs_require_config() {
   command -v jq   >/dev/null || die "jq is required for the GitLab adapter"
 }
 
+# The GitLab project every `projects/<…>/merge_requests…` call below acts on. `:fullpath` is
+# glab's own placeholder — it resolves from the CURRENT WORKING DIRECTORY's git remote, which is
+# exactly the assumption VCS_REPO exists to override. Falls back to `:fullpath` byte-for-byte
+# when VCS_REPO is unset, so every existing caller is unaffected.
+_gl_project() {
+  local r; r="$(vcs_repo_ref)"
+  if [[ -n "$r" ]]; then vcs_urlencode_path "$r"; else printf ':fullpath'; fi
+}
+
+# Every NATIVE `glab mr <verb>` goes through here. `glab api projects/<id>/…` is scoped by
+# _gl_project() above; `glab mr create|note|view|close|merge|approve` are NOT — they resolve the
+# project from the CURRENT WORKING DIRECTORY's git remote, which in a multi-repo run is the
+# workspace root and not the target repo. Those calls then acted on the wrong project or 404'd,
+# and under `set -e` the failing assignment killed the caller before the function reached its own
+# `die` — the caller saw a bare exit 1 with no output. One wrapper fixes the targeting in one
+# place; the resolved target itself is announced once by lib.sh, deliberately outside any stderr a
+# call site captures and then pattern-matches.
+_gl_mr() {
+  local verb="$1"; shift
+  local r; r="$(vcs_repo_ref)"
+  # Mutations only, and on fd 9 (see lib.sh): the reads are called from places that parse their
+  # output, and a mutation is the call whose silent misfire cost a real run three rounds.
+  case "$verb" in create|note|close|merge|approve)
+    printf 'vcs[gitlab] mr %s → %s\n' "$verb" "${r:-<cwd git remote>}" >&9 ;;
+  esac
+  if [[ -n "$r" ]]; then glab mr "$verb" -R "$r" "$@"; else glab mr "$verb" "$@"; fi
+}
+
 # vcs_open_pr BASE HEAD TITLE BODY [DRY] -> prints "<url>" then "number=<iid>".
 # Every MR is opened with "Squash commits when merge request is accepted" CHECKED
 # (--squash-before-merge=true). This guarantees a squash even when a human merges the
 # open MR from the web UI (the path taken when vcs.auto_merge is off) — mirroring the
 # server-side --squash in vcs_merge_pr below, so the parent branch always gets one commit.
+
+# The OPEN MR for a source branch, or empty. Asked TWICE, deliberately: once before creating one
+# (so a re-run reuses instead of duplicating), and again after a `glab mr create` that reported
+# failure — because "the CLI exited non-zero" and "the server created nothing" are different
+# facts, and only the forge knows the second one. A webhook that errors the response, a body glab
+# cannot parse, a connection dropped after the POST: the MR exists and the caller was told it does
+# not. Never a mutation, so asking twice costs one read.
+_gl_open_mr_url() {
+  glab api "projects/$(_gl_project)/merge_requests?source_branch=$1&state=opened" 2>/dev/null \
+    | jq -r '.[0].web_url // empty' 2>/dev/null || true
+}
+
+# Is BRANCH on the TARGET project? Project-explicit, so — unlike `git ls-remote`, which answers
+# for whatever repo the cwd happens to be — it answers for the project the MR is opened in.
+_gl_has_branch() {
+  glab api "projects/$(_gl_project)/repository/branches/$(vcs_urlencode_path "$1")" >/dev/null 2>&1
+}
+
 vcs_open_pr() {
   local base="$1" head="$2" title="$3" body="$4" dry="${5:-0}"
   # Reuse an open MR for this source branch (avoid duplicates).
   local existing url iid
-  existing="$(glab api "projects/:fullpath/merge_requests?source_branch=$head&state=opened" 2>/dev/null \
-              | jq -r '.[0].web_url // empty' 2>/dev/null || true)"
+  existing="$(_gl_open_mr_url "$head")"
   if [[ -n "$existing" ]]; then
     iid="${existing##*/}"
     printf '%s\nnumber=%s\n' "$existing" "$iid"
     return 0
   fi
+  local proj="${VCS_REPO:-<cwd git remote>}"
   if [[ "$dry" -eq 1 ]]; then
-    printf 'DRY RUN — git push -u %s %q && glab mr create -s %q -b %q -t %q -d <…> --squash-before-merge=true -y\n' "$VCS_REMOTE" "$head" "$head" "$base" "$title"
+    printf 'DRY RUN — git push -u %s %q && glab api --method POST projects/%s/merge_requests --raw-field source_branch=%q --raw-field target_branch=%q --raw-field title=%q --raw-field description=<…> --field squash=true\n' \
+      "$VCS_REMOTE" "$head" "$(_gl_project)" "$head" "$base" "$title"
     return 0
   fi
-  git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
-  local out
-  out="$(glab mr create --source-branch "$head" --target-branch "$base" --title "$title" --description "$body" --squash-before-merge=true --yes 2>&1)"
-  url="$(printf '%s' "$out" | grep -oE 'https?://[^ ]+/merge_requests/[0-9]+' | head -n1)"
-  [[ -n "$url" ]] || { printf '%s\n' "$out" >&2; die "could not parse the MR URL from glab output"; }
+  vcs_push_head "$head"
+  # THE BRANCH MUST BE ON THE TARGET PROJECT, and only the target project can say so. vcs_push_head
+  # deliberately declines to push from a cwd that is not this repo, and a push can fail for its own
+  # reasons besides; either way the create that follows would fail forge-side with an error about
+  # the FORGE ("422 Source project is not a fork of the target project" was the historical shape),
+  # and every reader spent their time on glab instead of on the branch. Say it here, in one read,
+  # naming the command that fixes it.
+  _gl_has_branch "$head" || die "branch '$head' is not on $proj, so no MR can be opened for it ($head -> $base).
+  Push it FROM THAT REPO's own checkout, as its own bare command:
+      git -C <path to the $proj clone> push -u $VCS_REMOTE $head
+  (a writer run with VCS_REPO set from a DIFFERENT repo's directory does not push for you — git
+  has no --repo, so the adapter skips the push rather than push the wrong repo's branch.)"
+  printf 'vcs[gitlab] mr create → %s\n' "$proj" >&9
+  local out rc=0
+  # `glab api`, NOT `glab mr create`. `-R` sets only the TARGET project; `glab mr create` still
+  # resolves the SOURCE project from the CURRENT WORKING DIRECTORY's git remote. In a multi-repo
+  # run one Bash cwd is shared, so source and target were different projects and GitLab answered
+  # "422 {message: [Source project is not a fork of the target project]}" — ~50 times across 8
+  # repos in one audited run, read every time as a broken adapter. The REST endpoint carries the
+  # project in its own path and takes the branches as body fields, so there is no second, hidden
+  # project to disagree with it. `squash: true` is `--squash-before-merge=true`: see the contract
+  # above — a human merging from the web UI must still get one commit on the parent.
+  #
+  # `|| rc=$?` keeps the STATUS as well as the output: without it a failing create makes this
+  # assignment non-zero, `set -e` kills the function HERE, and the caller sees exit 1 with no
+  # output at all — the silent failure that took a source read to diagnose.
+  #
+  # `--raw-field`, not `--input -`: glab sends an --input body with NO Content-Type and GitLab
+  # answers `415 {"error":"The provided content-type '' is not supported."}`. The field flags let
+  # glab build the body, so it sets the header itself. RAW-field for every value that carries user
+  # text — plain `--field` re-reads a value starting with `@` as a filename and one starting with
+  # `{`/`[` as JSON, and a PR/MR title or description is neither.
+  out="$(glab api --method POST "projects/$(_gl_project)/merge_requests" \
+           --raw-field "source_branch=$head" \
+           --raw-field "target_branch=$base" \
+           --raw-field "title=$title" \
+           --raw-field "description=$body" \
+           --field squash=true 2>&1)" || rc=$?
+  # `|| true` HERE, and it is not decoration — it is the bug these lines used to BE. `jq`/`grep`
+  # exit non-zero on no match, `set -o pipefail` promotes that to the pipeline's status, and an
+  # assignment from a failing command substitution is a failing simple command, so `set -e` killed
+  # the function ON THIS LINE. The diagnostic below — the whole reason the output was captured —
+  # never ran. What the caller saw was exit 1 and ZERO bytes, for every failing create.
+  url="$(printf '%s' "$out" | jq -r '.web_url // empty' 2>/dev/null)" || true
+  [[ -n "$url" ]] || url="$(printf '%s' "$out" | grep -oE 'https?://[^ "]+/merge_requests/[0-9]+' | head -n1)" || true
+  # A create that REPORTED failure may still have landed the MR (see _gl_open_mr_url). Ask the
+  # forge before telling the caller nothing exists: the run that follows this call is deciding
+  # whether to open one, and a false "nothing was created" is what makes it try forever.
+  if [[ -z "$url" ]]; then
+    url="$(_gl_open_mr_url "$head")"
+    [[ -z "$url" ]] || printf 'vcs[gitlab] mr create exited %s, but %s already has an open MR on the forge — reusing %s\n' "$rc" "$head" "$url" >&9
+  fi
+  [[ -n "$url" ]] || { printf '%s\n' "$out" >&2; die "the merge_requests POST exited $rc and returned no MR URL — the MR was NOT created (project $proj, $head -> $base). GitLab's own response is on the line above; an EMPTY line above means it returned nothing."; }
   iid="${url##*/}"
   printf '%s\nnumber=%s\n' "$url" "$iid"
 }
@@ -45,7 +140,7 @@ vcs_open_pr() {
 # Conventional-Commit title (e.g. feat(FM-12): …) and/or branch (feature/FM-12).
 vcs_find_prs() {
   local key="$1"
-  glab api "projects/:fullpath/merge_requests?state=opened&per_page=100" 2>/dev/null \
+  glab api "projects/$(_gl_project)/merge_requests?state=opened&per_page=100" 2>/dev/null \
     | jq -r --arg k "$key" '
         ($k | ascii_downcase) as $kk
         | .[]
@@ -55,27 +150,36 @@ vcs_find_prs() {
 }
 
 # vcs_list_prs -> one TSV line per OPEN MR in the repo of the current directory:
-#   iid <TAB> draft(yes|no) <TAB> author <TAB> updated(YYYY-MM-DD) <TAB> title <TAB> url
+#   iid <TAB> draft(yes|no) <TAB> author <TAB> updated(YYYY-MM-DD) <TAB> target <TAB> title <TAB> url
 # Read-only. The key-filtered vcs_find_prs answers "where is ticket X?"; this answers "what is
 # waiting?", which needs the whole open set and the fields a reviewer triages on.
 vcs_list_prs() {
-  glab api "projects/:fullpath/merge_requests?state=opened&per_page=100&order_by=updated_at" 2>/dev/null \
+  glab api "projects/$(_gl_project)/merge_requests?state=opened&per_page=100&order_by=updated_at" 2>/dev/null \
     | jq -r '.[] | [ (.iid|tostring),
                      (if .draft then "yes" else "no" end),
                      (.author.username // "-"),
                      ((.updated_at // "")[0:10]),
+                     (.target_branch // "-"),
                      (.title // ""),
                      (.web_url // "") ] | @tsv' 2>/dev/null || true
 }
 
-# vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
+# vcs_pr_view NUMBER -> "state=", "merge_sha=", "approved=", "target_branch=", "source_branch=".
+#
+# target_branch/source_branch are printed because a gate cannot assert what the sanctioned tool
+# refuses to show. This function always fetched the whole MR object — target_branch included — and
+# threw the field away, so "does this MR target the branch the run said?" had no answer through the
+# adapter, and one measured run reported its clean terminal state with every MR pointed at a branch
+# nobody had asked for. The data was already on the wire.
 vcs_pr_view() {
-  local num="$1" json state sha up
-  if ! json="$(glab api "projects/:fullpath/merge_requests/$num" 2>/dev/null)"; then
-    printf 'state=UNKNOWN\nmerge_sha=\n'; return 0
+  local num="$1" json state sha up tgt src
+  if ! json="$(glab api "projects/$(_gl_project)/merge_requests/$num" 2>/dev/null)"; then
+    printf 'state=UNKNOWN\nmerge_sha=\napproved=unknown\ntarget_branch=\nsource_branch=\n'; return 0
   fi
   state="$(printf '%s' "$json" | jq -r '.state // "unknown"')"
   sha="$(printf '%s' "$json" | jq -r '.merge_commit_sha // .squash_commit_sha // ""')"
+  tgt="$(printf '%s' "$json" | jq -r '.target_branch // ""')"
+  src="$(printf '%s' "$json" | jq -r '.source_branch // ""')"
   # Normalize GitLab states to the interface's vocabulary.
   case "$state" in
     merged)        up=MERGED ;;
@@ -83,7 +187,80 @@ vcs_pr_view() {
     closed|locked) up=CLOSED ;;
     *)             up="$(printf '%s' "$state" | tr '[:lower:]' '[:upper:]')" ;;
   esac
-  printf 'state=%s\nmerge_sha=%s\n' "$up" "$sha"
+  printf 'state=%s\nmerge_sha=%s\napproved=%s\ntarget_branch=%s\nsource_branch=%s\n' \
+    "$up" "$sha" "$(vcs_pr_approved "$num")" "$tgt" "$src"
+}
+
+# vcs_pr_retarget NUMBER BASE -> repoint an OPEN MR at a different target branch.
+# GitLab keeps existing approvals across a retarget, which is why this exists at all: the only
+# route before was close + reopen against the right base, and GitLab does NOT carry approvals
+# across that — so repairing four mis-targeted MRs also destroyed four approvals that then had to
+# be rebuilt by hand. One PUT does it, and the field was supported all along.
+vcs_pr_retarget() {
+  local num="$1" base="$2" dry="${3:-0}" out
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — PUT merge_requests/%s target_branch=%s\n' "$num" "$base"; return 0
+  fi
+  out="$(glab api --method PUT "projects/$(_gl_project)/merge_requests/$num" \
+          -f "target_branch=$base" 2>&1)" || { printf '%s\n' "$out" >&2; return 1; }
+  printf 'target_branch=%s\n' "$(printf '%s' "$out" | jq -r '.target_branch // ""')"
+}
+
+# vcs_pr_describe NUMBER TITLE BODY [DRY] -> re-describe an OPEN MR. An empty TITLE or BODY means
+# "leave that field alone", so a caller can fix a stale description without restating a title.
+# GitLab calls the body `description`; the field name is the whole difference from GitHub here.
+#
+# ponytail: the body travels in argv as `-f description=…`, where GitHub's goes through a file.
+# glab has no --body-file equivalent for `api`, and a description large enough to exhaust ARG_MAX
+# (~256 KB on Linux, 1 MB on macOS) is not a description anyone will read. If that ever bites,
+# the upgrade is `glab api --input <json-file>`.
+vcs_pr_describe() {
+  local num="$1" title="${2:-}" body="${3:-}" dry="${4:-0}" out
+  [[ -n "$title" || -n "$body" ]] || { printf 'nothing to update — pass --title, --body or --body-file\n' >&2; return 1; }
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — PUT merge_requests/%s%s%s\n' "$num" \
+      "${title:+ title=$title}" "${body:+ description=<${#body} bytes>}"; return 0
+  fi
+  local -a args=(api --method PUT "projects/$(_gl_project)/merge_requests/$num")
+  [[ -n "$title" ]] && args+=(-f "title=$title")
+  [[ -n "$body" ]]  && args+=(-f "description=$body")
+  out="$(glab "${args[@]}" 2>&1)" || { printf '%s\n' "$out" >&2; return 1; }
+  printf 'updated=%s\n' "$(printf '%s' "$out" | jq -r '.iid // ""' 2>/dev/null || printf '%s' "$num")"
+}
+
+# vcs_pr_approved NUMBER -> prints yes | no | unknown, the forge's own record of whether this
+# MR already carries a review approval. "unknown" is NOT "no": it means this instance would not
+# answer, and a caller must never skip a review gate on an unanswered question — treat unknown
+# as unapproved and review.
+#
+# Two tiers, because GitLab MR approvals are an instance/edition capability the API can refuse
+# outright (401/403 — the same refusal vcs_approve_pr already degrades around). When the
+# approvals endpoint is unavailable, vcs_approve_pr's fallback leaves the verdict as a NOTE
+# starting with the approval marker, so that note is the second-tier record of the same fact.
+vcs_pr_approved() {
+  local num="$1" json n
+  if json="$(glab api "projects/$(_gl_project)/merge_requests/$num/approvals" 2>/dev/null)"; then
+    # COUNT approved_by; do NOT read `.approved`. GitLab reports `"approved": true` whenever the
+    # MR SATISFIES its approval rules — and a project with zero required approvals satisfies them
+    # with nobody having approved anything. Measured against a live instance: an untouched MR
+    # answered `{"approved":true,"approved_by":[]}`, next to a genuinely approved one's
+    # `{"approved":true,"approvals_required":1,"approved_by":["<a reviewer>"]}`. Trusting `.approved`
+    # would answer "yes" for every MR in this workspace and freeze every review gate that exists.
+    n="$(printf '%s' "$json" | jq -r '(.approved_by // []) | length' 2>/dev/null || printf '0')"
+    if [[ "${n:-0}" -gt 0 ]]; then printf 'yes\n'; return 0; fi
+    if _gl_has_approval_note "$num"; then printf 'yes\n'; return 0; fi
+    printf 'no\n'; return 0
+  fi
+  if _gl_has_approval_note "$num"; then printf 'yes\n'; return 0; fi
+  printf 'unknown\n'
+}
+
+# _gl_has_approval_note NUMBER -> 0 when an MR note starts with the approval marker that
+# vcs_approve_pr posts. This is what makes the approval readable on an instance whose
+# approvals API is disabled, and what keeps a re-run from stacking a second verdict note.
+_gl_has_approval_note() {
+  glab api "projects/$(_gl_project)/merge_requests/$1/notes?per_page=100" 2>/dev/null \
+    | jq -e --arg m "$VCS_APPROVAL_MARKER" 'any(.[]; (.body // "") | startswith($m))' >/dev/null 2>&1
 }
 
 # SHA-1 of a string — portable across GNU coreutils (sha1sum) and macOS (shasum).
@@ -109,7 +286,7 @@ _gl_line_code() { printf '%s_%s_%s' "$(_gl_sha1 "$1")" "$2" "$3"; }
 # the server will accept. Walks the unified hunks tracking old/new line counters.
 _gl_diff_line_at() {
   local num="$1" path="$2" target="$3" diff
-  diff="$(glab api "projects/:fullpath/merge_requests/$num/diffs?per_page=100" 2>/dev/null \
+  diff="$(glab api "projects/$(_gl_project)/merge_requests/$num/diffs?per_page=100" 2>/dev/null \
           | jq -r --arg p "$path" '.[] | select(.new_path==$p) | .diff' 2>/dev/null || true)"
   [[ -n "$diff" ]] || return 0
   printf '%s' "$diff" | awk -v target="$target" '
@@ -178,7 +355,7 @@ vcs_pr_comment() {
   # fall back to a plain note so the content is never lost AND the caller knows it isn't inline.
   if [[ -n "$path" && -n "$line" ]]; then
     local refs base head start err
-    refs="$(glab api "projects/:fullpath/merge_requests/$num" 2>/dev/null \
+    refs="$(glab api "projects/$(_gl_project)/merge_requests/$num" 2>/dev/null \
             | jq -r '[.diff_refs.base_sha, .diff_refs.head_sha, .diff_refs.start_sha] | @tsv' 2>/dev/null || true)"
     IFS=$'\t' read -r base head start <<<"$refs"
     if [[ -z "$base" || -z "$head" || -z "$start" ]]; then
@@ -229,7 +406,7 @@ vcs_pr_comment() {
 
       # Attempt the range first (when built); a hard rejection retries single-line below.
       if [[ "$ranged" -eq 1 ]]; then
-        if err="$(glab api --method POST "projects/:fullpath/merge_requests/$num/discussions" "${posr[@]}" 2>&1)"; then
+        if err="$(glab api --method POST "projects/$(_gl_project)/merge_requests/$num/discussions" "${posr[@]}" 2>&1)"; then
           if [[ -n "$(printf '%s' "$err" | jq -r '.notes[0].position // empty' 2>/dev/null)" ]]; then
             printf 'Inline comment posted on MR !%s at %s:%s-%s (range)\n' "$num" "$path" "$sline" "$eline"; return 0
           fi
@@ -242,7 +419,7 @@ vcs_pr_comment() {
       fi
 
       # Single-line anchor (no range requested, or the range was rejected above).
-      if err="$(glab api --method POST "projects/:fullpath/merge_requests/$num/discussions" "${pos[@]}" 2>&1)"; then
+      if err="$(glab api --method POST "projects/$(_gl_project)/merge_requests/$num/discussions" "${pos[@]}" 2>&1)"; then
         if [[ -n "$(printf '%s' "$err" | jq -r '.notes[0].position // empty' 2>/dev/null)" ]]; then
           printf 'Inline comment posted on MR !%s at %s:%s (%s)\n' "$num" "$path" "$eline" "${kind_e:-added}"; return 0
         fi
@@ -255,7 +432,7 @@ vcs_pr_comment() {
       fi
     fi
   fi
-  glab mr note "$num" --message "$full" >/dev/null || die "failed to post note on MR !$num"
+  _gl_mr note "$num" --message "$full" >/dev/null || die "failed to post note on MR !$num"
   if [[ -n "$path" && -n "$line" ]]; then
     printf 'Comment posted on MR !%s (NON-inline note — see WARN above for why %s:%s did not anchor)\n' "$num" "$path" "$line"
   else
@@ -266,9 +443,9 @@ vcs_pr_comment() {
 # vcs_pr_comments NUMBER -> prints the MR's notes as plain text.
 vcs_pr_comments() {
   local num="$1"
-  glab mr view "$num" --comments 2>/dev/null && return 0
+  _gl_mr view "$num" --comments 2>/dev/null && return 0
   # Fallback: render notes via the API.
-  glab api "projects/:fullpath/merge_requests/$num/notes" 2>/dev/null \
+  glab api "projects/$(_gl_project)/merge_requests/$num/notes" 2>/dev/null \
     | jq -r '.[] | select(.system==false) | "\(.author.name)  \(.created_at)\n  \(.body)\n"' 2>/dev/null \
     || die "could not read notes for MR !$num"
 }
@@ -281,7 +458,7 @@ vcs_pr_comments() {
 # Only resolvable threads (review discussions) are listed; plain notes have no checkbox.
 vcs_pr_threads() {
   local num="$1" out
-  out="$(glab api "projects/:fullpath/merge_requests/$num/discussions?per_page=100" 2>/dev/null \
+  out="$(glab api "projects/$(_gl_project)/merge_requests/$num/discussions?per_page=100" 2>/dev/null \
     | jq -r '
         .[]
         | select(any(.notes[]; .resolvable == true))
@@ -316,7 +493,7 @@ vcs_pr_resolve_thread() {
     printf 'DRY RUN — glab api --method PUT …/merge_requests/%s/discussions/%s?resolved=%s\n' "$num" "$tid" "$resolved"
     return 0
   fi
-  glab api --method PUT "projects/:fullpath/merge_requests/$num/discussions/$tid?resolved=$resolved" >/dev/null \
+  glab api --method PUT "projects/$(_gl_project)/merge_requests/$num/discussions/$tid?resolved=$resolved" >/dev/null \
     || die "could not mark thread $tid on MR !$num $word"
   printf 'Thread %s on MR !%s marked %s\n' "$tid" "$num" "$word"
 }
@@ -332,7 +509,7 @@ vcs_pr_reply() {
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — glab api POST …/merge_requests/%s/discussions/%s/notes\n' "$num" "$tid"; return 0
   fi
-  glab api --method POST "projects/:fullpath/merge_requests/$num/discussions/$tid/notes" \
+  glab api --method POST "projects/$(_gl_project)/merge_requests/$num/discussions/$tid/notes" \
       --form "body=$body" >/dev/null \
     || die "could not post reply to thread $tid on MR !$num"
   printf 'Reply posted to thread %s on MR !%s\n' "$tid" "$num"
@@ -344,7 +521,7 @@ vcs_close_pr() {
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — glab mr close %s\n' "$num"; return 0
   fi
-  glab mr close "$num"
+  _gl_mr close "$num"
   vcs_pr_view "$num"
 }
 
@@ -363,7 +540,7 @@ vcs_upload_media() {
   fi
   [[ -f "$file" ]] || { echo "warn: media file not found: $file" >&2; return 1; }
   local json url
-  json="$(glab api --method POST "projects/:fullpath/uploads" -F "file=@${file}" 2>/dev/null)" \
+  json="$(glab api --method POST "projects/$(_gl_project)/uploads" -F "file=@${file}" 2>/dev/null)" \
     || { echo "warn: gitlab upload failed for $file" >&2; return 1; }
   url="$(printf '%s' "$json" | jq -r '.url // empty' 2>/dev/null)"
   [[ -n "$url" ]] || { echo "warn: no upload url in gitlab response for $file" >&2; return 1; }
@@ -382,7 +559,7 @@ vcs_merge_pr() {
   # alternative, a network error does not. Naming it here keeps the knowledge in the adapter,
   # where the provider's quirks belong, instead of leaking into the workflow or the config.
   local err
-  if ! err=$(glab mr merge "$num" --squash --remove-source-branch --yes 2>&1); then
+  if ! err=$(_gl_mr merge "$num" --squash --remove-source-branch --yes 2>&1); then
     printf '%s\n' "$err" >&2
     case "$err" in
       *405*|*"Method Not Allowed"*|*"not allowed"*|*"Not allowed"*)
@@ -407,20 +584,36 @@ vcs_approve_pr() {
     printf 'DRY RUN — %sglab mr approve %s\n' "${body:+glab mr note $num --message <verdict> && }" "$num"
     return 0
   fi
+  # IDEMPOTENT. A review gate that already passed is frozen, and a later invocation must be
+  # able to call this without consequence: re-approving is harmless to the forge but the
+  # verdict note is not — it would stack a second identical "APPROVED" on the MR every run.
+  # An UNKNOWN answer is not a yes: when the instance won't say, approve again rather than
+  # skip, because a missing approval is the failure mode that actually costs something.
+  if [[ "$(vcs_pr_approved "$num")" == "yes" ]]; then
+    printf 'MR !%s is already approved — nothing to do (no second verdict note posted)\n' "$num"
+    return 0
+  fi
+  if [[ -n "$body" && "$body" != "$VCS_APPROVAL_MARKER"* ]]; then body="$VCS_APPROVAL_MARKER — $body"; fi
   local noted=0 err
-  [[ -n "$body" ]] && { glab mr note "$num" --message "$body" >/dev/null || die "failed to post verdict note on MR !$num"; noted=1; }
+  # `[[ … ]] && { … }` was wrong here: with an EMPTY body the test fails, the statement exits 1,
+  # and `set -e` killed the whole approval before `glab mr approve` ever ran — which is exactly
+  # the documented "approval only, no verdict note" call. An if/fi has no exit status to leak.
+  if [[ -n "$body" ]]; then
+    _gl_mr note "$num" --message "$body" >/dev/null || die "failed to post verdict note on MR !$num"
+    noted=1
+  fi
   # A project can disable MR approvals outright (the API then answers 401/403). That is a
   # capability of this instance, not a failure of the review — and dying here used to leave a
   # half state: the verdict note was already posted, yet the script exited 1 and the caller
   # recorded the whole gate as broken. Degrade the way vcs_pr_comment does: fall to the tier
   # that DOES work (the note is the durable record), say so on stdout, and let the run continue.
-  if err=$(glab mr approve "$num" 2>&1); then
+  if err=$(_gl_mr approve "$num" 2>&1); then
     printf 'Approved MR !%s%s\n' "$num" "${body:+ (verdict note posted)}"
     return 0
   fi
   printf 'WARN: host-level approval unavailable on MR !%s — %s\n' "$num" "${err##*$'\n'}" >&2
   if [[ "$noted" -eq 0 ]]; then
-    glab mr note "$num" --message "PASS (host-level approval is unavailable on this project; recording the verdict as a note)." >/dev/null \
+    _gl_mr note "$num" --message "$VCS_APPROVAL_MARKER (host-level approval is unavailable on this project; recording the verdict as a note)." >/dev/null \
       || die "MR !$num: approval was refused AND the fallback verdict note failed — nothing records this review"
   fi
   printf 'Approved MR !%s (verdict recorded as a NOTE — host-level approval unavailable on this project)\n' "$num"

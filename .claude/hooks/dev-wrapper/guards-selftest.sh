@@ -130,6 +130,53 @@ t "compound: add + rm -rf is not force-add" 0 pretool-git-guard.sh "$(j "git -C 
 t "compound: push then tail -f allowed"     0 pretool-git-guard.sh "$(j 'git push origin x && tail -f log')"
 t "force-add in a later segment caught"     2 pretool-git-guard.sh "$(j "echo hi && git -C $TMP/svc $FA agent_logs/APP-1-svc-plan.md")"
 
+# --- merge/pull restricted to the ticket's recorded base branch -----------------
+# A ticket work branch's `planned` run-state row is the recorded source of truth for
+# what it may be merged/pulled from. Fixture root is SEPARATE from $ROOT (which the
+# whole suite already pins CLAUDE_PROJECT_DIR at) because this rule needs BOTH a
+# workspace.config.yaml AND an agent_logs/<ticket>-dev-cycle-state/ under the SAME
+# root — same override pattern as pretool-agent-context.sh's `ac()` below.
+GB="$TMP/gbroot"
+mkdir -p "$GB/agent_logs/APP-1-dev-cycle-state"
+printf 'ticket_prefix: APP\n' > "$GB/workspace.config.yaml"
+# `rev-parse --abbrev-ref HEAD` prints the literal string "HEAD" on an unborn
+# branch (zero commits) rather than the branch name, which would make every
+# ticket-branch match below silently fail open — so, unlike the other mk_repo
+# fixtures in this suite, these two need one real commit.
+mk_repo "gbroot/svc"
+git -C "$GB/svc" add -A >/dev/null 2>&1
+git -C "$GB/svc" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+git -C "$GB/svc" checkout -q -b feature/APP-1
+printf '{"repo":"svc","milestone":"planned","base_branch":"release/v7.10.9"}\n' \
+  > "$GB/agent_logs/APP-1-dev-cycle-state/svc-planned.json"
+mk_repo "gbroot/nostate"
+git -C "$GB/nostate" add -A >/dev/null 2>&1
+git -C "$GB/nostate" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+git -C "$GB/nostate" checkout -q -b feature/APP-2
+
+tg() { # tg <name> <expected-exit> <cmd>
+  local name=$1 want=$2 cmd=$3 got
+  printf '%s' "$(j "$cmd")" | CLAUDE_PROJECT_DIR="$GB" "$H/pretool-git-guard.sh" >/dev/null 2>&1; got=$?
+  if [ "$got" = "$want" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else fail=$((fail+1)); printf 'FAIL %s (want exit %s, got %s)\n' "$name" "$want" "$got"; fi
+}
+
+tg "merge of a foreign branch blocked"            2 "git -C $GB/svc merge origin/develop"
+tg "merge of the recorded base allowed"           0 "git -C $GB/svc merge origin/release/v7.10.9"
+tg "merge of the recorded base, no origin/ prefix" 0 "git -C $GB/svc merge release/v7.10.9"
+tg "pull of a foreign branch blocked"             2 "git -C $GB/svc pull origin develop"
+tg "pull of the recorded base allowed"            0 "git -C $GB/svc pull origin release/v7.10.9"
+tg "bare pull ambiguous, fails open"              0 "git -C $GB/svc pull"
+tg "merge of the ticket's own remote branch allowed" 0 "git -C $GB/svc merge origin/feature/APP-1"
+tg "rebase onto a foreign branch is out of scope" 0 "git -C $GB/svc rebase origin/develop"
+tg "octopus merge (2 refs) ambiguous, fails open" 0 "git -C $GB/svc merge origin/develop origin/release/v7.10.9"
+tg "flagged merge of a foreign branch still blocked" 2 "git -C $GB/svc merge --no-ff -m 'custom message' origin/develop"
+tg "flagged merge of the recorded base still allowed" 0 "git -C $GB/svc merge --no-ff -m 'custom message' origin/release/v7.10.9"
+tg "no run-state file, fails open"                0 "git -C $GB/nostate merge origin/develop"
+git -C "$GB/svc" checkout -q -b develop
+tg "merge on a non-ticket branch is untouched"    0 "git -C $GB/svc merge origin/whatever"
+git -C "$GB/svc" checkout -q feature/APP-1
+
 echo "--- pretool-notify-guard ---"
 t "agent_logs path blocked"   2 pretool-notify-guard.sh "$(j "$ROOT/scripts/notify/send.sh --channel C1 \"plan at agent_logs/APP-1-svc-plan.html\"")"
 t "/Users abs path blocked"   2 pretool-notify-guard.sh "$(j "$ROOT/scripts/notify/send.sh --channel C1 \"see /Users/someone/x/y.md\"")"
@@ -153,6 +200,7 @@ t "source file untouched"        0 pretool-plan-path-guard.sh "$(jw "$TMP/svc/sr
 t ".html in subdir blocked"      2 pretool-plan-path-guard.sh "$(jw "$TMP/svc/agent_logs/development-planner/APP-1-svc-plan.html")"
 t "no ticket key untouched"      0 pretool-plan-path-guard.sh "$(jw "$TMP/svc/agent_logs/rollout-plan.md")"
 t "outside any repo fails open"  0 pretool-plan-path-guard.sh "$(jw "/nonexistent-root-xyz/agent_logs/APP-1-plan.md")"
+t "run-state json ignored"       0 pretool-plan-path-guard.sh "$(jw "$TMP/svc/agent_logs/APP-1-dev-cycle-state/svc-built.json")"
 
 echo "--- pretool-config-comment-guard ---"
 HASH='#'   # kept out of the literals so editing this suite through a heredoc stays honest
@@ -277,6 +325,91 @@ t "env.config.example.json allowed"  0 pretool-env-guard.sh "$(jr "$TMP/svc/${E#
 t "hcat .env.amb blocked"            2 pretool-env-guard.sh "$(j "hcat dev-script/x/$E.amb")"
 t "Read .env.local blocked"          2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.local")"
 t "Read .env.example.bak blocked"    2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.example.bak")"
+# A template in the SAME segment must not excuse a secret beside it: the exemption once
+# skipped the whole segment on any `.env*.example`, so `cat a/.env.example a/.env` passed.
+t "template does not excuse a real .env" 2 pretool-env-guard.sh "$(j "cat a/$E.example a/$E")"
+
+# --- socks.auth is a secret file too: same rules, basename match, no template form ---
+S='socks.auth'
+t "Read of socks.auth blocked"          2 pretool-env-guard.sh "$(jr "$TMP/svc/$S")"
+t "Read of bare socks.auth blocked"     2 pretool-env-guard.sh "$(jr "$S")"
+t "Read of mysocks.auth allowed"        0 pretool-env-guard.sh "$(jr "$TMP/svc/my$S")"
+t "cat socks.auth blocked"              2 pretool-env-guard.sh "$(j "cat scripts/vcs/$S")"
+t "hcat quoted socks.auth blocked"      2 pretool-env-guard.sh "$(j "hcat \"config/$S\"")"
+t "hcat socks.auth after && blocked"    2 pretool-env-guard.sh "$(j "cd /tmp && hcat $S")"
+t "hrun cat socks.auth blocked"         2 pretool-env-guard.sh "$(j "hrun cat config/$S")"
+t "tail socks.auth blocked"             2 pretool-env-guard.sh "$(j "tail -f x/$S")"
+t "sed -n socks.auth blocked"           2 pretool-env-guard.sh "$(j "sed -n 1p x/$S")"
+t "grep socks.auth blocked"             2 pretool-env-guard.sh "$(j "grep USER config/$S")"
+t "grep -q socks.auth allowed"          0 pretool-env-guard.sh "$(j "grep -q '^USER=.\\+' config/$S")"
+t "template does not excuse socks.auth" 2 pretool-env-guard.sh "$(j "cat a/$E.example config/$S")"
+t "ls socks.auth allowed"               0 pretool-env-guard.sh "$(j "ls config/$S")"
+t "wc socks.auth allowed"               0 pretool-env-guard.sh "$(j "wc -c config/$S")"
+t "find socks.auth allowed"             0 pretool-env-guard.sh "$(j "find . -name $S")"
+t "cat mysocks.auth allowed"            0 pretool-env-guard.sh "$(j "cat my$S")"
+t "cat socks.authority allowed"         0 pretool-env-guard.sh "$(j "cat ${S}ority")"
+# Rule 2: trace mode near a socks.auth mention leaks like trace mode near scripts/.
+t "bash -x near socks.auth blocked"     2 pretool-env-guard.sh "$(j "bash -x run.sh config/$S")"
+t "quoted bash -x is not a trace"       0 pretool-env-guard.sh "$(j "echo \"bash -x\" config/$S")"
+
+# --- Rule 3: an undirected recursive search is SCOPED, not blocked ----------------
+# `grep -rn SECRET .` names no .env, so every rule above passes it — and it then
+# prints every matching line of every .env it walks into. The guard rewrites the
+# command instead of denying it, because denying would tax every ordinary search
+# and a guard that annoys gets switched off. The rewrite is the verdict, so it needs
+# an assert on stdout, not on the exit code.
+te() { # te <name> <expected-substring|SILENT> <command>
+  local name=$1 want=$2 cmd=$3 out got
+  out=$(printf '%s' "$(j "$cmd")" | "$H/pretool-env-guard.sh" 2>/dev/null)
+  # No opinion is EMPTY stdout, and `jq` over empty input prints nothing at all —
+  # so the // fallback never fires and every silent case would read as a mismatch.
+  if [ -z "$out" ]; then got=SILENT
+  else got=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.updatedInput.command // "SILENT"' 2>/dev/null); fi
+  case "$got" in *"$want"*) pass=$((pass+1)); printf 'ok   %s\n' "$name" ;;
+    *) fail=$((fail+1)); printf 'FAIL %s (want %s, got %s)\n' "$name" "$want" "$got" ;;
+  esac
+}
+# The injected `.env.*` is QUOTED: zsh globs an unquoted `--exclude=.env.*` and aborts the
+# whole command with `no matches found` (bash leaves an unmatched glob alone).
+te "recursive grep is scoped"        "grep --exclude=$E --exclude='$E.*' --exclude=$S -rn" "grep -rn SECRET ."
+if command -v zsh >/dev/null 2>&1; then
+  mkdir -p "$TMP/zsh/src" && printf 'SECRET=1\n' > "$TMP/zsh/src/a.txt"
+  rw=$(printf '%s' "$(j "grep -rl SECRET .")" | "$H/pretool-env-guard.sh" 2>/dev/null | jq -r '.hookSpecificOutput.updatedInput.command')
+  if (cd "$TMP/zsh" && zsh -c "$rw" >/dev/null 2>&1); then pass=$((pass+1)); printf 'ok   %s\n' "the rewritten grep runs under zsh"
+  else fail=$((fail+1)); printf 'FAIL %s (zsh rejected: %s)\n' "the rewritten grep runs under zsh" "$rw"; fi
+fi
+te "a pipeline keeps its shape"      "-rn x . | head -20"                   "grep -rn x . | head -20"
+# Negated globs ONLY. A positive glob (`-g '.env*.example'`) turns rg into a whitelist —
+# it searched nothing but templates and every scoped rg came back empty (measured: rc 1).
+te "rg is scoped (recursive always)" "rg -g '!$E*' -g '!$S' TODO src"  "rg TODO src"
+if command -v rg >/dev/null 2>&1; then
+  mkdir -p "$TMP/rg/src" && printf 'TODO=1\n' > "$TMP/rg/src/a.txt" && printf 'TODO=1\n' > "$TMP/rg/src/$S"
+  rw=$(printf '%s' "$(j "rg -l TODO src")" | "$H/pretool-env-guard.sh" 2>/dev/null | jq -r '.hookSpecificOutput.updatedInput.command')
+  got=$(cd "$TMP/rg" && bash -c "$rw" 2>/dev/null)
+  if [ "$got" = "src/a.txt" ]; then pass=$((pass+1)); printf 'ok   %s\n' "the rewritten rg still finds files (and skips $S)"
+  else fail=$((fail+1)); printf 'FAIL %s (want src/a.txt, got %s; cmd: %s)\n' "the rewritten rg still finds files" "${got:-nothing}" "$rw"; fi
+fi
+te "a non-recursive grep is left be" "SILENT"                               "grep -n foo file.txt"
+# --color contains an "r"; reading it as -r would rewrite every coloured grep.
+te "a long flag is not a -r"         "SILENT"                               "grep --color -n pat file"
+# A quoted mention is inert text, and `git grep` is a different command.
+te "a quoted grep is not rewritten"  "SILENT"                               'echo "grep -r x ."'
+te "git grep is not rewritten"       "SILENT"                               "git grep -rn pat"
+# The rewrite must survive its own guard: an exclusion ARGUMENT names a .env in
+# order to SKIP it. Denying that (as the guard first did) means the hook blocks the
+# command it just wrote, and punishes anyone who adds --exclude by hand.
+t "an --exclude=.env argument is allowed"  0 pretool-env-guard.sh "$(j "grep --exclude=$E --exclude=$E.* -rn SECRET .")"
+t "an rg env glob is allowed"              0 pretool-env-guard.sh "$(j "rg -g '!$E*' TODO src")"
+t "an --exclude=socks.auth is allowed"     0 pretool-env-guard.sh "$(j "grep --exclude=$S -rn SECRET .")"
+t "an rg socks.auth glob is allowed"       0 pretool-env-guard.sh "$(j "rg -g '!$S' TODO src")"
+te "a scoped command is not re-scoped"     "SILENT" "grep --exclude=$E --exclude=$E.* --exclude=$S -rn SECRET ."
+te "a fully scoped rg is not re-scoped"    "SILENT" "rg -g '!$E*' -g '!$S' TODO src"
+# A command scoped for .env only (the pre-socks.auth rewrite) still gains the new exclusion.
+te ".env-only scope gains socks.auth"      "--exclude=$S" "grep --exclude=$E --exclude=$E.* -rn SECRET ."
+te ".env-only rg scope gains socks.auth"   "-g '!$S'"     "rg -g '!$E*' TODO src"
+# …without opening a hole: an exclusion elsewhere never excuses reading a .env.
+t "exclusion does not excuse a read"       2 pretool-env-guard.sh "$(j "grep --exclude=x PATTERN $E")"
+t "exclusion does not excuse a cat"        2 pretool-env-guard.sh "$(j "cat --exclude=$E.bak $E")"
 
 echo "--- pretool-hcat-size-guard ---"
 # hcat has no upper bound of its own, and headroom passes content through UNCHANGED when
@@ -294,6 +427,10 @@ t "hcat of a small file allowed"    0 pretool-hcat-size-guard.sh "$(jc "hcat $TM
 # Scope is the verb this workspace introduced. A bare `cat` of a huge file is pre-existing
 # behaviour that posttool-output-warden.sh already reports on.
 t "plain cat of huge allowed"       0 pretool-hcat-size-guard.sh "$(jc "cat $TMP/big/huge.log")"
+# The escape hatch this guard's own message documents. It has to be parsed out of the COMMAND:
+# a hook runs in its own process, so an inline `VAR=x <cmd>` assignment never reaches its
+# environment, and reading it from there made the promise a no-op.
+t "inline HCAT_MAX_BYTES honoured"  0 pretool-hcat-size-guard.sh "$(jc "HCAT_MAX_BYTES=99999999 hcat $TMP/big/huge.log")"
 t "missing file fails open"         0 pretool-hcat-size-guard.sh "$(jc 'hcat /nonexistent/x.json')"
 t "the word hcat alone allowed"     0 pretool-hcat-size-guard.sh "$(jc 'echo hcat')"
 t "non-Bash tool ignored"           0 pretool-hcat-size-guard.sh "$(jr "$TMP/big/huge.log")"
@@ -515,6 +652,7 @@ ta "build chained after read"         silent "$(j "git -C $SUB status && ./scrip
 # so this guard must stand aside rather than wave it through.
 ta "secretish read deferred"          silent "$(j "git -C $SUB show HEAD:.env")"
 ta ".env.example not secretish"       allow  "$(j "git -C $SUB show HEAD:.env.example")"
+ta "socks.auth read deferred"         silent "$(j "git -C $SUB show HEAD:x/$S")"
 
 # --- a PRIMARY clone is not a submodule: the guard has no opinion at all ---------
 t  "primary clone commit untouched"  0 $G "$(j "git -C $TMP/subsrc commit -m x")"
@@ -540,8 +678,19 @@ t  "notify writer piped blocked"     2 $P "$(j 'scripts/notify/send.sh --channel
 t  "bare merge allowed"              0 $P "$(j 'scripts/vcs/merge-pr.sh 11 --subject "x"')"
 t  "bare writer, stdin allowed"      0 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 < report.md')"
 t  "bare writer, redirect allowed"   0 $P "$(j 'scripts/vcs/open-pr.sh --title y > out.txt')"
+# A writer added to the adapter is a writer the guard must know: one missing from the list is
+# not a warning, it is a compound call that slips through silently.
+t  "cd && update-pr blocked"         2 $P "$(j 'cd /abs/x && scripts/vcs/update-pr.sh 42 --body y')"
+t  "bare update-pr allowed"          0 $P "$(j 'scripts/vcs/update-pr.sh 42 --body-file ./b.md')"
 t  "piped --dry-run allowed"         0 $P "$(j 'scripts/vcs/merge-pr.sh 11 --dry-run 2>&1 | tail -3')"
 t  "piped READER allowed"            0 $P "$(j 'scripts/vcs/pr-view.sh 11 | head -3')"
+# The comment UPSERT is a writer like any other: it is the one that rewrites a test-report
+# comment in place, so a silently-denied compound call would look like "the report vanished".
+# Its READER half (find-ticket-comment.sh) must stay pipeable — that is how a caller reads the
+# previous run's body before composing the next one.
+t  "bare upsert comment allowed"      0 $P "$(j 'scripts/tracker/upsert-ticket-comment.sh A-1 --marker "[test-report - x]" < report.md')"
+t  "piped upsert comment blocked"     2 $P "$(j 'scripts/tracker/upsert-ticket-comment.sh A-1 --marker "[test-report - x]" | cat')"
+t  "piped comment finder allowed"     0 $P "$(j 'scripts/tracker/find-ticket-comment.sh A-1 --marker "[test-report - x]" | head -1')"
 t  "pipe table in a body allowed"    0 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 "| a | b |"')"
 t  "&& inside a body allowed"        0 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 "run x && y"')"
 t  "unrelated piped cmd allowed"     0 $P "$(j 'git log --oneline | head -5')"
@@ -612,6 +761,762 @@ tae "root tracker allowed"             0 "$TMP/ws/scripts/tracker/jira.sh"
 tae "repo's own scripts/dev.sh ok"     0 "$TMP/ws/repo/scripts/dev.sh"
 tae "ordinary repo source ok"          0 "$TMP/ws/repo/src/main.rs"
 tae "missing dir fails open"           0 "$TMP/ws/nope/scripts/vcs/x.sh"
+
+echo "--- pretool-orchestrator-guard ---"
+# A dedicated fixture: a product repo "svc" (git checkout), the run-state dir, a marker,
+# plus .claude/ and a root-level run summary — so the allow/deny boundary is exercised
+# against a realistic layout rather than the bare TMP dir the earlier sections share.
+mkdir -p "$TMP/og/svc/src" "$TMP/og/agent_logs/FM-1-dev-cycle-state" "$TMP/og/.claude" "$TMP/og/scripts"
+git -C "$TMP/og/svc" init -q
+: > "$TMP/og/svc/src/main.rs"
+: > "$TMP/og/agent_logs/FM-1-DEV-CYCLE-SUMMARY.md"
+og_marker() { # og_marker <armed:true|false>
+  printf '{"session_id":"sess-1","ticket":"FM-1","armed":%s,"run_state":"x","recorded_at":"2026-01-01T00:00:00Z"}' "$1" \
+    > "$TMP/og/agent_logs/FM-1-dev-cycle-state/orchestrator-guard.json"
+}
+# tog <name> <want> <armed:true|false> <child:1|unset> <transcript> <json-from-j/jw/jr>
+tog() {
+  local name=$1 want=$2 armed=$3 child=$4 transcript=$5 json=$6 got
+  og_marker "$armed"
+  json=$(printf '%s' "$json" | jq -c --arg t "$transcript" --arg s sess-1 --arg d "$TMP/og" \
+    '. + {transcript_path:$t, session_id:$s, cwd:$d}')
+  if [ "$child" = "1" ]; then
+    got=$(printf '%s' "$json" | CLAUDE_PROJECT_DIR="$TMP/og" CLAUDE_CODE_CHILD_SESSION=1 "$H/pretool-orchestrator-guard.sh" >/dev/null 2>&1; echo $?)
+  else
+    got=$(printf '%s' "$json" | env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_PROJECT_DIR="$TMP/og" "$H/pretool-orchestrator-guard.sh" >/dev/null 2>&1; echo $?)
+  fi
+  if [ "$got" = "$want" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else fail=$((fail+1)); printf 'FAIL %s (want exit %s, got %s)\n' "$name" "$want" "$got"; fi
+}
+MAIN_TS="$TMP/og/main.jsonl"
+SUB_TS="$TMP/og/main/subagents/agent-3.jsonl"
+WF_SUB_TS="$TMP/og/main/subagents/workflows/wf_x/agent-1.jsonl"
+
+tog "armed + main, Edit inside product repo -> deny"      2 true  ""  "$MAIN_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+tog "armed + main, Write a run-state row -> deny"          2 true  ""  "$MAIN_TS" "$(jw "$TMP/og/agent_logs/FM-1-dev-cycle-state/svc-built.json")"
+tog "armed + main, git commit inside product repo -> deny" 2 true  ""  "$MAIN_TS" "$(j "git -C $TMP/og/svc commit -m x")"
+tog "armed + main, git merge inside product repo -> allow (sanctioned ship verb; user ! input fires hooks main-shaped)" 0 true "" "$MAIN_TS" "$(j "git -C $TMP/og/svc merge --ff-only feature/FM-1")"
+tog "armed + main, git push inside product repo -> allow (sanctioned ship verb)" 0 true "" "$MAIN_TS" "$(j "git -C $TMP/og/svc push origin develop")"
+tog "armed + main, git log inside product repo -> allow"   0 true  ""  "$MAIN_TS" "$(j "git -C $TMP/og/svc log --oneline")"
+tog "armed + main, git status inside product repo -> allow" 0 true ""  "$MAIN_TS" "$(j "git -C $TMP/og/svc status")"
+tog "armed + child=1 env + main-shaped payload -> deny (child=1 is ALWAYS set in hook env — probe-measured, no longer an allow)" 2 true "1" "$MAIN_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+tog "armed + child=1 env + agent_id present -> allow (subagents pass in the real always-child env)" 0 true "1" "$MAIN_TS" "$(jq -cn --arg p "$TMP/og/svc/src/main.rs" --arg a x '{tool_name:"Edit",tool_input:{file_path:$p},agent_id:$a}')"
+tog "armed + subagent transcript, same Edit -> allow"      0 true  ""  "$SUB_TS"  "$(jw "$TMP/og/svc/src/main.rs")"
+tog "armed + neither signal (empty transcript_path) -> allow (fails open)" 0 true "" "" "$(jw "$TMP/og/svc/src/main.rs")"
+tog "marker armed:false, main, same Edit -> allow"         0 false ""  "$MAIN_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+tog "armed + main, Write .claude/settings.json -> allow"   0 true  ""  "$MAIN_TS" "$(jw "$TMP/og/.claude/settings.json")"
+tog "armed + main, Write root run summary -> allow"        0 true  ""  "$MAIN_TS" "$(jw "$TMP/og/agent_logs/FM-1-DEV-CYCLE-SUMMARY.md")"
+tog "armed + main, Write outside the workspace root -> allow" 0 true "" "$MAIN_TS" "$(jw "/tmp/scratch-notes.md")"
+
+# session mismatch: marker says sess-1, payload says a different session.
+og_marker true
+got=$(printf '%s' "$(jw "$TMP/og/svc/src/main.rs")" \
+      | jq -c --arg t "$MAIN_TS" --arg d "$TMP/og" '. + {transcript_path:$t, session_id:"other-session", cwd:$d}' \
+      | env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_PROJECT_DIR="$TMP/og" "$H/pretool-orchestrator-guard.sh" >/dev/null 2>&1; echo $?)
+if [ "$got" = "0" ]; then pass=$((pass+1)); printf 'ok   %s\n' "session mismatch -> allow"
+else fail=$((fail+1)); printf 'FAIL %s (want exit 0, got %s)\n' "session mismatch -> allow" "$got"; fi
+
+# no marker anywhere.
+rm -f "$TMP/og/agent_logs/FM-1-dev-cycle-state/orchestrator-guard.json"
+got=$(printf '%s' "$(jw "$TMP/og/svc/src/main.rs")" \
+      | jq -c --arg t "$MAIN_TS" --arg d "$TMP/og" '. + {transcript_path:$t, session_id:"sess-1", cwd:$d}' \
+      | env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_PROJECT_DIR="$TMP/og" "$H/pretool-orchestrator-guard.sh" >/dev/null 2>&1; echo $?)
+if [ "$got" = "0" ]; then pass=$((pass+1)); printf 'ok   %s\n' "no marker anywhere -> allow"
+else fail=$((fail+1)); printf 'FAIL %s (want exit 0, got %s)\n' "no marker anywhere -> allow" "$got"; fi
+
+# marker present but unparseable JSON.
+printf 'not json' > "$TMP/og/agent_logs/FM-1-dev-cycle-state/orchestrator-guard.json"
+got=$(printf '%s' "$(jw "$TMP/og/svc/src/main.rs")" \
+      | jq -c --arg t "$MAIN_TS" --arg d "$TMP/og" '. + {transcript_path:$t, session_id:"sess-1", cwd:$d}' \
+      | env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_PROJECT_DIR="$TMP/og" "$H/pretool-orchestrator-guard.sh" >/dev/null 2>&1; echo $?)
+if [ "$got" = "0" ]; then pass=$((pass+1)); printf 'ok   %s\n' "marker unparseable JSON -> allow"
+else fail=$((fail+1)); printf 'FAIL %s (want exit 0, got %s)\n' "marker unparseable JSON -> allow" "$got"; fi
+
+# The three C6-discriminator cases the orchestrator asked for explicitly.
+tog "discriminator: payload with agent_id -> allow"                       0 true "" "$MAIN_TS" "$(jq -cn --arg p "$TMP/og/svc/src/main.rs" --arg a x '{tool_name:"Edit",tool_input:{file_path:$p},agent_id:$a}')"
+tog "discriminator: transcript_path under subagents/workflows/.. -> allow" 0 true "" "$WF_SUB_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+tog "discriminator: armed marker + main-shaped payload -> deny"           2 true "" "$MAIN_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+
+echo "--- pretool-bash-context-guard ---"
+# Fixtures sized either side of the 8 KiB default. The guard STATS the real path, so the
+# assertions are about file size, not about the wording of the command.
+mkdir -p "$TMP/ctx"
+BIG="$TMP/ctx/big.md";   awk 'BEGIN{for(i=0;i<400;i++) printf "%040d line of filler text here\n", i}' > "$BIG"
+SMALL="$TMP/ctx/small.md"; printf 'two lines\nonly\n' > "$SMALL"
+# cwd matters: the guard resolves a relative operand against it, exactly as the real payload does.
+jctx() { jq -cn --arg c "$1" --arg d "$TMP/ctx" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+# A read-modify-write heredoc padded past the 2000-byte floor, since the floor is the point:
+# a small patch is cheaper than the round trip and is deliberately allowed.
+PAD=$(awk 'BEGIN{for(i=0;i<70;i++) printf "# padding so the payload clears the guard floor %02d\n", i}')
+RMW="python3 - <<'PY'
+$PAD
+p = 'target.md'
+s = open(p).read()
+open(p, 'w').write(s.replace('a', 'b'))
+PY"
+GENONLY="python3 - <<'PY'
+$PAD
+rows = [str(i) for i in range(50)]
+open('/tmp/generated.txt', 'w').write('\n'.join(rows))
+PY"
+
+t "cat of an 8KB+ file blocked"          2 pretool-bash-context-guard.sh "$(jctx "cat $BIG")"
+t "cat relative to cwd blocked"          2 pretool-bash-context-guard.sh "$(jctx 'cat big.md')"
+t "nl of a big file blocked"             2 pretool-bash-context-guard.sh "$(jctx "nl $BIG")"
+t "big file after && blocked"            2 pretool-bash-context-guard.sh "$(jctx "cd /tmp && cat $BIG")"
+t "cat of a small file allowed"          0 pretool-bash-context-guard.sh "$(jctx "cat $SMALL")"
+# The bounded forms are the ones the guard's own message recommends — blocking them would push
+# the agent straight back to the unbounded read.
+t "big | head allowed"                   0 pretool-bash-context-guard.sh "$(jctx "cat $BIG | head -20")"
+t "big | grep allowed"                   0 pretool-bash-context-guard.sh "$(jctx "cat $BIG | grep -n line")"
+t "big redirected to a file allowed"     0 pretool-bash-context-guard.sh "$(jctx "cat $BIG > /tmp/out.txt")"
+t "sed region of a big file allowed"     0 pretool-bash-context-guard.sh "$(jctx "sed -n '10,40p' $BIG")"
+t "grep on a big file allowed"           0 pretool-bash-context-guard.sh "$(jctx "grep -n line $BIG")"
+t "hcat left to its own guard"           0 pretool-bash-context-guard.sh "$(jctx "hcat $BIG")"
+t "missing file allowed"                 0 pretool-bash-context-guard.sh "$(jctx 'cat /nope/missing.md')"
+# Prose-not-code, the lesson the pipe guard learned the hard way: naming a reader is not calling
+# one. Both of these used to be the guard's own false positives.
+t "reader in OPERAND position allowed"   0 pretool-bash-context-guard.sh "$(jctx "grep -n cat $BIG")"
+t "reader named inside a heredoc allowed" 0 pretool-bash-context-guard.sh "$(jctx "git commit -F - <<EOF
+stop running cat $BIG so often
+EOF")"
+# The override has to be parsed OUT OF THE COMMAND: a hook cannot see `VAR=x <cmd>` in its own
+# env, so reading it from the environment made the documented escape hatch a no-op.
+t "inline BASH_READ_MAX_BYTES honoured"  0 pretool-bash-context-guard.sh "$(jctx "BASH_READ_MAX_BYTES=9999999 cat $BIG")"
+
+t "read-modify-write heredoc blocked"    2 pretool-bash-context-guard.sh "$(jctx "$RMW")"
+t "write-only heredoc allowed"           0 pretool-bash-context-guard.sh "$(jctx "$GENONLY")"
+t "small patch under the floor allowed"  0 pretool-bash-context-guard.sh "$(jctx "python3 - <<'PY'
+s=open('f').read(); open('f','w').write(s+'x')
+PY")"
+t "inline BASH_PATCH_GUARD=0 honoured"   0 pretool-bash-context-guard.sh "$(jctx "BASH_PATCH_GUARD=0 $RMW")"
+t "plain git commit heredoc allowed"     0 pretool-bash-context-guard.sh "$(jctx "git commit -F - <<'EOF'
+$PAD
+feat: a long commit message is not a patch
+EOF")"
+
+# ── Rule 3, the poll loop. STATEFUL, unlike rules 1 and 2: the verdict depends on what this
+# same caller already ran. So the ledger gets its own TMPDIR (fresh, never the developer's),
+# and each case gets its own transcript_path so cases cannot contaminate each other.
+POLLTMP="$TMP/pollstate"; mkdir -p "$POLLTMP"
+export TMPDIR="$POLLTMP"
+LOG="$TMP/ctx/run.log"; printf 'test one ... ok\n' > "$LOG"
+jpoll() { jq -cn --arg c "$1" --arg d "$TMP/ctx" --arg t "$2" \
+  '{tool_name:"Bash",cwd:$d,transcript_path:$t,tool_input:{command:$c}}'; }
+
+# The measured shape: one probe, unchanged, over and over. Six get through, the seventh does not.
+for i in 1 2 3 4 5 6; do
+  t "poll $i of 6 allowed"               0 pretool-bash-context-guard.sh "$(jpoll "grep -c ' ok$' $LOG" /t/spin)"
+done
+t "the 7th identical probe blocked"      2 pretool-bash-context-guard.sh "$(jpoll "grep -c ' ok$' $LOG" /t/spin)"
+# ...and a DIFFERENT question about the same file is a different probe. This is the whole reason
+# the key is the command and not the path: an investigation greps one log many ways.
+t "different pattern, same file, allowed" 0 pretool-bash-context-guard.sh "$(jpoll "grep -c FAILED $LOG" /t/spin)"
+
+# A second agent in the same workflow wave must start from zero. Keyed on session_id alone this
+# failed: parallel subagents can share one, and agent B's first call would inherit agent A's count.
+t "a parallel agent is not charged for it" 0 pretool-bash-context-guard.sh "$(jpoll "grep -c ' ok$' $LOG" /t/other)"
+
+# Only READ-ONLY probes of an EXISTING file count. Repeating work is not waiting for work.
+for i in 1 2 3 4 5 6 7; do
+  t "non-probe verb x$i not counted"     0 pretool-bash-context-guard.sh "$(jpoll "git log --oneline -1 $LOG" /t/verb)"
+done
+for i in 1 2 3 4 5 6 7; do
+  t "probe of a missing file x$i allowed" 0 pretool-bash-context-guard.sh "$(jpoll "grep -c x /nope/absent.log" /t/gone)"
+done
+
+# THE REMEDY MUST NEVER TRIP ITS OWN GUARD. The block message tells the agent to wait inside a
+# single backgrounded `until` loop — whose body is a grep of exactly the file it was polling.
+for i in 1 2 3 4 5 6 7; do
+  t "the until-loop remedy x$i allowed"  0 pretool-bash-context-guard.sh \
+    "$(jpoll "until grep -q 'test result:' $LOG; do sleep 5; done" /t/fix)"
+done
+
+# Same escape-hatch contract as rules 1 and 2: parsed out of the command, not the environment.
+for i in 1 2 3 4 5 6 7; do
+  t "inline BASH_POLL_GUARD=0 honoured $i" 0 pretool-bash-context-guard.sh \
+    "$(jpoll "BASH_POLL_GUARD=0 grep -c ' ok$' $LOG" /t/off)"
+done
+for i in 1 2 3 4 5 6 7; do
+  t "inline BASH_POLL_MAX raise honoured $i" 0 pretool-bash-context-guard.sh \
+    "$(jpoll "BASH_POLL_MAX=99 grep -c ' ok$' $LOG" /t/raised)"
+done
+unset TMPDIR
+
+echo "--- pretool-steer-build: a suite run goes through scripts/dev.sh ---"
+# The rule this pins is not "less output" but "there is a RECEIPT". dev.sh writes
+# agent_logs/executed_verbose/<cmd>-<ts>.log and that is what `status`/`why` — and the
+# test-suite gate — read back; a raw run leaves nothing, and a gate that reads nothing
+# records NOT RUN (docs/agents/loadtest-gate.md). So the block cases below are the gate's
+# integrity, and the allow cases are what keeps the guard from being switched off.
+#
+# A subagent payload is asserted alongside the main-session one for every shape, because
+# the subagent is the party that actually runs the suites. The guard reads no
+# discriminator, so the pair must agree — a regression that exempted subagents would
+# leave the loudest caller unguarded while this suite still read green.
+jsub() { jq -cn --arg c "$1" \
+  '{tool_name:"Bash",agent_id:"agent-selftest",tool_input:{command:$c}}'; }
+
+# BLOCKED — the receipt-bearing suite runs, raw.
+t "raw cargo test blocked"            2 pretool-steer-build.sh "$(j 'cargo test')"
+t "raw cargo test --workspace blocked" 2 pretool-steer-build.sh "$(j 'cargo test --workspace --all-features')"
+t "cargo test after cd blocked"       2 pretool-steer-build.sh "$(j 'cd svc && cargo test')"
+t "raw npm test blocked"              2 pretool-steer-build.sh "$(j 'npm test')"
+t "raw pnpm run test:e2e blocked"     2 pretool-steer-build.sh "$(j 'pnpm run test:e2e')"
+t "raw yarn test blocked"             2 pretool-steer-build.sh "$(j 'yarn test --ci')"
+t "raw npx cypress run blocked"       2 pretool-steer-build.sh "$(j 'npx cypress run --spec cypress/e2e/login.cy.ts')"
+t "raw newman run blocked"            2 pretool-steer-build.sh "$(j 'newman run postman/collection.json')"
+t "raw k6 run blocked"                2 pretool-steer-build.sh "$(j 'k6 run scenarios/bet.js')"
+t "raw flutter test still blocked"    2 pretool-steer-build.sh "$(j 'flutter test')"
+
+# The same verbs from a SUBAGENT. Same verdict, or the rule has a hole where it matters.
+t "subagent cargo test blocked"       2 pretool-steer-build.sh "$(jsub 'cargo test')"
+t "subagent npm test blocked"         2 pretool-steer-build.sh "$(jsub 'npm test')"
+t "subagent cypress run blocked"      2 pretool-steer-build.sh "$(jsub 'npx cypress run')"
+t "subagent k6 run blocked"           2 pretool-steer-build.sh "$(jsub 'k6 run scenarios/bet.js')"
+
+# ALLOWED — the wrapper, and a deliberate capture to a file.
+t "dev.sh test allowed"               0 pretool-steer-build.sh "$(j 'scripts/dev.sh test')"
+t "dev.sh test allowed (subagent)"    0 pretool-steer-build.sh "$(jsub 'scripts/dev.sh test')"
+t "cargo test redirected allowed"     0 pretool-steer-build.sh "$(j 'cargo test > /tmp/out.log 2>&1')"
+t "2>&1 alone is not a redirect"      2 pretool-steer-build.sh "$(j 'cargo test 2>&1')"
+
+# ALLOWED — fast verbs no gate reads a receipt for. These are 30 of the 70 raw calls in
+# the measured corpus; blocking them would buy nothing and cost the guard its welcome.
+t "cargo check allowed"               0 pretool-steer-build.sh "$(j 'cargo check')"
+t "cargo fmt allowed"                 0 pretool-steer-build.sh "$(j 'cargo fmt --all -- --check')"
+t "cargo clippy allowed"              0 pretool-steer-build.sh "$(j 'cargo clippy --all-targets')"
+t "cargo build allowed"               0 pretool-steer-build.sh "$(j 'cargo build --release')"
+t "npm ci allowed"                    0 pretool-steer-build.sh "$(j 'npm ci')"
+t "pnpm install allowed"              0 pretool-steer-build.sh "$(j 'pnpm install --frozen-lockfile')"
+t "pnpm run lint allowed"             0 pretool-steer-build.sh "$(j 'pnpm run lint')"
+t "npm run storybook allowed"         0 pretool-steer-build.sh "$(j 'npm run storybook')"
+t "k6 archive allowed"                0 pretool-steer-build.sh "$(j 'k6 archive scenarios/bet.js')"
+
+# The verb must be a WORD. A substring match here would block half the workspace's tooling.
+t "mycargo test is not cargo test"    0 pretool-steer-build.sh "$(j 'echo mycargo test')"
+t "npmtest is not npm test"           0 pretool-steer-build.sh "$(j './npmtest')"
+
+echo "--- pretool-cd-guard ---"
+# Only the LEADING cd is judged. Everything below is the hook's own documented contract,
+# turned into cases so the contract and the code cannot drift apart silently.
+t "cd relative blocked"               2 pretool-cd-guard.sh "$(j 'cd your-app')"
+t "cd ./x blocked"                    2 pretool-cd-guard.sh "$(j 'cd ./scripts')"
+t "cd ../x blocked"                   2 pretool-cd-guard.sh "$(j 'cd ../sibling && ls')"
+t "cd foo/bar blocked"                2 pretool-cd-guard.sh "$(j 'cd db/scripts')"
+t "cd quoted relative blocked"        2 pretool-cd-guard.sh "$(j 'cd "db/scripts"')"
+t "leading whitespace still blocked"  2 pretool-cd-guard.sh "$(j '   cd db')"
+t "subagent cd relative blocked"      2 pretool-cd-guard.sh "$(jsub 'cd db')"
+t "cd absolute allowed"               0 pretool-cd-guard.sh "$(j 'cd /Users/x/ws/db && ls')"
+t "cd ~ allowed"                      0 pretool-cd-guard.sh "$(j 'cd ~/projects')"
+t "cd \$VAR allowed"                   0 pretool-cd-guard.sh "$(j 'cd "$CLAUDE_PROJECT_DIR/db"')"
+t "cd \$HOME allowed"                  0 pretool-cd-guard.sh "$(j 'cd $HOME')"
+t "cd - allowed"                      0 pretool-cd-guard.sh "$(j 'cd -')"
+t "bare cd allowed"                   0 pretool-cd-guard.sh "$(j 'cd')"
+# The two that decide whether this guard is usable at all. A mid-chain cd runs from a cwd
+# established earlier in the SAME command, so it is deterministic; and `cd` must be a WORD,
+# or every cdk/cdn command in the workspace dies.
+t "mid-chain cd allowed"              0 pretool-cd-guard.sh "$(j 'cd /abs/repo && cd scripts && ./dev.sh test')"
+t "cdk is not cd"                     0 pretool-cd-guard.sh "$(j 'cdk deploy --all')"
+t "non-cd command allowed"            0 pretool-cd-guard.sh "$(j 'git -C /abs/repo status')"
+
+echo "--- posttool-bash-portability ---"
+# ADVISORY: this hook runs after the write and always exits 0, so an exit-code assertion
+# would pass on a hook that had stopped detecting anything. Assert on the WARNING instead.
+# macOS /bin/bash is 3.2.57 — every construct below is silent on the author's bash 5 and
+# fatal on a stock Mac, which is exactly the failure `aiworks sync` once shipped.
+PORT="$H/posttool-bash-portability.sh"
+mkport() { printf '%s\n' "$2" > "$TMP/$1"; printf '%s' "$TMP/$1"; }
+tp() { # tp <name> <want: warn|clean> <file>
+  local name=$1 want=$2 f=$3 err
+  err="$(jq -cn --arg p "$f" '{tool_name:"Write",tool_input:{file_path:$p}}' \
+         | "$PORT" 2>&1 >/dev/null)"
+  case "$want:$(printf '%s' "$err" | grep -c 'bash 4+ syntax')" in
+    warn:0)  fail=$((fail+1)); printf 'FAIL %s (expected a warning, got none)\n' "$name" ;;
+    clean:0) pass=$((pass+1)); printf 'ok   %s\n' "$name" ;;
+    warn:*)  pass=$((pass+1)); printf 'ok   %s\n' "$name" ;;
+    clean:*) fail=$((fail+1)); printf 'FAIL %s (warned on a 3.2-clean file)\n' "$name" ;;
+  esac
+}
+# These fixtures have to CONTAIN the banned constructs, and `--scan` — asserted green a few
+# lines below — reads THIS file like any other tracked script. Exempting the suite would be
+# the easy way out and would blind the scan to real bash-4 syntax written here later, so
+# each construct is assembled from parts instead: the fixture on disk is byte-exact, the
+# literal never appears in this source. Test NAMES avoid the literals for the same reason.
+SH='#!/usr/bin/env bash'
+AA='A'; LC=',,'; GS='globstar'; MF='map''file'
+tp "assoc array flagged"  warn  "$(mkport a.sh "$SH
+local -${AA} repo_owner=()")"
+tp "${MF} flagged"        warn  "$(mkport b.sh "$SH
+${MF} -t rows < in.txt")"
+tp "lowercase expansion flagged" warn "$(mkport c.sh "$SH
+echo \"\${name${LC}}\"")"
+tp "${GS} flagged"        warn  "$(mkport d.sh "$SH
+shopt -s ${GS}")"
+tp "clean script quiet"   clean "$(mkport e.sh "$SH
+while IFS= read -r r; do echo \"\$r\"; done < in.txt")"
+# The de-noising rule: this repo NAMES the banned constructs in prose all over the place.
+# A checker that cried wolf on its own documentation would be turned off within a day.
+tp "comment naming it quiet" clean "$(mkport f.sh "$SH
+# never use local -${AA} here; ${MF} is banned too")"
+# Extension gate: a .md that quotes the construct is documentation, not a script.
+tp "non-shell file ignored" clean "$(mkport g.md "use \`local -${AA} x\` on bash 4")"
+# No extension: the shebang is the only signal, so both directions are pinned.
+tp "shebang file flagged" warn "$(mkport h "$SH
+${MF} -t x < y")"
+tp "no-shebang file ignored" clean "$(mkport i "${MF} -t x < y")"
+# --scan is the CI entry point. It must pass on this repo AND say what it scanned: a scan
+# that found nothing to scan must never read as a scan that passed.
+scan="$(cd "$ROOT" && "$PORT" --scan 2>&1)"; scan_rc=$?
+if [ "$scan_rc" = 0 ] && printf '%s' "$scan" | grep -q '3.2-clean'; then
+  pass=$((pass+1)); printf 'ok   --scan is green on this repo (%s)\n' "$(printf '%s' "$scan" | grep -oE '[0-9]+ tracked')"
+else
+  fail=$((fail+1)); printf 'FAIL --scan rc=%s: %s\n' "$scan_rc" "$scan"
+fi
+
+echo "--- coverage: every wired dev-wrapper hook has cases ---"
+# THE META-CHECK, and the reason this section exists at all. pretool-steer-build.sh sat
+# wired in settings.json for months matching a stack no repo here uses — it ran on every
+# Bash call and enforced nothing. Nothing caught it, because nothing asserted that a wired
+# guard is a tested guard. This case is that assertion: wire a new dev-wrapper hook without
+# writing cases for it and this suite goes red on the next run.
+#
+# Scope is deliberately THIS directory. voice/, stagehand/ and the MCP and Slack hooks are
+# wired too and own their own suites; policing them from here would make this file the
+# gate for subsystems it does not own.
+> "$TMP/selftests.txt"
+find "$ROOT/.claude/hooks" "$ROOT/scripts" -name '*selftest*' -type f -print > "$TMP/selftests.txt" 2>/dev/null
+uncovered=""
+while IFS= read -r wired; do
+  [ -n "$wired" ] || continue
+  base="$(basename "$wired")"
+  # A hook is covered if any selftest in the repo names it — its own suite counts, so
+  # pretool-repo-context.sh and pretool-codegraph-guard.sh pass on their dedicated files.
+  # -print0/xargs is avoided on purpose: the file LIST is read line by line here, so a
+  # checkout path with a space cannot silently split it into two non-existent paths and
+  # turn a real gap into a green tick.
+  hit=0
+  while IFS= read -r stf; do
+    [ -n "$stf" ] || continue
+    grep -qF -- "$base" "$stf" 2>/dev/null && { hit=1; break; }
+  done < "$TMP/selftests.txt"
+  [ "$hit" = 1 ] || uncovered="${uncovered:+$uncovered }$base"
+done <<COV
+$(jq -r '.hooks // {} | to_entries[] | .value[] | .hooks[]? | .command // ""' "$ROOT/.claude/settings.json" 2>/dev/null \
+   | grep -oE '[^"]*dev-wrapper/[A-Za-z0-9_-]+\.sh' | sort -u)
+COV
+if [ ! -s "$TMP/selftests.txt" ]; then
+  # Never fail open. Finding no selftests at all means the search itself broke, not that
+  # coverage is perfect — a check that could not run must not report as a check that passed.
+  fail=$((fail+1)); printf 'FAIL coverage check found no selftest files to search\n'
+elif [ -z "$uncovered" ]; then
+  pass=$((pass+1)); printf 'ok   every wired dev-wrapper hook is named by a selftest\n'
+else
+  fail=$((fail+1)); printf 'FAIL wired dev-wrapper hook(s) with no selftest: %s\n' "$uncovered"
+fi
+
+echo "--- repo-health-check: say it once, then stop repeating it ---"
+# Asserted as a PROPERTY, not against a fixed message, so the case is meaningful whether this
+# worktree happens to be fully cloned or not: a second identical prompt must never cost MORE
+# context than the first, and SessionStart must always carry the full guidance.
+RH="$(cd "$H/.." && pwd)/repo-health-check.sh"
+if [ -x "$RH" ]; then
+  rhp() { jq -cn --arg e "$1" --arg s "$2" '{hook_event_name:$e,session_id:$s}'; }
+  # Measure the MESSAGE, not the JSON envelope: "SessionStart" and "UserPromptSubmit" differ in
+  # length, so comparing whole-payload bytes made SessionStart look abbreviated by 4 characters.
+  rhlen() { printf '%s' "$(rhp "$1" "$2")" | "$RH" 2>/dev/null \
+              | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null | wc -c | tr -d ' '; }
+  SID="selftest-$$"
+  first=$(rhlen UserPromptSubmit "$SID")
+  second=$(rhlen UserPromptSubmit "$SID")
+  ss=$(rhlen SessionStart "$SID")
+  other=$(rhlen UserPromptSubmit "${SID}-b")
+  if [ "${second:-0}" -le "${first:-0}" ]; then pass=$((pass+1)); printf 'ok   repeat prompt costs no more than the first\n'
+  else fail=$((fail+1)); printf 'FAIL repeat prompt grew (%s -> %s bytes)\n' "$first" "$second"; fi
+  if [ "${ss:-0}" -ge "${first:-0}" ]; then pass=$((pass+1)); printf 'ok   SessionStart always carries the full message\n'
+  else fail=$((fail+1)); printf 'FAIL SessionStart was abbreviated (%s < %s)\n' "$ss" "$first"; fi
+  if [ "${other:-0}" -ge "${second:-0}" ]; then pass=$((pass+1)); printf 'ok   a different session is not de-duplicated\n'
+  else fail=$((fail+1)); printf 'FAIL cross-session leak (%s < %s)\n' "$other" "$second"; fi
+  rm -f "${TMPDIR:-/tmp}"/aiworks-repo-health."$SID"* "${TMPDIR:-/tmp}"/aiworks-repo-health."$SID"-b* 2>/dev/null
+else
+  printf 'skip repo-health-check.sh not executable\n'
+fi
+
+# ── posttool-context-budget.sh ─────────────────────────────────────────────────────────
+# The hook reads the window off the transcript, so the fixtures below ARE transcripts: one
+# JSON line per usage row, exactly the shape Claude Code writes. Advisory like the
+# portability checker — it always exits 0 — so every assertion is on the TEXT, never the
+# exit code, or the suite would pass on a hook that had stopped measuring anything.
+CTX="$H/posttool-context-budget.sh"
+CTXCFG="$TMP/ctxcfg"; mkdir -p "$CTXCFG"
+
+mkjsonl() { # mkjsonl <name> <read> <write> <input>  -> path
+  local f="$TMP/tx-$1.jsonl"
+  jq -cn --argjson r "$2" --argjson w "$3" --argjson i "$4" \
+    '{type:"assistant",message:{usage:{cache_read_input_tokens:$r,cache_creation_input_tokens:$w,input_tokens:$i,output_tokens:10}}}' \
+    > "$f"
+  printf '%s' "$f"
+}
+
+tc() { # tc <name> <want: warn|alarm|quiet> <session-id> <transcript>
+  local name=$1 want=$2 sid=$3 tx=$4 err
+  err="$(jq -cn --arg t "$tx" --arg s "$sid" '{session_id:$s,transcript_path:$t,tool_name:"Bash"}' \
+         | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" 2>&1 >/dev/null)"
+  local got=quiet
+  printf '%s' "$err" | grep -q 'context window' && got=warn
+  printf '%s' "$err" | grep -q 'every further turn bills' && got=alarm
+  if [ "$got" = "$want" ]; then
+    pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else
+    fail=$((fail+1)); printf 'FAIL %s (wanted %s, got %s)\n' "$name" "$want" "$got"
+  fi
+}
+
+# --check renders the verdict without a transcript; the bands are the contract.
+[ -z "$("$CTX" --check 149999)" ] \
+  && { pass=$((pass+1)); printf 'ok   under the warn threshold says nothing\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL under the warn threshold should be silent\n'; }
+"$CTX" --check 150000 | grep -q 'context window 150k' \
+  && { pass=$((pass+1)); printf 'ok   warn band names the window\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL warn band did not name the window\n'; }
+"$CTX" --check 299999 | grep -q 'every further turn bills' \
+  && { fail=$((fail+1)); printf 'FAIL just under alarm escalated early\n'; } \
+  || { pass=$((pass+1)); printf 'ok   just under alarm stays a warning\n'; }
+"$CTX" --check 300000 | grep -q 'every further turn bills' \
+  && { pass=$((pass+1)); printf 'ok   alarm band escalates\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL alarm band did not escalate\n'; }
+"$CTX" --check 709000 | grep -q '709k' \
+  && { pass=$((pass+1)); printf 'ok   alarm reports the measured size, not the threshold\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL alarm did not report the measured size\n'; }
+
+# The window is the SUM of the three billed input fields, not cache_read alone: a turn that
+# just wrote 90k of cache is as expensive as one that read it.
+tc "small window is quiet"      quiet ctx-a "$(mkjsonl a  40000    0     0)"
+tc "warn band fires"            warn  ctx-b "$(mkjsonl b 180000    0     0)"
+tc "alarm band fires"           alarm ctx-c "$(mkjsonl c 620000    0     0)"
+tc "cache write counts too"     warn  ctx-d "$(mkjsonl d  70000 90000     0)"
+tc "uncached input counts too"  warn  ctx-e "$(mkjsonl e  70000     0 90000)"
+
+# Regression: a cancelled or synthetic turn appends an all-zero usage row. Taking the
+# literally-last row read 0 there and the hook went silent on a 620k session — which is
+# exactly the session it exists to catch.
+Z="$TMP/tx-zero.jsonl"
+cat "$(mkjsonl z 620000 0 0)" > "$Z"
+jq -cn '{type:"assistant",message:{usage:{cache_read_input_tokens:0,cache_creation_input_tokens:0,input_tokens:0,output_tokens:0}}}' >> "$Z"
+tc "trailing zero row does not mask the window" alarm ctx-f "$Z"
+
+# Throttle: one line per 50k bucket per session, or a long session buries the warning under
+# its own repetitions. Same session + same window must go quiet the second time.
+tc "first crossing warns"          warn  ctx-g "$(mkjsonl g 180000 0 0)"
+tc "same bucket is throttled"      quiet ctx-g "$(mkjsonl g 180000 0 0)"
+tc "a new bucket warns again"      warn  ctx-g "$(mkjsonl g 260000 0 0)"
+tc "a different session is not throttled" warn ctx-h "$(mkjsonl h 180000 0 0)"
+
+# Never break the tool call it rides on, whatever it is handed.
+printf 'not json\n' | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" >/dev/null 2>&1 \
+  && { pass=$((pass+1)); printf 'ok   garbage payload exits 0\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL garbage payload did not exit 0\n'; }
+printf '{"session_id":"x","transcript_path":"/nonexistent"}\n' | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" >/dev/null 2>&1 \
+  && { pass=$((pass+1)); printf 'ok   missing transcript exits 0\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL missing transcript did not exit 0\n'; }
+E="$TMP/tx-empty.jsonl"; : > "$E"
+tc "empty transcript is quiet" quiet ctx-i "$E"
+
+# Thresholds are overridable, and the override has to actually move the band.
+if [ -n "$(AIWORKS_CONTEXT_WARN=30000 "$CTX" --check 40000)" ]; then
+  pass=$((pass+1)); printf 'ok   AIWORKS_CONTEXT_WARN lowers the band\n'
+else
+  fail=$((fail+1)); printf 'FAIL AIWORKS_CONTEXT_WARN was ignored\n'
+fi
+
+# ── pretool-codegraph-nudge.sh ─────────────────────────────────────────────────────────
+# Advisory like the two above — it always exits 0 — so every assertion is on the printed
+# text. The fixture repos get a .codegraph/ directory because that, not the repo name, is
+# what the hook keys on; `e2e` is deliberately left without one.
+NUDGE="$H/pretool-codegraph-nudge.sh"
+NUDGECFG="$TMP/nudgecfg"; mkdir -p "$NUDGECFG"
+mkdir -p "$TMP/svc/.codegraph" "$TMP/db/.codegraph"
+
+# n <name> <want: nudge|quiet> <session> <repeats> <command>
+# Runs the command <repeats> times in one session and asserts on the LAST result: the hook
+# fires on the third probe, so "did it nudge" is only answerable after a sequence.
+n() {
+  local name=$1 want=$2 sid=$3 reps=$4 cmd=$5 err i
+  for i in $(seq 1 "$reps"); do
+    err="$(jq -cn --arg c "$cmd" --arg s "$sid" \
+             '{session_id:$s,tool_name:"Bash",tool_input:{command:$c}}' \
+           | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_CONFIG_DIR="$NUDGECFG" "$NUDGE" 2>&1 >/dev/null)"
+  done
+  local got=quiet
+  printf '%s' "$err" | grep -q 'has a codegraph index' && got=nudge
+  if [ "$got" = "$want" ]; then
+    pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else
+    fail=$((fail+1)); printf 'FAIL %s (wanted %s, got %s)\n' "$name" "$want" "$got"
+  fi
+}
+
+n "first probe is quiet"            quiet ng-a 1 'grep -rn foo svc/src'
+n "second probe is quiet"           quiet ng-b 2 'grep -rn foo svc/src'
+n "third probe nudges"              nudge ng-c 3 'grep -rn foo svc/src'
+n "fourth is quiet again"           quiet ng-c 1 'grep -rn foo svc/src'
+n "a second repo counts separately" nudge ng-c 3 'cat db/src/main.rs'
+n "a new session starts over"       nudge ng-d 3 'grep -rn foo svc/src'
+
+# An unindexed directory has nothing to suggest, and a command already using the index is
+# the behaviour being asked for — nudging either one would be pure noise.
+n "unindexed path stays quiet"      quiet ng-e 4 'grep -rn foo e2e/src'
+n "a codegraph call stays quiet"    quiet ng-f 4 'codegraph query Foo -p svc'
+
+# Only search verbs. A repo name appearing in a build or a VCS command is not a probe.
+n "git is not a probe"              quiet ng-g 4 'git status svc'
+n "a test run is not a probe"       quiet ng-h 4 'scripts/dev.sh test svc'
+n "a word containing grep is not"   quiet ng-i 4 './mygrep svc'
+
+# The repo has to be recognised however the path is written, or the hook goes quiet on
+# exactly the sessions doing the most searching.
+n "bare path form"                  nudge ng-j 3 'grep -rn x svc/lib.rs'
+n "dot-slash form"                  nudge ng-k 3 'grep -rn x ./svc/lib.rs'
+n "quoted form"                     nudge ng-l 3 'grep -rn x "svc/lib.rs"'
+n "absolute form"                   nudge ng-m 3 "grep -rn x $TMP/svc/lib.rs"
+
+# The threshold is tunable, and the override has to actually move it.
+err="$(jq -cn '{session_id:"ng-n",tool_name:"Bash",tool_input:{command:"grep -rn x svc"}}' \
+       | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_CONFIG_DIR="$NUDGECFG" \
+         AIWORKS_CODEGRAPH_NUDGE_AT=1 "$NUDGE" 2>&1 >/dev/null)"
+if printf '%s' "$err" | grep -q 'has a codegraph index'; then
+  pass=$((pass+1)); printf 'ok   AIWORKS_CODEGRAPH_NUDGE_AT lowers the threshold\n'
+else
+  fail=$((fail+1)); printf 'FAIL AIWORKS_CODEGRAPH_NUDGE_AT was ignored\n'
+fi
+
+# Never break the Bash call it rides in front of.
+for bad in 'not json' '{}' '{"tool_input":{"command":"grep -rn x svc"}}'; do
+  if printf '%s\n' "$bad" | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_CONFIG_DIR="$NUDGECFG" "$NUDGE" >/dev/null 2>&1; then
+    pass=$((pass+1)); printf 'ok   exits 0 on payload: %s\n' "$bad"
+  else
+    fail=$((fail+1)); printf 'FAIL non-zero exit on payload: %s\n' "$bad"
+  fi
+done
+
+# ── context-handoff.sh ─────────────────────────────────────────────────────────────────
+# The self-handoff loop: at the handoff threshold the hook DEMANDS a handoff document at a
+# path it names; once the document exists it goes quiet; when the window collapses (a
+# compaction) it hands the document back; then the cycle re-arms. The fixtures are the
+# on-disk transcript layout Claude Code writes — main transcript `<proj>/<sid>.jsonl`, a
+# subagent's own at `<proj>/<sid>/subagents/agent-<id>.jsonl`, a workflow agent's under
+# `subagents/workflows/<run>/` — because the payload's transcript_path names the MAIN
+# transcript even inside a subagent (scripts/hook-signal-probe.sh), so measuring the wrong
+# file is the bug this section pins.
+HO="$H/context-handoff.sh"
+HDIR="$TMP/handoff"
+PROJ="$TMP/proj"; mkdir -p "$PROJ"
+
+usage_row() { jq -cn --argjson r "$1" '{type:"assistant",message:{usage:{cache_read_input_tokens:$r,cache_creation_input_tokens:0,input_tokens:0,output_tokens:10}}}'; }
+# mkctx <sid> <main-window> [<agent-id> <agent-window> [wf]] — builds the layout, prints nothing.
+mkctx() {
+  local sid=$1 mainw=$2 aid=${3:-} aw=${4:-} wf=${5:-}
+  usage_row "$mainw" > "$PROJ/$sid.jsonl"
+  [ -n "$aid" ] || return 0
+  local d="$PROJ/$sid/subagents"; [ -n "$wf" ] && d="$d/workflows/wf_$wf"
+  mkdir -p "$d"; usage_row "$aw" > "$d/agent-$aid.jsonl"
+}
+# Re-point a transcript's window without rebuilding the layout.
+setwin() { usage_row "$2" > "$1"; }
+# ho <sid> [<agent-id>] — runs the PostToolUse leg, prints stdout.
+ho() {
+  jq -cn --arg s "$1" --arg t "$PROJ/$1.jsonl" --arg a "${2:-}" \
+    '{hook_event_name:"PostToolUse",session_id:$s,transcript_path:$t,tool_name:"Bash"} + (if $a != "" then {agent_id:$a,agent_type:"developer"} else {} end)' \
+    | AIWORKS_HANDOFF_DIR="$HDIR" "$HO" 2>/dev/null
+}
+hoc() { # hoc <name> <want: quiet|block|context> <stdout>  (+ optional <substring the text must carry>)
+  local name=$1 want=$2 out=$3 must=${4:-} got=quiet text=""
+  if [ -n "$out" ]; then
+    text="$(printf '%s' "$out" | jq -r '(.reason // "") + (.hookSpecificOutput.additionalContext // "")' 2>/dev/null)"
+    [ "$(printf '%s' "$out" | jq -r '.decision // ""' 2>/dev/null)" = "block" ] && got=block || got=context
+  fi
+  if [ "$got" = "$want" ] && { [ -z "$must" ] || printf '%s' "$text" | grep -qF -- "$must"; }; then
+    pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else
+    fail=$((fail+1)); printf 'FAIL %s (wanted %s%s, got %s)\n' "$name" "$want" "${must:+ carrying $must}" "$got"
+  fi
+}
+
+
+# ── THE MAIN SESSION IS NOT OUR BUSINESS (ADR-0037) ────────────────────────────────────
+# A demand here buys a document that only pays off if a person then runs /compact — the model
+# cannot. Auto-compaction already restores the window, and the seal below only makes sense for
+# an agent that can be ENDED and replaced, which the main session cannot be. So: silent, always.
+mkctx hm 200000
+hoc "the main session is never demanded a handoff" quiet "$(ho hm)"
+mkctx h1 139999
+hoc "under the handoff threshold is silent"        quiet "$(ho h1)"
+mkctx h2 30000 a2 145000
+hoc "main crossing demands the handoff by path"    block "$(ho h2 a2)" "$HDIR/h2/a2.md"
+hoc "the demand names the skill"                   block "$(ho h2 a2)" "handoff"
+# A subagent's window is ITS transcript, never the parent's.
+mkctx h3 200000 a3 50000
+hoc "subagent under threshold stays quiet despite a fat parent" quiet "$(ho h3 a3)"
+mkctx h4 50000 a4 145000
+hoc "subagent crossing demands its own document"   block "$(ho h4 a4)" "$HDIR/h4/a4.md"
+mkctx h5 50000 w5 145000 wf
+hoc "workflow agent layout is resolved"            block "$(ho h5 w5)" "$HDIR/h5/w5.md"
+mkctx h6 200000
+hoc "an agent with no transcript on disk measures nothing" quiet "$(ho h6 ghost)"
+
+# The nag has a budget: an agent without a Write tool cannot comply, and a demand that never
+# ends is the one that gets ignored. Default 3 — the two above were 1 and 2.
+hoc "third demand still fires"                     block "$(ho h2 a2)" "(3/3)"
+hoc "the fourth is silent — budget spent"          quiet "$(ho h2 a2)"
+
+# The document must be NEWER than the demand: a stale file from a previous cycle proves nothing.
+mkctx h7 30000 a7 145000; ho h7 a7 >/dev/null
+mkdir -p "$HDIR/h7"; printf '# old\n' > "$HDIR/h7/a7.md"; touch -t 200001010000 "$HDIR/h7/a7.md"
+hoc "a stale document does not satisfy the demand" block "$(ho h7 a7)" "(2/3)"
+printf '# Handoff h7\n\nNext: finish the thing.\n' > "$HDIR/h7/a7.md"
+hoc "a fresh document is recorded, not blocked"    context "$(ho h7 a7)" "Handoff recorded at $HDIR/h7/a7.md"
+hoc "recorded tells a subagent to return a partial" quiet "$(ho h7 a7)"   # said once, then quiet
+setwin "$PROJ/h7/subagents/agent-a7.jsonl" 160000
+hoc "written and still growing stays quiet"        quiet "$(ho h7 a7)"
+# A window never shrinks between two calls except across a compaction — so a drop IS one.
+setwin "$PROJ/h7/subagents/agent-a7.jsonl" 90000
+hoc "the collapse hands the document back"         context "$(ho h7 a7)" "Next: finish the thing."
+hoc "the document is handed back once"             quiet "$(ho h7 a7)"
+setwin "$PROJ/h7/subagents/agent-a7.jsonl" 141000
+hoc "resumed re-arms: the next crossing demands again" block "$(ho h7 a7)" "(1/3)"
+
+# Compaction without a document: nothing to hand back, the cycle just re-arms.
+mkctx h8 30000 a8 145000; ho h8 a8 >/dev/null
+setwin "$PROJ/h8/subagents/agent-a8.jsonl" 90000
+hoc "collapse while requested is silent"           quiet "$(ho h8 a8)"
+setwin "$PROJ/h8/subagents/agent-a8.jsonl" 150000
+hoc "and re-arms"                                  block "$(ho h8 a8)" "(1/3)"
+
+# SessionStart(compact) is GONE (ADR-0037): it only ever fired for the main session — a subagent
+# never gets that event, which is why the window-collapse path above exists and is the one that
+# hands a subagent its document back. With main exempt, that leg had no caller left.
+# A workflow agent's brief carries `HANDOFF_KEY: <ticket>/<step>` (the dev-cycle/brd/prd agent
+# wrappers append it), so the document is keyed by the STEP, not the agent: a replacement spawned
+# for the same step — after a partial, or after the runtime killed its predecessor with no result
+# at all — finds the document at a path the workflow could name in its brief without knowing any
+# agent id. The key is read off the first user message of the agent's own transcript.
+keyed() { # keyed <sid> <aid> <window> <key> — a subagent transcript whose brief carries the key
+  local d="$PROJ/$1/subagents/workflows/wf_k"; mkdir -p "$d"
+  { jq -cn --arg k "$4" '{type:"user",message:{role:"user",content:("Do the work.\n… HANDOFF_KEY: " + $k + ". CONTINUITY …")}}'
+    usage_row "$3"; } > "$d/agent-$2.jsonl"
+  usage_row 30000 > "$PROJ/$1.jsonl"
+}
+keyed h12 k1 145000 'FM-9/build|svc'
+hoc "a keyed brief puts the document under by-key, sanitised" block "$(ho h12 k1)" "$HDIR/by-key/FM-9_build_svc.md"
+mkdir -p "$HDIR/by-key"; printf '# Handoff k1\n' > "$HDIR/by-key/FM-9_build_svc.md"
+hoc "and records it there"                          context "$(ho h12 k1)" "recorded at $HDIR/by-key/FM-9_build_svc.md"
+# The replacement is a NEW agent on the SAME key: its own state starts armed, and the predecessor's
+# document — older than its demand — is not mistaken for its own.
+keyed h12 k2 145000 'FM-9/build|svc'
+touch -t 200001010000 "$HDIR/by-key/FM-9_build_svc.md"
+hoc "a replacement on the same key is asked for its own document" block "$(ho h12 k2)" "$HDIR/by-key/FM-9_build_svc.md"
+hoc "the predecessor's document does not satisfy it" block "$(ho h12 k2)" "(2/3)"
+# Array-shaped content (text blocks) carries the key too.
+d="$PROJ/h13/subagents"; mkdir -p "$d"
+{ jq -cn '{type:"user",message:{role:"user",content:[{type:"text",text:"HANDOFF_KEY: phase-1/research:phase-1 …"}]}}'; usage_row 145000; } > "$d/agent-k3.jsonl"
+usage_row 30000 > "$PROJ/h13.jsonl"
+hoc "a key in a text block is read too"             block "$(ho h13 k3)" "$HDIR/by-key/phase-1_research_phase-1.md"
+
+# ── GRACE, THEN THE SEAL (ADR-0037) ────────────────────────────────────────────────────
+# Asking a subagent to return was advice, and advice lost to "finish the task". So once the
+# document exists the agent gets a bounded run of tool calls to make its work durable — commit
+# or park the tree, which is the one thing the document cannot carry — and then every tool call
+# is DENIED. Starved of tools, the only move left is to return, which is the point.
+# pre <sid> <aid> [<tool> <file_path>] — the PreToolUse leg; prints its exit code.
+pre() {
+  jq -cn --arg s "$1" --arg t "$PROJ/$1.jsonl" --arg a "$2" --arg tn "${3:-Bash}" --arg fp "${4:-}" \
+    '{hook_event_name:"PreToolUse",session_id:$s,transcript_path:$t,agent_id:$a,tool_name:$tn,
+      tool_input:(if $fp != "" then {file_path:$fp} else {command:"ls"} end)}' \
+    | AIWORKS_HANDOFF_DIR="$HDIR" "$HO" >/dev/null 2>&1
+  echo $?
+}
+exits() { # exits <name> <want> <got>
+  if [ "$3" = "$2" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$1"
+  else fail=$((fail+1)); printf 'FAIL %s (wanted exit %s, got %s)\n' "$1" "$2" "$3"; fi
+}
+mkctx hs 30000 as 145000
+ho hs as >/dev/null
+mkdir -p "$HDIR/hs"; printf '# Handoff as\n\nNext: commit.\n' > "$HDIR/hs/as.md"
+hoc "the document opens the grace window, not silence" context "$(ho hs as)" "SEALED IN 20"
+exits "the first grace call is allowed"            0 "$(pre hs as)"
+i=2; while [ "$i" -le 19 ]; do pre hs as >/dev/null; i=$((i+1)); done
+exits "the twentieth grace call is still allowed"  0 "$(pre hs as)"
+exits "the call past the grace window is DENIED"   2 "$(pre hs as)"
+exits "and it stays denied"                        2 "$(pre hs as)"
+
+# A closed seal still lets the agent refresh its OWN document — the one write that makes the
+# relay better rather than costlier. Everything else, including a write one directory over,
+# stays denied.
+exits "a sealed agent may still write its handoff"  0 "$(pre hs as Write "$HDIR/hs/as.md")"
+exits "but not some other file"                     2 "$(pre hs as Write "$HDIR/hs/other.md")"
+# ── THE PARENT RELAYS ITS SEALED CHILD (ADR-0037) ──────────────────────────────────────
+# A workflow relays itself in JS. A subagent spawned from a session has no such loop, so the token
+# the sealed child returns is read here and the parent is blocked into re-spawning.
+#
+# It takes TWO events, and which one does what was measured, not guessed (scripts/hook-relay-probe.sh):
+#   • The Agent tool launches ASYNCHRONOUSLY. Its PostToolUse fires at LAUNCH, where tool_response
+#     is launch metadata and tool_input still holds the brief — so reading the result there finds
+#     nothing, and reading the payload finds the BRIEF, which relays a child that never ran.
+#   • SubagentStop fires at completion and carries `last_assistant_message`: the child's own final
+#     text, and nothing of the brief. That is where the token is read.
+# SubagentStop NEVER returns a decision: on a Stop event `block` means "do not stop" and is fed to
+# the agent that was about to end — here a SEALED one, whose every tool is denied. It would spin.
+# So SubagentStop only RECORDS, and the parent's next tool call is what gets told.
+AR="$H/posttool-agent-relay.sh"
+stop() { # stop <sid> <aid> <agent_type> <last assistant message>
+  jq -cn --arg s "$1" --arg a "$2" --arg ty "$3" --arg m "$4" \
+    '{hook_event_name:"SubagentStop",session_id:$s,agent_id:$a,agent_type:$ty,
+      last_assistant_message:$m,tool_input:{prompt:"a brief that also says HANDOFF_RELAY:/tmp/decoy.md"}}' \
+    | AIWORKS_HANDOFF_DIR="$HDIR" "$AR" 2>/dev/null
+}
+par() { # par <sid> [<aid>] — the parent's next tool call
+  jq -cn --arg s "$1" --arg a "${2:-}" \
+    '{hook_event_name:"PostToolUse",session_id:$s,tool_name:"Bash"} + (if $a != "" then {agent_id:$a} else {} end)' \
+    | AIWORKS_HANDOFF_DIR="$HDIR" "$AR" 2>/dev/null
+}
+hoc "SubagentStop never answers a stopping agent"  quiet "$(stop r1 c1 developer 'done. HANDOFF_RELAY:/tmp/hd/a.md')"
+out="$(par r1)"   # ONE directive: the marker is consumed, so assert both against it
+hoc "the parent's next call carries the directive" block "$out" "/tmp/hd/a.md"
+hoc "and it says re-spawn, not summarise"          block "$out" "re-spawn"
+# The BRIEF is never the source: a decoy token in tool_input must not relay a child that returned
+# nothing of the kind. This is the false positive the probe caught.
+hoc "a token only in the brief relays nothing"     quiet "$(stop r2 c2 developer 'all done, status complete')"
+hoc "so the parent is told nothing"                quiet "$(par r2)"
+# One directive per sealed child: the marker is consumed, not re-served on every later tool call.
+hoc "the directive is delivered once"              quiet "$(par r1)"
+# A subagent is never told to relay its sibling — the marker is the parent's business.
+stop r3 c3 developer 'HANDOFF_RELAY:/tmp/hd/c.md' >/dev/null
+hoc "a subagent never sees the parent's marker"    quiet "$(par r3 someagent)"
+hoc "the parent still does"                        block "$(par r3)" "/tmp/hd/c.md"
+# The budget: five relays for a given (session, agent type), then the partial is the parent's.
+i=2; while [ "$i" -le 5 ]; do stop r1 c1 developer 'HANDOFF_RELAY:/tmp/hd/a.md' >/dev/null; par r1 >/dev/null; i=$((i+1)); done
+stop r1 c1 developer 'HANDOFF_RELAY:/tmp/hd/a.md' >/dev/null
+hoc "the sixth is the parent's to keep"            quiet "$(par r1)"
+# A different role in the same session has its own budget.
+stop r1 c9 qa-runner 'HANDOFF_RELAY:/tmp/hd/b.md' >/dev/null
+hoc "another agent type relays on its own count"   block "$(par r1)" "1/5"
+
+# The advisory budget hook shares the resolver: inside a subagent it must read the subagent's
+# window, not the parent's — before this it warned about the wrong agent, or not at all.
+mkctx h11 40000 a11 180000
+err="$(jq -cn --arg t "$PROJ/h11.jsonl" '{session_id:"h11",agent_id:"a11",transcript_path:$t,tool_name:"Bash"}' \
+       | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" 2>&1 >/dev/null)"
+printf '%s' "$err" | grep -q 'context window 180k' \
+  && { pass=$((pass+1)); printf 'ok   budget hook measures the subagent, not its parent\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL budget hook did not measure the subagent window\n'; }
+
+for bad in 'not json' '{}' '{"hook_event_name":"PostToolUse","session_id":"x"}'; do
+  if printf '%s\n' "$bad" | AIWORKS_HANDOFF_DIR="$HDIR" "$HO" >/dev/null 2>&1; then
+    pass=$((pass+1)); printf 'ok   handoff hook exits 0 on payload: %s\n' "$bad"
+  else
+    fail=$((fail+1)); printf 'FAIL handoff hook non-zero exit on payload: %s\n' "$bad"
+  fi
+done
 
 echo
 echo "pass=$pass fail=$fail"

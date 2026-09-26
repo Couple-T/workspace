@@ -1,6 +1,13 @@
 ---
 name: ultra-review
-description: Run a ticket's open MR/PR through two specialist review gates at once — code-reviewer (clean-code + spec), performance-engineer (profiling) — spawned in parallel, then aggregated into one combined verdict where a blocking finding at any gate caps the result. Honors the workspace output language and review.level. On a clean ticket-wide pass it posts the PASS approval on every MR/PR and advances the ticket to the configured ready-to-merge status (config-gated, skipped when that status is not configured). Use when the user wants a deep / full / ultra review, a multi-gate review, or a combined code + performance review of a <KEY> ticket — distinct from /review, the single spec+standards pass.
+description: >-
+  Run a ticket's open MR/PR through two specialist gates in parallel - code-reviewer (clean-code +
+  spec) and performance-engineer (profiling) - aggregated into one verdict where a blocking
+  finding at any gate caps the result. On a clean ticket-wide pass the orchestrator posts the PASS
+  approval on every MR/PR and advances the ticket to ready-to-merge (config-gated). MR/PRs ALREADY
+  approved on the forge are not re-reviewed at all unless --fresh. Use for a deep, full, ultra,
+  multi-gate, or combined code + performance review of a <KEY> ticket. Distinct from /review, the
+  single spec+standards pass.
 disable-model-invocation: true
 ---
 
@@ -47,26 +54,69 @@ Review level = <strict|thorough> (passed in — do NOT re-read the config). At s
 blocking must-fixes only; at thorough also triage the nice-to-have tier.
 ```
 
+## 0.4 ALREADY APPROVED? Then there is nothing to review — stop here
+
+Before §0.5, before any gate is spawned, ask the forge whether this ticket's MR/PR(s) already
+carry an approval. (You need §1's MR/PR numbers to ask — resolve those first. §0.4 and §0.5 are
+written above §1 because they decide *whether* to spawn a gate at all, not because they run
+before the ticket is pinned.) For each repo in scope, from inside it:
+
+```
+scripts/vcs/pr-view.sh <num> --approved      # prints yes | no | unknown
+```
+
+**Every** repo's MR/PR answering `yes` ⇒ **STOP**. Report in one line, in-session, that the
+ticket is already approved and no gate was run, name the MR/PR(s), and **post nothing** — no
+approval (it is already there), no ticket move (§3.6 already happened), and **no §4 notify**:
+nothing happened, and a Slack message about work not done is noise on a channel that carries
+verdicts. `--fresh` is the override, and the only one.
+
+Why this sits above everything else: the approval is the *conclusion* of a gate that already
+ran. Re-deriving a review above it re-opens a closed finding set — the exact failure §0.5
+exists to prevent — and burns two specialist agents to arrive back where the forge already is.
+
+Three answers, and the third is where it goes wrong if you round it off:
+
+- `yes` on every repo ⇒ stop, as above.
+- `yes` on *some* repos ⇒ run the gates only on the repos that answered otherwise, and say so.
+  An approved repo's gates are frozen (`review-ledger.md` §5), and its threads are not re-read.
+- `unknown` ⇒ **treat as unapproved and review.** It means the forge would not answer
+  (approvals disabled on the instance, an API refusal), not that the answer is no. A review that
+  ran needlessly costs tokens; a review skipped on a fiction ships the bug it would have caught.
+
 ## 0.5 Detect the run: fresh vs re-visit
 
 Two shapes of run, and the shape changes both the gate briefs (§2) and the aggregate (§3):
 
 - **Fresh** — first ultra-review pass on this ticket's MR/PR. Gates review the whole diff and
   surface every must-fix they find.
-- **Re-visit** — the user says "re-visit" / "revisit" / "re-review" / "recheck", or names a fix
-  ("the author just fixed X"), for a ticket that already carries gate comments on its MR/PR. A
-  re-visit is **not** a second fresh pass: each gate checks its **own prior findings** against
-  the new commit — resolved, or still open — and raises nothing outside the lines the fix
-  commit touched. **One exception:** if the fix commit itself introduces a new bug in those
-  touched lines, that IS reportable as a new must-fix; it stays scoped to the fix diff, never a
-  fresh full-file sweep.
+- **Re-visit** — a gate already has a first pass on record for this repo. A re-visit is **not** a
+  second fresh pass: each gate checks its **own prior findings** against the new commit —
+  resolved, or still open — and raises nothing outside the lines the fix commit touched. **One
+  exception:** if the fix commit itself introduces a new bug in those touched lines, that IS
+  reportable as a new must-fix; it stays scoped to the fix diff, never a fresh full-file sweep.
 
-Detect re-visit from the user's **phrasing**, not from prior comments merely existing — an
-ordinary second look after unrelated commits is still a fresh pass. Default to fresh when unsure.
+**Detect the mode from the RECORD, per repo — not from the user's phrasing.** For each repo in
+scope, run `scripts/vcs/pr-threads.sh <num>` from inside it and look for threads tagged
+`[gate:review]` / `[gate:guard]` / `[gate:perf]`, and read the review ledger if a dev-cycle run
+left one (`agent_logs/<KEY>-dev-cycle-state/<repo>-gate_<key>.json`, `first_pass:true`). A gate
+with a first pass on record is in **re-visit** mode for that repo, whatever words the user used —
+a gate's first review is its one complete pass and does not become fresh again because the user
+typed a bare ticket key. Modes are **per gate per repo**: one gate may be re-visiting while
+another, which has never run here, does its first pass.
 
-**Completion:** you know the run's mode, and — for re-visit — you hold the prior must-fix
-thread list (`scripts/vcs/pr-threads.sh <num>`, run from inside each repo) plus the fix commit's
-SHA.
+Two overrides, both explicit: the user passes `--fresh` (or asks in as many words for a clean
+sweep from scratch), which forces fresh and says so in the verdict; or the diff has been
+**rewritten** under the threads — a force-push or rebase that makes the prior file/line anchors
+meaningless — in which case say that in the verdict and treat the affected repo as fresh.
+
+> Earlier revisions of this skill detected the mode from phrasing and defaulted to fresh. That
+> is what produced the failure this section now prevents: a re-run surfaced a brand-new
+> must-fix batch that was not a regression from any fix, and the author was asked to start over.
+
+**Completion:** you know each gate's mode per repo, and — for re-visit — you hold that gate's
+prior must-fix thread list (`scripts/vcs/pr-threads.sh <num>`, run from inside each repo) plus
+the fix commit's SHA.
 
 ## Process
 
@@ -116,6 +166,17 @@ so they run concurrently and don't pollute each other's context. Into **each** b
   The performance gate gets the mirror-image line: `"Do NOT check out a different ref in
   the shared clone — read the branch with `git show <sha>:<path>`; the code gate is running
   the suite there."`
+- **Every mode — tag and resolve.** Each gate prefixes **every** comment it posts with
+  `[gate:review]` / `[gate:guard]` / `[gate:perf]` before any other prefix. All gates post
+  through one adapter token, so the forge shows a single author and the tag is the only thing
+  that survives to tell one gate's threads from another's on a later run. And each gate **owns**
+  the threads it opened: before it may report a clean verdict it settles every one of them —
+  ticking Resolve itself where the fix genuinely holds
+  (`scripts/vcs/pr-resolve-thread.sh <num> <thread-id>`), leaving it unresolved (or
+  `--unresolve`, with a comment saying why) where it does not. An unresolved thread is the
+  forge's own record that a finding is still open, so a clean verdict above one is a
+  contradiction. Never resolve a thread merely to end the loop, and never touch one a human
+  resolved.
 - **Re-visit mode only** (§0.5): replace the generic review instruction above with — paste the
   prior must-fix thread list (file/line/body/resolved-state) and the fix commit SHA, then:
   `"This is a RE-VISIT, not a fresh review. Check ONLY your own prior must-fix findings above
@@ -215,7 +276,11 @@ caps the verdict at "partially met" even when the code-quality gate is clean.
 The combined verdict answers one **ticket-wide** question: are the ticket's requirements
 *genuinely met* across **every** repo's MR/PR? Post the PASS signal **only** on a clean **met**
 — zero unresolved must-fix at *every* gate on *every* repo, no open `Human:` directive, **and a
-green test receipt from the code gate on every repo**. A must-fix a human answered with a
+green test receipt from the code gate on every repo**. "Zero unresolved" is read off the forge,
+not off the gates' prose: run `scripts/vcs/pr-threads.sh <num>` per repo and confirm every
+`[gate:*]`-tagged thread shows **resolved**. A thread still unresolved is an open must-fix even
+when the gate's summary called it settled — send it back to the owning gate to resolve or to
+re-state, and do not post PASS meanwhile. A must-fix a human answered with a
 `Human:` **disposition** counts as MET (`docs/agents/human-review.md`). When
 met, the orchestrator itself posts it on **each** repo's MR/PR: one host-level approval + one
 loud verdict line, via
@@ -223,6 +288,13 @@ loud verdict line, via
 ```
 scripts/vcs/pr-approve.sh <num> --body "✅ APPROVED — <KEY>: requirements met, standards clean, 0 must-fix, tests green (<the code gate's invocation + result>)."
 ```
+
+The call is **idempotent**: on an MR/PR the forge already records as approved it prints
+`already approved — nothing to do` and posts nothing. That is a success — it is what keeps a
+second pass from stacking a duplicate verdict — and it is also the signal §0.4 reads, so a later
+invocation short-circuits instead of re-reviewing. Where a forge has approvals disabled the
+adapter records the verdict as a note beginning `✅ APPROVED`, which is the same readable record;
+keep that marker at the head of the body and do not reword it.
 
 body in the resolved OUTPUT LANGUAGE, and name the green run in it — an approval that cannot
 point at a suite result is the failure this gate exists to prevent.
