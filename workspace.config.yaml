@@ -59,8 +59,7 @@ triage:
 
 monitoring:
   targets:
-    feeed-me/staging: gen-lang-client-0088446822
-    feeed-me/prod: gen-lang-client-0088446822
+    feeed-cs/prod: gen-lang-client-0088446822
 
 artifacts:
   enabled: false
