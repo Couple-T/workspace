@@ -1,22 +1,23 @@
-# Graph Report - workspace  (2026-08-17)
+# Graph Report - workspace  (2026-09-27)
 
 ## Corpus Check
-- 205 files · ~225,999 words
+- 252 files · ~290,958 words
 - Verdict: corpus is large enough that graph structure adds value.
+- Unclassified: 62 file(s) not represented in the graph (top: .csv 52, (none) 7, .jq 2)
 
 ## Summary
-- 2285 nodes · 2129 edges · 185 communities (179 shown, 6 thin omitted)
+- 2616 nodes · 2486 edges · 233 communities (214 shown, 19 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `d12c35a0`
+- Built from commit: `220d3f4b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - FeeedMe visual system — mood: **cozy**
-- Language (output-localization convention)
+- During the session
 - Business Requirements Document: App Launcher Logo
 - Business Requirements Document: Splash Screen
 - BRD: Dashboard Page (Single Home, No Separate Landing)
@@ -25,36 +26,73 @@
 - Obsidian — shared vault settings for the workspace meta-repo
 - Thai register (address mode)
 - Codegraph keeps the code, graphify maps the prose
-- The live workspace config carries no comments
-- CONTEXT.md
-- A case report is localized for its reader, not for the session
+- During the session
 - Resuming a workflow after the config changed
+- Diagnosing Bugs
 - Tailwind CSS Utility Reference
 - CLAUDE.md — {{ORG_NAME}} Organization workspace
 - Output compression (caveman)
+- Diagnosing Bugs
+- 2. Root causes, and which are fixed
 - Brand Guidelines v1.0
+- ADR 0017 — Triage tunnels are declared beside the DSN
 - Voice adapter (`scripts/voice/`)
 - Design
 - Canvas Design System
+- The test-suite gate does not halt on a red
+- An agent hands off to itself before the ceiling
+- The review loop does not halt on a finding
+- scripts/db — deployed Postgres (staging + production), read-only
+- scripts/redis — production Redis, read-only
+- Repair script
+- dev-cycle keeps its own run state
 - Form & Input Components
 - Tailwind CSS Responsive Design
+- Context handoff — a subagent hands off to itself, is sealed, and is replaced
+- Agent harnesses
+- The load-test gate — equal-or-better, or it does not ship
 - Typography Specifications
+- The review ledger — a finding is raised once, and resolved visibly
+- The dev-cycle session orchestrates, never implements
+- Code minimalism is a plugin, scoped by agent, not a prompt
 - Logo Usage Rules
 - Component Specifications
 - shadcn/ui Accessibility Patterns
+- A repo whose criteria already hold is finished, not stalled
 - Plan automation
 - Process
+- The build does not stop at the first partial
+- Issue tracker conventions
+- Code minimalism (ponytail)
+- How a dev-cycle run ends
+- .skills-upstream/caveman/SKILL.md
+- A reviewed-but-unresolved repo still gets the gate
 - Asset Approval Checklist
 - Logo AI Prompt Engineering
+- A submodule pin needs a pushed commit, not a merge
+- The local Harness set drives sync, and sync never removes a projection
+- Triage MCP registration is project scope for Cursor and Codex
+- Tunnel sidecars (optional — for managed Postgres behind a VPC)
 - Color Palette Management
 - CIP Deliverable Guide
 - States and Variants
 - UI Styling Skill
+- Tracker adapter
 - Workflow
+- A ticket is a record, not a transcript
+- Declared plugins install at project scope, and every copy is kept current
+- One workflow, one slash entry — authored scripts live under `.claude/workflows/src/`
 - tdd/SKILL.md
 - Tailwind CSS Customization
+- Harness registry contract
+- VCS adapter
 - Design System
 - Image Generation Prompt Best Practices
+- A cross-repo finding escalates instead of looping
+- A passed gate is recorded, not re-derived
+- A QA-attributed fix is quality-checked, not re-reviewed
+- The run ticks its own approval; the merge stays human
+- The run's base is state, and the PR/MR is asserted against it
 - Routing by Task Type
 - shadcn/ui Theming & Customization
 - Asset Organization Guide
@@ -71,8 +109,7 @@
 - stagehand — putting what the assistant touches on screen
 - Design Principles
 - Design Principles
-- 0002-workspace-output-localization.md
-- legitimate cross-repo (app + backend) ticket.
+- developer.md
 - CIP Design Reference
 - Icon Design Reference
 - Copywriting Formulas
@@ -140,8 +177,8 @@
 - Image generation (graphic-designer asset pipeline)
 - PII provenance — redact what PRODUCTION gave us, and only that
 - Plan artifacts — where a plan lives, and why it is never committed
-- Coding standards
-- Coding standards
+- Test standards
+- Test standards
 - guardian-engineer.md
 - product-owner.md
 - ux-ui-planner.md
@@ -199,6 +236,7 @@
 - slides-create.md
 - create.md
 - hrun
+- handoff/SKILL.md
 
 ## God Nodes (most connected - your core abstractions)
 1. `Voice adapter (`scripts/voice/`)` - 22 edges
@@ -218,15 +256,15 @@
 ## Import Cycles
 - None detected.
 
-## Communities (185 total, 6 thin omitted)
+## Communities (233 total, 19 thin omitted)
 
 ### Community 0 - "FeeedMe visual system — mood: **cozy**"
 Cohesion: 0.33
 Nodes (5): Craft cues (carry the mood), FeeedMe visual system — mood: **cozy**, Pointers, Rules (each checkable), The leading word: `cozy`
 
-### Community 1 - "Language (output-localization convention)"
-Cohesion: 0.33
-Nodes (6): 1. `language` — the workspace-wide output language (default **`en`**), 2. The rule — English spine, Thai prose, 3. Which surface gets which language, 4. How it's enforced, Language (output-localization convention), The case-report exception
+### Community 1 - "During the session"
+Cohesion: 0.09
+Nodes (19): ADR Format, Numbering, Optional sections, Template, What qualifies, When to offer an ADR, CONTEXT.md Format, Rules (+11 more)
 
 ### Community 2 - "Business Requirements Document: App Launcher Logo"
 Cohesion: 0.07
@@ -241,8 +279,8 @@ Cohesion: 0.10
 Nodes (19): 1. Overview & Business Context, 2. Business Goals & Success Metrics, 3. Scope, 4. Feature Set: User Value, Priority, Unit Economics, 5. Technical Feasibility & Risks, 6. Resolved Decisions, 7. Roadmap Fit, 8. Glossary & Cross-Links (+11 more)
 
 ### Community 5 - "CLAUDE.md — {{ORG_NAME}} Organization workspace"
-Cohesion: 0.22
-Nodes (8): CLAUDE.md — {{ORG_NAME}} Organization workspace, Configuration (read these first), DO NOT, Language, compression and code, Notifications, Product, Provider adapters, Speaking and showing
+Cohesion: 0.20
+Nodes (9): CLAUDE.md — {{ORG_NAME}} Organization workspace, Configuration (read these first), DO NOT, Language, compression and code, Named-agent requests, Notifications, Product, Provider adapters (+1 more)
 
 ### Community 6 - "Cursor gets a generated mirror of the Claude config, built from symlinks"
 Cohesion: 0.40
@@ -253,44 +291,52 @@ Cohesion: 0.40
 Nodes (4): Commit vs keep local, Gotchas, Obsidian — shared vault settings for the workspace meta-repo, What `aiworks sync` does
 
 ### Community 8 - "Thai register (address mode)"
-Cohesion: 0.18
-Nodes (11): 1. The one rule — a message to a person is written in address mode, 2. Who is speaking — three voices, and they are not interchangeable, 3. Second person: `คุณ` is banned by default, 4. The officialese table, read backwards, 5. Ordering — the one thing mode does not decide, 6. Reporting a problem to an outside team, 7. Warmth is in the framing, never in the finding, 8. Where it stops (+3 more)
+Cohesion: 0.05
+Nodes (33): Neither live file carries a comment, The workspace config files, Refinement (2026-07-17): `.md` is English, `.html` localizes, Rejected alternatives, Workspace output localization uses an English spine, not full translation, Consequences, Enforcement (four places, because a written-down rule gets forgotten), Rejected alternatives (+25 more)
 
 ### Community 9 - "Codegraph keeps the code, graphify maps the prose"
 Cohesion: 0.10
-Nodes (18): Codegraph keeps the code, graphify maps the prose, Consequences, The cost we accepted, The gate it failed, The scope graphify gets, Two things measurement corrected, What the doc graph does not do, What was proposed (+10 more)
+Nodes (19): Codegraph keeps the code, graphify maps the prose, Consequences, The cost we accepted, The gate it failed, The scope graphify gets, Two things measurement corrected, What the doc graph does not do, What was proposed (+11 more)
 
-### Community 10 - "The live workspace config carries no comments"
-Cohesion: 0.22
-Nodes (7): Neither live file carries a comment, The workspace config files, Consequences, Enforcement (four places, because a written-down rule gets forgotten), Rejected alternatives, The live workspace config carries no comments, Why
+### Community 10 - "During the session"
+Cohesion: 0.09
+Nodes (19): ADR Format, Numbering, Optional sections, Template, What qualifies, When to offer an ADR, CONTEXT.md Format, Rules (+11 more)
 
-### Community 11 - "CONTEXT.md"
-Cohesion: 0.20
-Nodes (6): Consequences, Headless workflows read config from a generated mirror, not the file, Rejected alternatives, Consequences, Personal config overrides apply at runtime only, never in the committed mirror, Rejected alternatives
+### Community 11 - "Resuming a workflow after the config changed"
+Cohesion: 0.11
+Nodes (14): Consequences, Headless workflows read config from a generated mirror, not the file, Rejected alternatives, Consequences, Personal config overrides apply at runtime only, never in the committed mirror, Rejected alternatives, A resumed run keeps the base it started with, A run keeps its config; it must never keep its world (+6 more)
 
-### Community 12 - "A case report is localized for its reader, not for the session"
-Cohesion: 0.50
-Nodes (4): A case report is localized for its reader, not for the session, Consequences, Considered options, Decision
-
-### Community 13 - "Resuming a workflow after the config changed"
-Cohesion: 0.40
-Nodes (5): History, Never hand-edit the persisted script, Resuming a workflow after the config changed, The rule, Two snapshots, not one
+### Community 12 - "Diagnosing Bugs"
+Cohesion: 0.12
+Nodes (16): Completion criterion — a tight loop that goes red, Diagnosing Bugs, First: can you trigger it at all?, Minimise, Non-deterministic bugs, Output language — resolve BEFORE writing (do this FIRST), Phase 1 — Build a feedback loop, Phase 2 — Reproduce + minimise (+8 more)
 
 ### Community 14 - "Tailwind CSS Utility Reference"
 Cohesion: 0.05
 Nodes (43): Arbitrary Values, Aspect Ratio, Background Colors, Border Color, Border Radius, Border Style, Border Width, Borders (+35 more)
 
 ### Community 15 - "CLAUDE.md — {{ORG_NAME}} Organization workspace"
-Cohesion: 0.22
-Nodes (8): CLAUDE.md — {{ORG_NAME}} Organization workspace, Configuration (read these first), DO NOT, Language, compression and code, Notifications, Product, Provider adapters, Speaking and showing
+Cohesion: 0.20
+Nodes (9): CLAUDE.md — {{ORG_NAME}} Organization workspace, Configuration (read these first), DO NOT, Language, compression and code, Named-agent requests, Notifications, Product, Provider adapters (+1 more)
 
 ### Community 16 - "Output compression (caveman)"
 Cohesion: 0.40
-Nodes (4): How it reaches each spawn path, In Cursor the skill is `/caveman`, Output compression (caveman), The boundary: compression is an OUTPUT rule
+Nodes (5): How it reaches each spawn path, In Codex the skill is `$caveman`, In Cursor the skill is `/caveman`, Output compression (caveman), The boundary: compression is an OUTPUT rule
+
+### Community 17 - "Diagnosing Bugs"
+Cohesion: 0.13
+Nodes (14): Completion criterion: a tight loop that goes red, Diagnosing Bugs, Minimise, Non-deterministic bugs, Phase 1: Build a feedback loop, Phase 2: Reproduce + minimise, Phase 3: Hypothesise, Phase 4: Instrument (+6 more)
+
+### Community 18 - "2. Root causes, and which are fixed"
+Cohesion: 0.13
+Nodes (15): 1. By the numbers, 2.1 The base was an argument, not state — *fixed (ADR 0025)*, 2.2 A wrong constant, validated by nothing — *fixed (ADR 0025)*, 2.3 An invented flag shape, warned about and not stopped — *fixed (ADR 0025)*, 2.4 The resume deadlock: a re-plan could not invalidate a build — *fixed (ADR 0025)*, 2.5 The dotenv ban is correct, and had no fast path — *open*, 2.6 "Re-confirm" substituted for "re-investigate" — *fixed at the prompt level (see §3)*, 2.7 No gate validated an MR's target branch — *fixed (ADR 0025)* (+7 more)
 
 ### Community 19 - "Brand Guidelines v1.0"
 Cohesion: 0.05
 Nodes (37): 1. Color Palette, 2. Typography, 3. Logo Usage, 4. Voice & Tone, 5. Imagery Guidelines, 6. Design Components, Accessibility, AI Image Generation (+29 more)
+
+### Community 20 - "ADR 0017 — Triage tunnels are declared beside the DSN"
+Cohesion: 0.17
+Nodes (12): Addendum — an identified gost is adopted for connecting, never for killing, Addendum — the shard role is declared, never baked in, Addendum — `tunnel=gost` (SOCKS proxy, one shared process), ADR 0017 — Triage tunnels are declared beside the DSN, Consequences, Context, Decision, Enumeration hazard (+4 more)
 
 ### Community 21 - "Voice adapter (`scripts/voice/`)"
 Cohesion: 0.05
@@ -304,6 +350,34 @@ Nodes (35): Banner Design (Built-in), Banner: Design Rules, Banner: Quick Size R
 Cohesion: 0.06
 Nodes (35): 1. Visual Communication First, 2. Minimal Text Integration, 3. Expert Craftsmanship, 4. Systematic Patterns, Analog Meditation, Approach, Canvas Boundaries, Canvas Design System (+27 more)
 
+### Community 24 - "The test-suite gate does not halt on a red"
+Cohesion: 0.17
+Nodes (12): A fail-open this closed on the way past, Across invocations, Configuration, Related, The cost, stated plainly, The distinction, again, The hole converting these exposed, The one retraction (+4 more)
+
+### Community 25 - "An agent hands off to itself before the ceiling"
+Cohesion: 0.20
+Nodes (8): An agent hands off to itself before the ceiling, Consequences, Context, Decision, A sealed subagent is relayed, not continued, Consequences, Context, Decision
+
+### Community 26 - "The review loop does not halt on a finding"
+Cohesion: 0.22
+Nodes (9): Across invocations, Configuration, Related, The cost, stated plainly, The distinction the old code did not make, The review loop does not halt on a finding, The sanctioned "cannot", What each former halt became (+1 more)
+
+### Community 27 - "scripts/db — deployed Postgres (staging + production), read-only"
+Cohesion: 0.22
+Nodes (8): Environments and targets, Repro seeding — `prod_repro_seed.py`, Safety model (layered), scripts/db — deployed Postgres (staging + production), read-only, Setup (one-time, per machine), Shards (optional), Tools, Verifying it
+
+### Community 28 - "scripts/redis — production Redis, read-only"
+Cohesion: 0.22
+Nodes (8): Local repro — `replay_shape.py`, Safety model (all layers are client-side — deliberately), scripts/redis — production Redis, read-only, Setup (one-time, per machine), Targets, The production gate, Tools, Verifying it
+
+### Community 29 - "Repair script"
+Cohesion: 0.25
+Nodes (7): Repair script, Step 1 — Fix the defect and the entity set, Step 2 — Load the organization's ladder, Step 3 — Pick the rung, with the receipt, Step 4 — Generate, Step 5 — Hand over, The ladder
+
+### Community 30 - "dev-cycle keeps its own run state"
+Cohesion: 0.25
+Nodes (8): Addendum — an unresolved `Human:` directive is the one comment a resume must see, Addendum — the `planned` row now skips, guarded by a ticket fingerprint, Addendum — upstream degrade, per-suite gate rows, and a fingerprint without the comment count, Consequences, dev-cycle keeps its own run state, What it is not, What that cost, Why it qualifies on all three counts
+
 ### Community 31 - "Form & Input Components"
 Cohesion: 0.06
 Nodes (32): Accordion, Alert, Alert Dialog, Avatar, Badge, Button, Card, Checkbox (+24 more)
@@ -312,9 +386,33 @@ Nodes (32): Accordion, Alert, Alert Dialog, Avatar, Badge, Button, Card, Checkbo
 Cohesion: 0.06
 Nodes (32): 1. Mobile-First Design, 2. Consistent Breakpoint Usage, 3. Test at Breakpoint Boundaries, 4. Use Container for Content Width, 5. Progressive Enhancement, 6. Avoid Too Many Breakpoints, Best Practices, Breakpoint System (+24 more)
 
+### Community 33 - "Context handoff — a subagent hands off to itself, is sealed, and is replaced"
+Cohesion: 0.25
+Nodes (7): Context handoff — a subagent hands off to itself, is sealed, and is replaced, Knobs, The loop, The relay — who spawns the replacement, What the model cannot do, and what stands in for it, Why, Workflows — where this actually pays
+
+### Community 34 - "Agent harnesses"
+Cohesion: 0.25
+Nodes (8): Adding Hermes, Agent compatibility contract, Agent harnesses, Commands, Interactive child-agent visibility, One canonical source, Setup, update, and doctor, Verification gate
+
+### Community 35 - "The load-test gate — equal-or-better, or it does not ship"
+Cohesion: 0.25
+Nodes (8): Metrics, Never fail open, On a fail: attribute first, fix second, Reading the result, The baseline cache, The load-test gate — equal-or-better, or it does not ship, Three verdicts, and why the third exists, What arms it
+
 ### Community 36 - "Typography Specifications"
 Cohesion: 0.06
 Nodes (30): Accessibility, Base System, Best Practices, Clean & Modern, Common Font Pairings, Contrast Requirements, CSS Implementation, Editorial (+22 more)
+
+### Community 37 - "The review ledger — a finding is raised once, and resolved visibly"
+Cohesion: 0.25
+Nodes (8): 1. The threads are the finding set, 2. The ledger rows record what a thread cannot, 3. Resolving is part of the fix, 4. Consequences for the first pass, 5. The approval tick is the review's last act — and its third record, 6. The loop does not halt on a finding — it records what it cannot close, The one thing a frozen gate does not outrank: a `Human:` directive, The review ledger — a finding is raised once, and resolved visibly
+
+### Community 38 - "The dev-cycle session orchestrates, never implements"
+Cohesion: 0.29
+Nodes (5): Consequences, Context, Decision, The dev-cycle session orchestrates, never implements, The discriminator (why arming happens at the END, not the start)
+
+### Community 39 - "Code minimalism is a plugin, scoped by agent, not a prompt"
+Cohesion: 0.29
+Nodes (7): Code minimalism is a plugin, scoped by agent, not a prompt, What ponytail offers, What was rejected, Why not on every agent, Why the level is pinned, Why the plugin rather than our own prose, Why three carve-outs, and only three
 
 ### Community 40 - "Logo Usage Rules"
 Cohesion: 0.07
@@ -328,13 +426,41 @@ Nodes (28): Alert, Anatomy, Anatomy, Anatomy, Anatomy, Anatomy, Badge, Button (+
 Cohesion: 0.07
 Nodes (28): Accordion, Alert, ARIA Labels, Checkbox and Radio, Color Contrast, Command Palette Navigation, Component-Specific Patterns, Dialog/Modal Navigation (+20 more)
 
+### Community 43 - "A repo whose criteria already hold is finished, not stalled"
+Cohesion: 0.29
+Nodes (7): A repo whose criteria already hold is finished, not stalled, Related, The bar goes up, not down, Three places that read "finished" as "broken", What is deliberately NOT changed, What it does to the run, Why the empty-branch rule could not tell the difference
+
 ### Community 44 - "Plan automation"
 Cohesion: 0.07
 Nodes (24): 1. Resolve the ticket and read the two inputs, 2. Survey the code so what you write matches the project, 3. Implement — strictly POM, 4. Verify by running the suite, 5. On a red run — investigate with `why`, then triage, 5a. Log app bugs into agent_logs/, 6. Report back, Coding — automate the plan (+16 more)
 
 ### Community 45 - "Process"
 Cohesion: 0.07
-Nodes (25): 1. The requirements are the bar, 2. The coding standards are the bottom line, 3. The repo's knowledge is your instrument, 4. The review level sets how deep you report, 5. Every claim carries a receipt, The basis for a review verdict, 1. Pin the fixed point, 2. Identify the spec source (the requirements — the bar) (+17 more)
+Nodes (27): 1. The requirements are the bar, 2. The coding standards are the bottom line, 3. The repo's knowledge is your instrument, 4. The review level sets how deep you report, 5. Every claim carries a receipt, The basis for a review verdict, 1. Pin the fixed point, 2. Identify the spec source (the requirements — the bar) (+19 more)
+
+### Community 46 - "The build does not stop at the first partial"
+Cohesion: 0.29
+Nodes (7): Configuration, Related, The build does not stop at the first partial, The cost, stated plainly, What the continuation is, and is not, What this does NOT make true, Why ADR 0027 missed it
+
+### Community 47 - "Issue tracker conventions"
+Cohesion: 0.29
+Nodes (6): A ticket is a record, not a transcript, Issue tracker conventions, Notes, Status lifecycle, The adapter is the only entry point, This workspace's settings
+
+### Community 48 - "Code minimalism (ponytail)"
+Cohesion: 0.29
+Nodes (7): Code minimalism (ponytail), Commands, How it reaches each spawn path, Installing it, The ladder, Where it stops, Who gets it, and why not everyone
+
+### Community 49 - "How a dev-cycle run ends"
+Cohesion: 0.29
+Nodes (7): A person has to decide (not a failure, and no bound would help), How a dev-cycle run ends, It finished, It ran out of budget, It worked to a bound and recorded what it could not close, The shape to keep, The stops that remain, and why each is genuinely terminal
+
+### Community 50 - ".skills-upstream/caveman/SKILL.md"
+Cohesion: 0.33
+Nodes (5): Auto-Clarity, Boundaries, Intensity, Persistence, Rules
+
+### Community 52 - "A reviewed-but-unresolved repo still gets the gate"
+Cohesion: 0.33
+Nodes (6): A reviewed-but-unresolved repo still gets the gate, Advisory means full work, no authority, Related, The bug this nearly shipped, The cost, stated plainly, When, exactly
 
 ### Community 53 - "Asset Approval Checklist"
 Cohesion: 0.08
@@ -343,6 +469,22 @@ Nodes (25): Accessibility, Archival, Asset Approval Checklist, Automation Suppor
 ### Community 54 - "Logo AI Prompt Engineering"
 Cohesion: 0.08
 Nodes (25): Common Pitfalls, Core Prompt Structure, Detailed Brief, Eco/Sustainable, Effective Keywords by Style, Fashion Brand, Healthcare, Industry-Specific Prompts (+17 more)
+
+### Community 55 - "A submodule pin needs a pushed commit, not a merge"
+Cohesion: 0.33
+Nodes (6): A submodule pin needs a pushed commit, not a merge, Related, Reordering was already tried, and it was not enough, The cost, stated plainly, The pointer is re-aimed before anything lands, What actually changed
+
+### Community 56 - "The local Harness set drives sync, and sync never removes a projection"
+Cohesion: 0.33
+Nodes (5): Consequences, Context, Decision, Rejected, The local Harness set drives sync, and sync never removes a projection
+
+### Community 57 - "Triage MCP registration is project scope for Cursor and Codex"
+Cohesion: 0.33
+Nodes (5): Alternatives rejected, Consequences, Context, Decision, Triage MCP registration is project scope for Cursor and Codex
+
+### Community 58 - "Tunnel sidecars (optional — for managed Postgres behind a VPC)"
+Cohesion: 0.33
+Nodes (6): Declaring a tunnel, gost (shared SOCKS proxy), How it works, Port-in-use behaviour, Prerequisites, Tunnel sidecars (optional — for managed Postgres behind a VPC)
 
 ### Community 59 - "Color Palette Management"
 Cohesion: 0.08
@@ -360,9 +502,25 @@ Nodes (24): Accessibility, Accessibility Requirements, ARIA States, Color Contra
 Cohesion: 0.08
 Nodes (24): Accessibility Patterns, Alternative: Tailwind-Only Setup, Best Practices, Common Patterns, Component Layer: shadcn/ui, Component Library Guide, Component + Styling Setup, Core Stack (+16 more)
 
+### Community 63 - "Tracker adapter"
+Cohesion: 0.33
+Nodes (5): Layout, Notes / limitations, Setup, Tracker adapter, Usage
+
 ### Community 64 - "Workflow"
 Cohesion: 0.08
 Nodes (23): Art Direction Styles (Reuse from Banner), Color & Contrast, Design Best Practices, HTML Design Rules, HTML Template Structure, Option A: Chrome Headless CLI (Recommended — zero dependencies), Option B: chrome-devtools skill, Option C: Playwright script (+15 more)
+
+### Community 65 - "A ticket is a record, not a transcript"
+Cohesion: 0.40
+Nodes (5): A ticket is a record, not a transcript, Related, Rules a writer must follow, The decision, What it was
+
+### Community 66 - "Declared plugins install at project scope, and every copy is kept current"
+Cohesion: 0.40
+Nodes (4): Consequences, Context, Decision, Declared plugins install at project scope, and every copy is kept current
+
+### Community 67 - "One workflow, one slash entry — authored scripts live under `.claude/workflows/src/`"
+Cohesion: 0.40
+Nodes (4): Consequences, Context, Decision, One workflow, one slash entry — authored scripts live under `.claude/workflows/src/`
 
 ### Community 68 - "tdd/SKILL.md"
 Cohesion: 0.09
@@ -372,6 +530,14 @@ Nodes (17): Deep Modules, Interface Design for Testability, Designing for Mockab
 Cohesion: 0.09
 Nodes (22): @apply Directive, Best Practices, Color Customization, Complete Tailwind Config, Configuration Examples, Content Configuration, Custom Color Palette, Custom Font Sizes (+14 more)
 
+### Community 70 - "Harness registry contract"
+Cohesion: 0.40
+Nodes (5): Harness registry contract, Projector interface, The byte budget, The determinism rule, Workflow adapter interface
+
+### Community 71 - "VCS adapter"
+Cohesion: 0.40
+Nodes (4): Auth, Layout, Notes, VCS adapter
+
 ### Community 72 - "Design System"
 Cohesion: 0.09
 Nodes (21): Best Practices, Chart.js Integration, Command, Component Spec Pattern, Contextual Decision Flow, Decision System CSVs, Design System, Integration (+13 more)
@@ -379,6 +545,26 @@ Nodes (21): Best Practices, Chart.js Integration, Command, Component Spec Patter
 ### Community 73 - "Image Generation Prompt Best Practices"
 Cohesion: 0.09
 Nodes (21): 1. SUBJECT (What), 2. CONTEXT (Where/When), 3. STYLE (How), Ambiguous Cases, Atmospheric Enhancement, Camera Control Terminology, Character Consistency, Compositional Integration (+13 more)
+
+### Community 74 - "A cross-repo finding escalates instead of looping"
+Cohesion: 0.50
+Nodes (4): A cross-repo finding escalates instead of looping, Consequences, Context, Decision
+
+### Community 75 - "A passed gate is recorded, not re-derived"
+Cohesion: 0.50
+Nodes (4): A passed gate is recorded, not re-derived, The one carve-out: a declared upstream that moved, What we accept in exchange, Why it qualifies on all three counts
+
+### Community 76 - "A QA-attributed fix is quality-checked, not re-reviewed"
+Cohesion: 0.50
+Nodes (4): A QA-attributed fix is quality-checked, not re-reviewed, Consequences, Context, Decision
+
+### Community 77 - "The run ticks its own approval; the merge stays human"
+Cohesion: 0.67
+Nodes (3): The run ticks its own approval; the merge stays human, What it buys, What this costs
+
+### Community 78 - "The run's base is state, and the PR/MR is asserted against it"
+Cohesion: 0.67
+Nodes (3): Related, The run's base is state, and the PR/MR is asserted against it, What this costs
 
 ### Community 87 - "Routing by Task Type"
 Cohesion: 0.10
@@ -401,8 +587,8 @@ Cohesion: 0.11
 Nodes (18): 1. Wordmark (Logotype), 2. Lettermark (Monogram), 3. Pictorial Mark (Brand Mark), 4. Abstract Mark, 5. Mascot, 6. Emblem, 7. Combination Mark, Aesthetic Styles (+10 more)
 
 ### Community 96 - "Headroom — input-side context compression"
-Cohesion: 0.11
-Nodes (17): Compression is explicit and file-scoped, Corollary, The consequence that is not about tokens, What headroom offers, What this rules in, What this rules out, Why not the proxy, Config (+9 more)
+Cohesion: 0.09
+Nodes (21): Compression is explicit and file-scoped, Corollary, The consequence that is not about tokens, What headroom offers, What this rules in, What this rules out, Why not the proxy, Config (+13 more)
 
 ### Community 102 - "4. Test scenarios"
 Cohesion: 0.11
@@ -444,13 +630,9 @@ Nodes (15): 22 Art Direction Styles, Banner Sizes & Art Direction Styles Referen
 Cohesion: 0.12
 Nodes (15): 22 Art Direction Styles, Banner Sizes & Art Direction Styles Reference, Complete Banner Sizes, CTA Rules, Design Principles, Pinterest Research Queries, Print, Print Specs (+7 more)
 
-### Community 127 - "0002-workspace-output-localization.md"
-Cohesion: 0.27
-Nodes (5): Refinement (2026-07-17): `.md` is English, `.html` localizes, Rejected alternatives, Workspace output localization uses an English spine, not full translation, Rejected alternatives, Thai register is address mode, and the speaker decides the pronoun
-
-### Community 135 - "legitimate cross-repo (app + backend) ticket."
-Cohesion: 0.13
-Nodes (14): Bar, Bugs — diagnose before you fix (🛑 MUST DO, non-negotiable), Build commands — always via `scripts/dev.sh` (you are the only role that runs these), distribute) once hit 398 turns; the batched-slice workflow below lands well under this., Hard turn ceiling. A full run (prep → slices → QA bug-fix loops → PR → review loops →, If you approach the cap, hand off cleanly rather than die mid-slice. Raise only for a, Inputs, legitimate cross-repo (app + backend) ticket. (+6 more)
+### Community 135 - "developer.md"
+Cohesion: 0.18
+Nodes (10): Bar, Bugs — diagnose before you fix (🛑 MUST DO, non-negotiable), Build commands — always via `scripts/dev.sh` (you are the only role that runs these), Inputs, Output language — resolve BEFORE writing (do this FIRST, before your role), PRD pipeline — pre-ticket bug/issue triage (sandbox, never commit), Prod data for a repro — the ONE sanctioned path (`/diagnosing-bugs` only), Standards (+2 more)
 
 ### Community 136 - "CIP Design Reference"
 Cohesion: 0.13
@@ -501,8 +683,8 @@ Cohesion: 0.14
 Nodes (13): Card Styles, Component Variants, CSS Structures, Feature Grid (3 columns), Layout Decision Flow, Layout Patterns, Layout Selection by Use Case, Metric Styles (+5 more)
 
 ### Community 166 - "README.md"
-Cohesion: 0.05
-Nodes (37): Issue tracker conventions, Notes, Status lifecycle, The adapter is the only entry point, This workspace's settings, 🚀 First run, 🔄 Keeping the tooling current, 📚 Learn more (+29 more)
+Cohesion: 0.14
+Nodes (11): Agent harnesses project from the Claude canonical source, Consequences, Considered options, 🚀 First run, 🔄 Keeping the tooling current, 📚 Learn more, 🗂️ Managing repos, ✅ Prerequisites (+3 more)
 
 ### Community 168 - "update.md"
 Cohesion: 0.15
@@ -517,8 +699,8 @@ Cohesion: 0.15
 Nodes (12): Categories, Dark Mode, File Organization, Layer 1: Primitive Tokens, Layer 2: Semantic Tokens, Layer 3: Component Tokens, Layer Overview, Migration from Flat Tokens (+4 more)
 
 ### Community 171 - "Deferred scope does not stop a run"
-Cohesion: 0.06
-Nodes (30): Consequences, Deferred scope does not stop a run, No ticket is filed, The cost we accepted, and what pays for it, The floor, What that cost, Why not simply proceed on `partial`, Why not stop at the PR, short of the gate (+22 more)
+Cohesion: 0.25
+Nodes (8): Consequences, Deferred scope does not stop a run, No ticket is filed, The cost we accepted, and what pays for it, The floor, What that cost, Why not simply proceed on `partial`, Why not stop at the PR, short of the gate
 
 ### Community 178 - "Primitive Tokens"
 Cohesion: 0.17
@@ -585,8 +767,8 @@ Cohesion: 0.20
 Nodes (9): Alert Tokens, Badge Tokens, Button Tokens, Card Tokens, Component Tokens, Dialog/Modal Tokens, Input Tokens, Table Tokens (+1 more)
 
 ### Community 216 - "PG Triage — staging + production"
-Cohesion: 0.20
-Nodes (9): Choosing the environment, Choosing the target, Output language — resolve BEFORE writing (do this FIRST), Persisting to a local repro (developer, `/diagnosing-bugs` only), PG Triage — staging + production, Preflight — is the MCP available?, Reporting, Safety — non-negotiable (+1 more)
+Cohesion: 0.18
+Nodes (10): Choosing the environment, Choosing the target, Output language — resolve BEFORE writing (do this FIRST), Persisting to a local repro (developer, `/diagnosing-bugs` only), PG Triage — staging + production, Preflight — is the MCP available?, Reporting, Safety — non-negotiable (+2 more)
 
 ### Community 217 - "Prod Redis Triage"
 Cohesion: 0.20
@@ -605,8 +787,8 @@ Cohesion: 0.20
 Nodes (9): Choose by the shape of the idea, Diagrams — pick the kind that fits the content, Don't let it break — the two rules that bite, Keep diagrams legible, Make the diagram interactive, Recipes, The export island (so the diagram survives export), Theming the diagram (+1 more)
 
 ### Community 224 - "`aiworks doctor` — what is missing, and the command that fixes it"
-Cohesion: 0.20
-Nodes (9): A doctor, not an installer, `aiworks doctor` — what is missing, and the command that fixes it, How a check is scored, In a linked worktree, Selftest, The `.env` rule, The groups, The required-var table (+1 more)
+Cohesion: 0.17
+Nodes (11): A doctor, not an installer, `aiworks doctor` — what is missing, and the command that fixes it, `aiworks fix`, and why `--fix` re-checks itself, How a check is scored, In a linked worktree, Selftest, The base check, and why it grades in two tiers, The `.env` rule (+3 more)
 
 ### Community 225 - "Worktree GC — reclaiming disk without serializing builds"
 Cohesion: 0.20
@@ -629,8 +811,8 @@ Cohesion: 0.22
 Nodes (8): Delegation contract — the edges of this role, Human-review directives, Output, Output language — resolve BEFORE writing (do this FIRST, before your role), Planning policy — resolve `planning.*` before acting (both keys are local-first), Project context — authoritative, read it, Steps, Talking to other agents — `/handoff` first (non-negotiable)
 
 ### Community 240 - "Git submodule conventions"
-Cohesion: 0.22
-Nodes (7): You are inside a git submodule checkout, …but READING one is fine, and so is a checkout that proves something, Detect it before you edit — two angles, check both, Git submodule conventions, It is enforced, not remembered, Redirect to the primary clone, The rule: never develop inside a submodule checkout
+Cohesion: 0.20
+Nodes (8): You are inside a git submodule checkout, …but READING one is fine, and so is a checkout that proves something, Detect it before you edit — two angles, check both, Git submodule conventions, Inside a dev-cycle run, a pointer move is the ONE sanctioned write — and it does not wait for a merge, It is enforced, not remembered, Redirect to the primary clone, The rule: never develop inside a submodule checkout
 
 ### Community 241 - "Ponytail"
 Cohesion: 0.22
@@ -654,11 +836,11 @@ Nodes (7): Asset rules, Bar, Company constraints — budget-tight, follow STRICT
 
 ### Community 269 - "oncall.md"
 Cohesion: 0.25
-Nodes (7): Bar, Handoff & tickets, How you work — one case timeline, five sources, one case file, Output language — resolve BEFORE writing (do this FIRST, before your role), Safety — non-negotiable (production data), The rule everything else serves, When you are invoked
+Nodes (7): Bar, Handoff & tickets, How you work — one case timeline, five sources, one case file (or the repair itself), Output language — resolve BEFORE writing (do this FIRST, before your role), Safety — non-negotiable (production data), The rule everything else serves, When you are invoked
 
 ### Community 270 - "performance-engineer.md"
-Cohesion: 0.25
-Nodes (7): Bar, Commands — profile through the repo's own harness, Output language — resolve BEFORE writing (do this FIRST, before your role), Review level, Skills, Team & collaboration, What you do
+Cohesion: 0.22
+Nodes (8): Bar, Commands — profile through the repo's own harness, Output language — resolve BEFORE writing (do this FIRST, before your role), Review level, Skills, Team & collaboration, What you do, Your threads — tag them, then resolve them
 
 ### Community 271 - "Case file"
 Cohesion: 0.25
@@ -698,7 +880,7 @@ Nodes (7): How to Use, Must Use, Recommended, Rule Categories by Priority, Skip,
 
 ### Community 280 - "AI Workspace"
 Cohesion: 0.25
-Nodes (8): AI Workspace, Config, Editors, Language, Language, Orchestration, Providers, Repos
+Nodes (8): Agent harnesses, AI Workspace, Config, Language, Language, Orchestration, Providers, Repos
 
 ### Community 281 - "Cloud Monitoring triage shares the read-only identity, and owns its correctness contract"
 Cohesion: 0.25
@@ -706,7 +888,7 @@ Nodes (7): Cloud Monitoring triage shares the read-only identity, and owns its c
 
 ### Community 283 - "Human-review comments — the `Human:` convention"
 Cohesion: 0.25
-Nodes (7): Authority — blocking, top-priority, Human-review comments — the `Human:` convention, Mechanics — fix, reply, resolve (the agent resolves), Routing — classify each directive by what it asks for, Two kinds of `Human:` comment — directive vs disposition, When a human resolves a thread and writes nothing, Where they live
+Nodes (8): Authority — blocking, top-priority, Human-review comments — the `Human:` convention, Mechanics — fix, reply, resolve (the agent resolves), Routing — classify each directive by what it asks for, Two kinds of `Human:` comment — directive vs disposition, When a human resolves a thread and writes nothing, Where they live, Who picks a directive up — including on a PR/MR that is already approved
 
 ### Community 284 - "Image generation (graphic-designer asset pipeline)"
 Cohesion: 0.25
@@ -720,17 +902,17 @@ Nodes (7): Honest limits, Knobs, Pieces, PII provenance — redact what PRODUCTI
 Cohesion: 0.25
 Nodes (7): Enforcement, Gates, History, Never committed, Plan artifacts — where a plan lives, and why it is never committed, The paths, Why per repo, not one file
 
-### Community 296 - "Coding standards"
-Cohesion: 0.25
-Nodes (6): Coding standards, **MUST DO**, **MUST NOT DO**, Date/time — **MUST DO**, **MUST NOT DO**, Test standards
+### Community 296 - "Test standards"
+Cohesion: 0.20
+Nodes (8): Coding standards, **MUST DO**, **MUST NOT DO**, Case count — **MUST DO**, Date/time — **MUST DO**, File structure — **MUST DO**, **MUST NOT DO**, Test standards
 
-### Community 297 - "Coding standards"
-Cohesion: 0.25
-Nodes (6): Coding standards, **MUST DO**, **MUST NOT DO**, Date/time — **MUST DO**, **MUST NOT DO**, Test standards
+### Community 297 - "Test standards"
+Cohesion: 0.20
+Nodes (8): Coding standards, **MUST DO**, **MUST NOT DO**, Case count — **MUST DO**, Date/time — **MUST DO**, File structure — **MUST DO**, **MUST NOT DO**, Test standards
 
 ### Community 298 - "guardian-engineer.md"
-Cohesion: 0.29
-Nodes (6): Bar, Commands, Output language — resolve BEFORE writing (do this FIRST, before your role), Scope & context, Team & collaboration, What you do
+Cohesion: 0.25
+Nodes (7): Bar, Commands, Output language — resolve BEFORE writing (do this FIRST, before your role), Scope & context, Team & collaboration, What you do, Your threads — tag them, then resolve them
 
 ### Community 299 - "product-owner.md"
 Cohesion: 0.29
@@ -845,7 +1027,7 @@ Cohesion: 0.33
 Nodes (5): Common edits, Editing an existing doc (Mode B — partial update), How the doc is structured (so you can find things), The four rules, When the existing doc wasn't made by this skill
 
 ### Community 338 - "Triage MCPs cover every deployed environment; only production is gated"
-Cohesion: 0.33
+Cohesion: 0.29
 Nodes (5): Staging is not the thing that needs authorizing, Staging Postgres gets a one-instance shortcut, and its data is not PII, The names lost their `prod_` prefix, The production gate lives inside the servers, not in the registration, Triage MCPs cover every deployed environment; only production is gated
 
 ### Community 339 - "Figma (design authoring & reading convention)"
@@ -869,8 +1051,8 @@ Cohesion: 0.40
 Nodes (4): Notify (review request), Result, When NOT to use, When to use
 
 ### Community 361 - "report-template.md"
-Cohesion: 0.40
-Nodes (4): Coverage, Failures, Results, {{ TC00n }} — {{ failing scenario title }}
+Cohesion: 0.33
+Nodes (5): Coverage, Failures, Results, Run history, {{ TC00n }} — {{ failing scenario title }}
 
 ### Community 362 - "self-control-gitflow"
 Cohesion: 0.40
@@ -933,24 +1115,24 @@ Cohesion: 0.50
 Nodes (3): Adding a self-hosted provider later, Backend: mermaid.ink / mermaid.live, Diagram adapter
 
 ## Knowledge Gaps
-- **1680 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration`, ``/handoff` discipline`, `Keep the technical group parallel & idle-free` (+1675 more)
-  These have ≤1 connection - possible missing edges or undocumented components.
-- **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **1909 isolated node(s):** `Persistence`, `Rules`, `Intensity`, `Auto-Clarity`, `Boundaries` (+1904 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2054 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **19 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Cursor gets a generated mirror of the Claude config, built from symlinks` connect `Cursor gets a generated mirror of the Claude config, built from symlinks` to `CONTEXT.md`?**
-  _High betweenness centrality (0.001) - this node is a cross-community bridge._
-- **What connects `Output language — resolve BEFORE writing (do this FIRST, before your role)`, `Hard rule — conductor only, never the hands`, `Team & collaboration` to the rest of the system?**
-  _1680 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `How a dev-cycle run ends` connect `How a dev-cycle run ends` to `Resuming a workflow after the config changed`?**
+  _High betweenness centrality (0.002) - this node is a cross-community bridge._
+- **Why does `A submodule pin needs a pushed commit, not a merge` connect `A submodule pin needs a pushed commit, not a merge` to `CONTEXT.md`?**
+  _High betweenness centrality (0.002) - this node is a cross-community bridge._
+- **What connects `Persistence`, `Rules`, `Intensity` to the rest of the system?**
+  _1909 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `During the session` be split into smaller, more focused modules?**
+  _Cohesion score 0.09090909090909091 - nodes in this community are weakly interconnected._
 - **Should `Business Requirements Document: App Launcher Logo` be split into smaller, more focused modules?**
   _Cohesion score 0.06666666666666667 - nodes in this community are weakly interconnected._
 - **Should `Business Requirements Document: Splash Screen` be split into smaller, more focused modules?**
   _Cohesion score 0.07692307692307693 - nodes in this community are weakly interconnected._
 - **Should `BRD: Dashboard Page (Single Home, No Separate Landing)` be split into smaller, more focused modules?**
   _Cohesion score 0.1 - nodes in this community are weakly interconnected._
-- **Should `Codegraph keeps the code, graphify maps the prose` be split into smaller, more focused modules?**
-  _Cohesion score 0.1 - nodes in this community are weakly interconnected._
-- **Should `Tailwind CSS Utility Reference` be split into smaller, more focused modules?**
-  _Cohesion score 0.045454545454545456 - nodes in this community are weakly interconnected._

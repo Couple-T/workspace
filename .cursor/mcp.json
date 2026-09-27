@@ -1,1 +1,89 @@
-../.mcp.json
+{
+  "mcpServers": {
+    "codegraph": {
+      "args": [
+        "serve",
+        "--mcp"
+      ],
+      "command": "codegraph",
+      "type": "stdio"
+    },
+    "graphify_docs": {
+      "command": "graphify-mcp",
+      "type": "stdio"
+    },
+    "k8s_triage": {
+      "args": [
+        "run",
+        "--quiet",
+        "/Users/employee/projects/personal/couple-t/workspace/scripts/k8s/k8s_triage_mcp.py"
+      ],
+      "command": "uv"
+    },
+    "mcp-image": {
+      "args": [
+        "-c",
+        "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); exec bash \"$ROOT/scripts/mcp/mcp-image.sh\""
+      ],
+      "command": "bash",
+      "type": "stdio"
+    },
+    "monitoring_triage": {
+      "args": [
+        "run",
+        "--quiet",
+        "/Users/employee/projects/personal/couple-t/workspace/scripts/monitoring/monitoring_triage_mcp.py"
+      ],
+      "command": "uv"
+    },
+    "n8n-mcp": {
+      "args": [
+        "-c",
+        "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); exec bash \"$ROOT/scripts/mcp/n8n-mcp.sh\""
+      ],
+      "command": "bash",
+      "type": "stdio"
+    },
+    "pg_triage": {
+      "args": [
+        "run",
+        "--quiet",
+        "/Users/employee/projects/personal/couple-t/workspace/scripts/db/pg_triage_mcp.py"
+      ],
+      "command": "uv"
+    },
+    "postgres_main": {
+      "type": "sse",
+      "url": "http://localhost:25432/sse"
+    },
+    "postgres_secondary": {
+      "type": "sse",
+      "url": "http://localhost:25433/sse"
+    },
+    "redis": {
+      "args": [
+        "--from",
+        "redis-mcp-server@latest",
+        "redis-mcp-server",
+        "--url",
+        "redis://localhost:6379"
+      ],
+      "command": "uvx"
+    },
+    "redis_triage": {
+      "args": [
+        "run",
+        "--quiet",
+        "/Users/employee/projects/personal/couple-t/workspace/scripts/redis/redis_triage_mcp.py"
+      ],
+      "command": "uv"
+    },
+    "sonarqube": {
+      "headers": {
+        "Authorization": "Bearer ${SONARQUBE_TOKEN}"
+      },
+      "type": "http",
+      "url": "http://localhost:25434/mcp"
+    }
+  }
+}

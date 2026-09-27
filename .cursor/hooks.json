@@ -28,6 +28,11 @@
         "matcher": "Shell"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-bash-context-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh'",
         "timeout": 10,
         "matcher": "Shell"
@@ -56,6 +61,16 @@
         "matcher": "Shell"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-orchestrator-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-codegraph-nudge.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh'",
         "timeout": 10,
         "matcher": "Read"
@@ -81,6 +96,11 @@
         "matcher": "Write|Edit|NotebookEdit"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-orchestrator-guard.sh'",
+        "timeout": 10,
+        "matcher": "Write|Edit|NotebookEdit"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-repo-context.sh'",
         "timeout": 10,
         "matcher": "Read|Write|Edit"
@@ -102,6 +122,10 @@
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/context-handoff.sh'",
         "timeout": 10
       }
     ],
@@ -134,6 +158,18 @@
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-context-budget.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/context-handoff.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-agent-relay.sh'",
         "timeout": 10
       }
     ],
@@ -185,6 +221,12 @@
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stagehand-follow.sh'",
+        "timeout": 10
+      }
+    ],
+    "subagentStop": [
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-agent-relay.sh'",
         "timeout": 10
       }
     ]

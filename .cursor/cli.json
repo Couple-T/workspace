@@ -63,6 +63,7 @@
       "Read(**/id_ed25519)",
       "Read(**/id_rsa)",
       "Read(**/secrets/**)",
+      "Read(**/socks.auth)",
       "Read(/etc/**)",
       "Read(~/.aws/**)",
       "Read(~/.claude/**)",
@@ -72,11 +73,13 @@
       "Shell(git push -f *)",
       "Shell(hcat *.env)",
       "Shell(hcat *.env.*)",
+      "Shell(hcat *socks.auth)",
       "Shell(kubectl *)",
       "Shell(rm -rf /*)",
       "Shell(rm -rf ~*)",
       "Shell(sudo *)",
       "Write(**/.env)",
+      "Write(**/socks.auth)",
       "Write(~/.aws/**)",
       "Write(~/.ssh/**)"
     ]

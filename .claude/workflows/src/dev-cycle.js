@@ -99,23 +99,23 @@ export const meta = {
 // invoke the workflow BY NAME (a fresh run). Never edit a constant in a persisted run script:
 // docs/agents/workflow-resume.md says why, and what it cost.
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
-const TICKET_PREFIX = 'FM'
-const AUTO_MERGE = false        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
-const AUTO_APPROVE_PLAN = false // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
+const TICKET_PREFIX = 'FMA'
+const AUTO_MERGE = true        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
+const AUTO_APPROVE_PLAN = true // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
 const PLAN_TO_HTML = false     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
-const NOTIFY = true        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
+const NOTIFY = false        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
 const NOTIFY_PROVIDER = 'slack' // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
-const NOTIFY_CHANNEL = '#code-reviews'  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
+const NOTIFY_CHANNEL = '#feeed-me-app'  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
 const NOTIFY_DM = 'U00000000000'  // from workspace.config.yaml notify.dm_on_incomplete; a Slack MEMBER id — every non-complete ending DMs it instead of posting to the channel
-const DESIGN_ENABLED = false     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
+const DESIGN_ENABLED = true     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
 const QUALITY_GATE = 'none'     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
-const REVIEW_LEVEL = 'strict'     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
+const REVIEW_LEVEL = 'thorough'     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
 const LANGUAGE = 'en'     // from workspace.config.yaml language; 'th' ⇒ English spine, Thai prose (docs/agents/language.md; see LANGUAGE_DIRECTIVE below); 'en' ⇒ unchanged
 const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-branch non-degradation gate (docs/agents/loadtest-gate.md)
   tolerancePct: 10,            // a metric may degrade this much before it counts as a regression
   noiseRuns: 2,                // base-vs-base runs used to measure the env's own run-to-run spread
   noiseCeilingMultiple: 2,     // noise floor above tolerancePct × this ⇒ verdict 'unavailable' (env too coarse to judge)
-  maxFixRounds: 3,             // attributed-regression → developer fix → re-run loops
+  maxFixRounds: 2,             // attributed-regression → developer fix → re-run loops before halting
   baselineCache: '~/.cache/aiworks/loadtest-baselines',
 }
 const TEST_SUITE = {   // from workspace.config.yaml test_suite.*; read by the Test-suite phase red-gate triage loop
@@ -123,43 +123,52 @@ const TEST_SUITE = {   // from workspace.config.yaml test_suite.*; read by the T
   maxSuiteRepairAttempts: 3,   // a suite that COULD NOT RUN: repair attempts before it is RECORDED unverified (docs/adr/0027)
 }
 const REVIEW = {   // from workspace.config.yaml review.*; the review loop's bounds (docs/adr/0027)
-  maxRounds: 14,               // reviewer pass + fix pass per repo — the ONE terminal bound
-  maxRegressionFixes: 3,       // a fix that caused a new blocking problem, handed straight back
-  maxStallReattempts: 3,       // same finding set + no new commit ⇒ ESCALATE the brief, then retry
-  maxEscalationAttempts: 3,    // cross-repo fix + scoped re-gate, per (repo, finding)
+  maxRounds: 14,                // reviewer pass + fix pass per repo — the ONE terminal bound
+  maxRegressionFixes: 3,   // a fix that caused a new blocking problem, handed straight back
+  maxStallReattempts: 3,        // same finding set + no new commit ⇒ ESCALATE the brief, then retry
+  maxEscalationAttempts: 3,// cross-repo fix + scoped re-gate, per (repo, finding)
 }
 const BUILD = {   // from workspace.config.yaml build.*; the build phase's own bound (docs/adr/0032)
-  maxContinuationPasses: 3,    // a `partial`/`blocked` handoff is CONTINUED this many times before it is RECORDED
+  maxContinuationPasses: 3,  // a `partial`/`blocked` handoff is CONTINUED this many times before it is RECORDED
 }
 const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
   tokenBudget: 2000000,        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable
 }
 const STATUS = {
-  to_do: 'To do',
-  in_progress: 'In progress',
-  code_review: 'Code review',
-  ready_to_merge: 'Ready to merge',
-  ready_to_test: 'Ready to test',
+  not_started: 'Backlog',
+  todo: 'To Do',
+  in_progress: 'In Progress',
+  code_review: 'In Review',
+  ready_to_test: 'Ready To Test',
   testing: 'Testing',
   done: 'Done',
 }
 const REPOS = {
-  'your-app': {
-    path: 'your-app', kind: 'frontend',
+  'feeedme-app': {
+    path: 'feeedme-app', kind: 'mobile',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
-    green: '<keep-it-green check, e.g. lint + unit tests>',
+    green: 'flutter test',
     guardianFocus: 'secrets, data-protection',
     distribute: 'firebase',
   },
-  'your-tests': {
-    path: 'your-tests', kind: 'test-suite',
-    base: { feature: 'develop', fix: 'main' },
+  'feeedme-appium': {
+    path: 'feeedme-appium', kind: 'test-suite',
+    base: { feature: 'main', fix: 'main' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
-    green: 'E2E suite passed successfully',
+    green: 'appium tests passed successfully',
     testSuite: true,
+    distribute: null,
+  },
+  'feeed-cs': {
+    path: 'feeed-cs', kind: 'automation',
+    base: { feature: 'main', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'n8n workflows are running successfully',
+    guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
 }

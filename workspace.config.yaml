@@ -62,9 +62,6 @@ monitoring:
     feeed-me/staging: gen-lang-client-0088446822
     feeed-me/prod: gen-lang-client-0088446822
 
-diagrams:
-  enabled: true
-
 artifacts:
   enabled: false
 
@@ -174,6 +171,7 @@ products:
         desc: Android/iOS E2E UI tests for the feeed-me app.
         lang: javascript
         green: "appium tests passed successfully"
+        feature_base: main
 
   - id: feeed-me-cs
     repos:
@@ -183,3 +181,4 @@ products:
         lang: n8n, terraform
         green: "n8n workflows are running successfully"
         guardian_focus: "secrets, data-protection"
+        feature_base: main
