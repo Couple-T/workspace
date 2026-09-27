@@ -95,18 +95,14 @@
       "Read(**/id_ed25519)",
       "Read(**/.aws/credentials)",
       "Read(**/secrets/**)",
-      "Write(**/.env)",
       "Edit(**/.env)",
-      "Write(**/socks.auth)",
       "Edit(**/socks.auth)",
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
       "Read(~/.claude/**)",
       "Read(//etc/**)",
       "Edit(~/.ssh/**)",
-      "Write(~/.ssh/**)",
-      "Edit(~/.aws/**)",
-      "Write(~/.aws/**)"
+      "Edit(~/.aws/**)"
     ]
   },
   "hooks": {
