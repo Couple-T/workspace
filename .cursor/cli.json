@@ -19,6 +19,7 @@
       "Read(**)",
       "Shell(*git remote get-url*)",
       "Shell(*scripts/notify/*)",
+      "Shell(*scripts/observability/*)",
       "Shell(*scripts/tracker/*)",
       "Shell(*scripts/vcs/*)",
       "Shell(*scripts/vcs/pr-approve.sh*)",

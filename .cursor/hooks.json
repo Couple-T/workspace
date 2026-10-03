@@ -206,7 +206,7 @@
     ],
     "sessionEnd": [
       {
-        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/redis-triage-tunnel-reap.sh'",
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/triage-tunnel-reap.sh'",
         "timeout": 15
       }
     ],
