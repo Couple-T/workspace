@@ -59,6 +59,7 @@ the MCP when done" teardown, without needing to kill the managed process.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import difflib
 import logging
 import json
@@ -246,8 +247,8 @@ def _classify(
         return None, REASON_UPPER, _closest(prefix, var)
 
     check_dsn = True
-    if prefix == STAGING_PREFIX and var == pg_staging.DSN_VAR:
-        return None, None, None  # the base DSN, never a target
+    if prefix == STAGING_PREFIX and var in (pg_staging.DSN_VAR, pg_staging.DB_SHARD_FMT_VAR):
+        return None, None, None  # the base DSN / the shard database pattern — config, never a target
     if prefix == STAGING_PREFIX and suffix.startswith("DB_"):
         name, check_dsn = suffix[3:], False  # a database name on the base DSN
         if name.startswith(pg_prod.TOKEN):  # a shard database is the pattern, never a mapping
@@ -383,6 +384,8 @@ def _file_key_report(path: Path) -> list[tuple[str, str]]:
                 out.append(("WARN", f"{var} — {REASON_ORPHAN.format(base=base)}"))
             else:
                 out.append(("ok", f"{var} -> declares shard role of {base}"))
+        elif var == pg_staging.DB_SHARD_FMT_VAR:
+            out.append(("ok", f"{var} -> staging shard database pattern"))
         elif key is None:
             out.append(("ok", f"{var} -> staging base DSN"))
         else:
@@ -1074,6 +1077,21 @@ for _sig in (signal.SIGTERM, signal.SIGINT):
         pass
 
 
+@contextlib.contextmanager
+def _hermetic_env(**synthetic: str):
+    """Selftest scope with NO real PGPROD_/PGSTG_ var: snapshot + remove every one (load_dotenv put
+    the machine's .env here at import), set the synthetic ones, and on exit drop whatever the
+    block set and restore the snapshot byte-for-byte."""
+    saved = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith((ENV_PREFIX, STAGING_PREFIX))}
+    os.environ.update(synthetic)
+    try:
+        yield
+    finally:
+        for k in [k for k in os.environ if k.startswith((ENV_PREFIX, STAGING_PREFIX))]:
+            del os.environ[k]
+        os.environ.update(saved)
+
+
 def _selftest() -> int:
     """Validate deps + config + policy without connecting to anything. Prints only booleans
     (which targets are configured) — never a DSN value, honoring the workspace .env guard."""
@@ -1167,13 +1185,23 @@ def _selftest() -> int:
     check("PGSTG_MAIN_TUNNEL is a sidecar", stg("PGSTG_MAIN_TUNNEL") == (None, None, None))
     check("PGSTG_DB_SHARD_X refused; advise the pattern var",
           stg("PGSTG_DB_SHARD_X", "shard_x") == (None, pg_prod.REASON_SHARD, pg_staging.DB_SHARD_FMT_VAR))
+    check("PGSTG_DB_SHARD_FMT is the pattern var, not a target",
+          stg(pg_staging.DB_SHARD_FMT_VAR, "zz_%s") == (None, None, None))
 
     # --- discovery: synthetic prod + staging vars, set and restored in-process --------------
     print("discovery:")
     _syn = {"PGPROD_ZZQ": _dsn_ok, "PGPROD_zzbad": _dsn_ok, "PGSTG_ZZQ": _dsn_ok, "PGSTG_DB_ZZW": "zzw_db"}
-    saved_syn = {k: os.environ.pop(k, None) for k in _syn}
-    os.environ.update(_syn)
-    try:
+    # Regression guard: a configured machine's real .env (a shard-0 DSN, a named prod DSN, the
+    # staging base DSN + a database mapping) must not break the synthetic checks below — stand
+    # in for one, and expect every value back untouched after the last env-mutating section.
+    _real = {
+        "PGPROD_REALHOST_SHARD_0": _dsn_ok,
+        "PGPROD_REALHOST": _dsn_ok,
+        pg_staging.DSN_VAR: _dsn_ok,
+        "PGSTG_DB_ZZMAIN": "zzmain_db",
+    }
+    os.environ.update(_real)
+    with _hermetic_env(**_syn):  # the synthetic names are the only claimants
         check("zzq discovered on prod", "zzq" in _configured_targets(ENV_PROD) and _configured(ENV_PROD, "zzq"))
         check("zzq + zzw discovered on staging", {"zzq", "zzw"} <= set(_configured_targets(ENV_STAGING)))
         check("zzw dbname mapped", pg_staging.dbname("zzw") == "zzw_db")
@@ -1200,14 +1228,10 @@ def _selftest() -> int:
               entry is not None and set(entry.get("conflict", [])) == {"PGPROD_ZZH_SHARD_0", "PGPROD_ZZI"})
         check("unrecognized names both claimants",
               {"PGPROD_ZZH_SHARD_0", "PGPROD_ZZI"} <= {u["var"] for u in _unrecognized()})
-    finally:
-        for k in ("PGPROD_ZZH_SHARD_0", "PGPROD_ZZI", "PGPROD_ZZI_SHARD"):
-            os.environ.pop(k, None)
-        for k, v in saved_syn.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
+        os.environ[pg_staging.DB_SHARD_FMT_VAR] = "zz_%s"
+        check("PGSTG_DB_SHARD_FMT is not unrecognized",
+              pg_staging.DB_SHARD_FMT_VAR not in {u["var"] for u in _unrecognized()})
+        check("PGSTG_DB_SHARD_FMT is not a staging target", "shard_fmt" not in _configured_targets(ENV_STAGING))
 
     # --- file report: a synthetic dotenv file; only key names + fixed reasons may print ---
     print("file report:")
@@ -1224,6 +1248,8 @@ def _selftest() -> int:
         "PGSTG_DSN=postgresql://ro:pw@h/db4\n"
         "PGSTG_DB_ZZW=zzw_db\n"
         "PGSTG_ZZQ=postgresql://ro:pw@h/db5\n"
+        "PGSTG_DB_SHARD_FMT=zz_%s\n"
+        "PGSTG_DB_SHARD_X=zz_x\n"
         'PGPROD_ZZD="postgresql://ro:pw@h/db6\n'
         'PGPROD_ZZE=postgresql://ro:pw@h/db7"\n'
         "PGPROD_ZZF_SHARD_1=postgresql://ro:pw@h/db9\n"
@@ -1232,12 +1258,12 @@ def _selftest() -> int:
         "PGPROD_ZZG_SHARD_TUNNEL=tunnel=gost;local=65444\n"
         "PGPROD_ZZORPHAN2_SHARD=3\n"
     )
-    saved_shadow = os.environ.pop("PGPROD_ZZSHADOW", None)
-    os.environ["PGPROD_ZZSHADOW"] = "postgresql://ro:other@h/db8"
     with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as fh:
         fh.write(_fixture)
+    # Hermetic: a real PGSTG_DSN (or any fixture name) in the process env would read as shadowed.
     try:
-        rep = {line.split(" ", 1)[0]: (status, line) for status, line in _file_key_report(Path(fh.name))}
+        with _hermetic_env(PGPROD_ZZSHADOW="postgresql://ro:other@h/db8"):
+            rep = {line.split(" ", 1)[0]: (status, line) for status, line in _file_key_report(Path(fh.name))}
         joined = "\n".join(line for _, line in rep.values())
         check("fixture: named target ok + sidecar ok",
               rep["PGPROD_ZZA"] == ("ok", "PGPROD_ZZA -> target zza (named)")
@@ -1252,6 +1278,10 @@ def _selftest() -> int:
         check("fixture: PGSTG_DSN is the base DSN", rep["PGSTG_DSN"] == ("ok", "PGSTG_DSN -> staging base DSN"))
         check("fixture: PGSTG_DB_ZZW ok (named)", rep["PGSTG_DB_ZZW"] == ("ok", "PGSTG_DB_ZZW -> target zzw (named)"))
         check("fixture: PGSTG_ZZQ ok (named)", rep["PGSTG_ZZQ"] == ("ok", "PGSTG_ZZQ -> target zzq (named)"))
+        check("fixture: PGSTG_DB_SHARD_FMT is the shard database pattern",
+              rep["PGSTG_DB_SHARD_FMT"] == ("ok", "PGSTG_DB_SHARD_FMT -> staging shard database pattern"))
+        check("fixture: PGSTG_DB_SHARD_X fails; advise the pattern var",
+              rep["PGSTG_DB_SHARD_X"] == ("FAIL", f"PGSTG_DB_SHARD_X — {pg_prod.REASON_SHARD}; did you mean {pg_staging.DB_SHARD_FMT_VAR}?"))
         check("fixture: unbalanced quote swallows the next line",
               rep["PGPROD_ZZD"][0] == "FAIL" and REASON_MULTILINE in rep["PGPROD_ZZD"][1] and "PGPROD_ZZE" not in rep)
         check("fixture: token var -> shard_1", rep["PGPROD_ZZF_SHARD_1"] == ("ok", "PGPROD_ZZF_SHARD_1 -> target shard_1 (shard)"))
@@ -1263,10 +1293,8 @@ def _selftest() -> int:
               all(s not in joined for s in ("pw", "other", "db1", "db8", "db9", "db10", "65441", "65442", "65443", "65444", "zzw_db")))
     finally:
         os.unlink(fh.name)
-        if saved_shadow is None:
-            os.environ.pop("PGPROD_ZZSHADOW", None)
-        else:
-            os.environ["PGPROD_ZZSHADOW"] = saved_shadow
+    check("fixture sections are hermetic: the real prod/staging vars survive, restored",
+          {k: os.environ.pop(k, None) for k in _real} == _real)
 
     check("PYTHON_DOTENV_DISABLED is not set", not os.environ.get("PYTHON_DOTENV_DISABLED"),
           "" if not os.environ.get("PYTHON_DOTENV_DISABLED") else "set — load_dotenv silently skipped scripts/db/.env")

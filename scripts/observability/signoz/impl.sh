@@ -139,3 +139,125 @@ obs_query_logs() {
 
   printf '%s' "$rows" | jq -r '.[] | "\(.timestamp)  \(.severity_text // .data.severity_text // "")  \(.body // .data.body // .)"'
 }
+
+# ─── metrics + dashboards ─────────────────────────────────────────────────────────────────────
+# Endpoints:
+#   POST {base}/api/v4/query_range          — queryType=promql (promQueries) or a widget's own
+#                                             composite query (builderQueries / chQueries)
+#   GET  {base}/api/v2/dashboards           — every dashboard (v1 answers 501 dashboard_deprecated)
+#   GET  {base}/api/v2/dashboards/{id}      — one dashboard
+#
+# obs_http METHOD PATH [BODY] -> response body on stdout; dies on a non-2xx status with
+# `signoz HTTP <code>: <start of body>`. The API key travels in a header FILE (process
+# substitution), never on curl's argv, so it is not visible in `ps`. OBS_DRY_RUN=1 prints the
+# method, URL, header (key masked as ***) and body, sends nothing and returns 0.
+obs_http() {
+  local method="$1" url="${SIGNOZ_BASE_URL}$2" body="${3:-}" out code
+  if [[ "${OBS_DRY_RUN:-0}" == 1 ]]; then
+    printf '%s %s\n%s: ***\n' "$method" "$url" "$SIGNOZ_AUTH_HEADER"
+    [[ -n "$body" ]] && printf '%s\n' "$body"
+    return 0
+  fi
+  out="$(curl -sS -X "$method" -H @<(printf '%s: %s' "$SIGNOZ_AUTH_HEADER" "$SIGNOZ_API_KEY") \
+        -H 'Content-Type: application/json' ${body:+--data "$body"} -w '\n%{http_code}' "$url")" \
+    || die "signoz request failed (network)"
+  code="${out##*$'\n'}"; out="${out%$'\n'*}"
+  [[ "$code" == 2* ]] || die "signoz HTTP $code: ${out:0:200}"
+  printf '%s' "$out"
+}
+
+# _obs_query_range BODY -> normalized `{series:[{query, labels, points:[[ms, number|null]]}]}`.
+# Value strings that are not numbers (NaN, +Inf, -Inf) become null. OBS_RAW=1 prints the
+# provider response unparsed; an unrecognized shape prints raw JSON plus a stderr note.
+_obs_query_range() {
+  local resp
+  resp="$(obs_http POST /api/v4/query_range "$1")" || exit 1
+  [[ "${OBS_DRY_RUN:-0}" == 1 ]] && { printf '%s\n' "$resp"; return 0; }
+  if printf '%s' "$resp" | jq -e '.error? // (.status? == "error")' >/dev/null 2>&1; then
+    die "signoz rejected the request: $(printf '%s' "$resp" | jq -r '.error // .errorType // .message')"
+  fi
+  if [[ "${OBS_RAW:-0}" == 1 ]]; then printf '%s' "$resp" | jq '.'; return 0; fi
+  if ! printf '%s' "$resp" | jq -e '.data.result? | type == "array"' >/dev/null 2>&1; then
+    echo "note: unrecognized response shape — printing raw JSON" >&2
+    printf '%s' "$resp" | jq '.'
+    return 0
+  fi
+  printf '%s' "$resp" | jq -c '{series: [.data.result[] | .queryName as $q | (.series // [])[]
+    | {query: $q, labels: (.labels // {}),
+       points: [(.values // [])[] | [.timestamp,
+         (if (.value|type) == "number" then .value
+          elif (.value|type) == "string" and (.value|test("^-?[0-9.]+([eE][-+]?[0-9]+)?$")) then (.value|tonumber)
+          else null end)]]}]}'
+}
+
+# obs_query_promql QUERY FROM_MS TO_MS STEP_S — the query string is passed through jq --arg, so
+# backslashes and quoted label names reach the provider byte-exact; PromQL is never rewritten.
+obs_query_promql() {
+  local body
+  body="$(jq -n --arg q "$1" --argjson start "$2" --argjson end "$3" --argjson step "$4" '
+    {start: $start, end: $end, step: $step,
+     compositeQuery: {queryType: "promql", panelType: "graph",
+                      promQueries: {A: {name: "A", query: $q, disabled: false, legend: ""}}}}')"
+  _obs_query_range "$body"
+}
+
+# obs_query_composite COMPOSITE_JSON VARIABLES_JSON FROM_MS TO_MS STEP_S — run a widget's own
+# compositeQuery; VARIABLES_JSON is the `{name: value}` object the provider substitutes.
+obs_query_composite() {
+  local body
+  body="$(jq -n --argjson cq "$1" --argjson vars "$2" --argjson start "$3" --argjson end "$4" --argjson step "$5" '
+    {start: $start, end: $end, step: $step, variables: $vars, compositeQuery: $cq}')"
+  _obs_query_range "$body"
+}
+
+# v2 returns a Perses-style document: .spec.panels is an object keyed by panel id, and a panel's
+# queries sit at .spec.queries[0].spec.plugin.spec.queries[] as {type, spec}. `widgets` maps each
+# panel back to the widget shape get-dashboard.sh reads ({id, title, panelTypes, query:{queryType,
+# promql[], clickhouse_sql[], builder}}), so the entry script keeps one shape. A builder panel keeps
+# its v2 spec and is flagged `v5: true`: it is not the v4 builder shape /api/v4/query_range runs,
+# so get-dashboard.sh --run refuses it rather than send a wrong query.
+_OBS_V2_JQ='
+  def kind: {"signoz/TimeSeriesPanel":"graph","signoz/NumberPanel":"value","signoz/TablePanel":"table"}[.]
+            // (. // "" | sub("^signoz/"; "") | sub("Panel$"; "") | ascii_downcase);
+  def widgets: to_entries[] | .key as $id | .value as $p
+    | [$p.spec.queries[]?.spec.plugin.spec.queries[]?] as $q
+    | {id: $id, title: ($p.spec.display.name // ""), panelTypes: ($p.spec.plugin.kind | kind),
+       query: {
+         queryType: (if ($q | any(.type == "promql")) then "promql"
+                     elif ($q | any(.type == "clickhouse_sql")) then "clickhouse_sql" else "builder" end),
+         promql: [$q[] | select(.type == "promql") | .spec | {name, query, legend, disabled}],
+         clickhouse_sql: [$q[] | select(.type == "clickhouse_sql") | .spec | {name, query, legend, disabled}],
+         builder: {queryData: [$q[] | select(.type == "builder_query") | .spec + {queryName: .spec.name}],
+                   queryFormulas: [$q[] | select(.type == "builder_formula") | .spec + {queryName: .spec.name}]},
+         v5: ($q | any(.type | startswith("builder")))}};
+'
+
+# obs_list_dashboards -> `[{id, title, tags, widgets:<count>}]` (tags render as `key:value`)
+obs_list_dashboards() {
+  local resp
+  resp="$(obs_http GET /api/v2/dashboards)" || exit 1
+  [[ "${OBS_DRY_RUN:-0}" == 1 ]] && { printf '%s\n' "$resp"; return 0; }
+  if ! printf '%s' "$resp" | jq -e '.data.dashboards? | type == "array"' >/dev/null 2>&1; then
+    echo "note: unrecognized response shape — printing raw JSON" >&2
+    printf '%s' "$resp" | jq '.'; return 0
+  fi
+  printf '%s' "$resp" | jq -c '[.data.dashboards[] | {id, title: (.spec.display.name // .name // ""),
+    tags: [(.tags // [])[] | "\(.key):\(.value)"], widgets: (.spec.panels | if . == null then null else length end)}]'
+}
+
+# obs_get_dashboard ID -> `{id, title, variables:[{name, default}], widgets:[<widget>]}`.
+# ponytail: variables map from the Perses ListVariable shape (name, defaultValue); no live
+# dashboard with variables was available to confirm it. An unmapped default is null, and
+# get-dashboard.sh --run then refuses the unresolved variable instead of guessing.
+obs_get_dashboard() {
+  local resp
+  resp="$(obs_http GET "/api/v2/dashboards/$1")" || exit 1
+  [[ "${OBS_DRY_RUN:-0}" == 1 ]] && { printf '%s\n' "$resp"; return 0; }
+  if ! printf '%s' "$resp" | jq -e '.data.spec.panels? | type == "object"' >/dev/null 2>&1; then
+    echo "note: unrecognized response shape — printing raw JSON" >&2
+    printf '%s' "$resp" | jq '.'; return 0
+  fi
+  printf '%s' "$resp" | jq -c "$_OBS_V2_JQ"'.data | {id, title: (.spec.display.name // .name // ""),
+    variables: [(.spec.variables // [])[] | {name: (.spec.name // .name), default: (.spec.defaultValue // null)}],
+    widgets: [.spec.panels | widgets]}'
+}

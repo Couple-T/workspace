@@ -14,22 +14,38 @@ tunnel** — or skips it, with `tunnel=none`, when you already have a route.
 
 ## Targets
 
-Declared in `scripts/redis/.env`, one variable per target (see `.env.example`), addressed as
-`target="<name>"`:
+Declared in `scripts/redis/.env`, one variable per target (see `.env.example`). The **prefix
+decides the environment** — the same convention as `PGPROD_`/`PGSTG_` in `scripts/db/.env`:
 
 ```
-REDISPROD_<NAME>=host=<addr>;port=6379;local=<port>;prod=<bool>;tunnel=gcloud;vm=<vm>;zone=<zone>
+REDISPROD_<NAME>=host=<addr>;port=6379;local=<port>;tunnel=gcloud;vm=<vm>;zone=<zone>   # production
+REDISSTG_<NAME>=host=<addr>;port=6379;local=<port>;tunnel=gcloud;vm=<vm>;zone=<zone>    # staging
 ```
 
 | Key | Meaning |
 |---|---|
 | `host` · `port` | the Redis as seen from the tunnel host (or from you, with `tunnel=none`) |
 | `local` | the loopback port to forward to — **never 6379**, which is normally your LOCAL dev Redis; shadowing it would answer a production question with dev data |
-| `prod` | `true` (default) ⇒ credential masking + PII provenance · `false` ⇒ a staging box, values as-is |
 | `tunnel` | `gcloud` (default) ⇒ the server runs `gcloud compute ssh <vm> --zone=<zone> -- -N -L …` · `none` ⇒ already reachable |
+
+`REDISPROD_` ⇒ credential masking + PII provenance, and gated per machine (`triage.prod`).
+`REDISSTG_` ⇒ values as-is, ungated. There is **no `prod=` key**: a line carrying one is reported
+by variable name with a fixed reason and skipped — never reinterpreted — so a copied line cannot
+silently downgrade a production box. `<NAME>` is `UPPER_SNAKE`; a wrong-case or malformed name is
+reported with a did-you-mean (`list_targets` → `unrecognized`), not silently ignored.
+
+A target is addressed as `target="prod:<name>"` or `target="staging:<name>"`. A bare
+`target="<name>"` is accepted only when exactly one environment declares it; the same `<NAME>`
+under both prefixes is two distinct targets and a bare name is refused, listing both qualified
+forms — a bare name never resolves to prod by default. `list_targets` and `tunnel_status` show
+`env` and `env_var` per target.
 
 Nothing in that file is a credential — the access gate is your cloud IAM / network — but it is
 per-machine on purpose: a machine with no `.env` has no targets, which is the opt-in.
+
+**Migrating an existing env file:** a staging line is renamed to `REDISSTG_<NAME>` and loses its
+`prod=false`; a production line keeps `REDISPROD_<NAME>` and drops `prod=true`. Until renamed, an
+old-style line is reported and skipped.
 
 ## Setup (one-time, per machine)
 
@@ -46,10 +62,10 @@ uv run scripts/redis/redis_triage_mcp.py --selftest   # deps + guards + your tar
 scripts/triage-mcp.sh status        # policy + what is registered
 ```
 
-Restart the session so it connects; the `mcp__redis_triage__*` tools then appear. A `prod=false`
+Restart the session so it connects; the `mcp__redis_triage__*` tools then appear. A `REDISSTG_`
 target works from here on — staging needs no opt-in.
 
-**A `prod=true` target does**, and the server refuses it (before spawning a tunnel) until this
+**A `REDISPROD_` target does**, and the server refuses it (before spawning a tunnel) until this
 machine opts in. One line in your personal, git-ignored `workspace.config.local.yaml`, read live —
 no re-register, no restart:
 
@@ -120,20 +136,23 @@ guarantee and strictly better than any of these.)
    cardinality check refuses a bulk read above 1000 elements and names the cursor tool, results
    page at 200, and every connection carries a 15s socket timeout plus a
    `claude-redis-triage-<user>` client name so ops can see and kill it.
-5. **Secret masking at the source, on `prod=true` targets.** A value that is a credential by
+5. **Secret masking at the source, on `REDISPROD_` targets.** A value that is a credential by
    key name (`*token*`, `*session*`, `*auth*`, `*secret*`, `*password*`, …) or by shape (JWT,
    long hex, opaque base64) is returned as `<redis-secret:sha8>`. The digest is stable, so
    "same token / different token / missing" is still answerable; inside a JSON payload the
    decision is per FIELD, so the inner-system ids and amounts around it stay readable. A
-   `prod=false` target returns raw values.
+   `REDISSTG_` target returns raw values.
 6. **Provenance.** Prod values are fingerprinted into the vault
    (`scripts/lib/pii_provenance.py`), so the tracker/notify adapters redact exactly those values
    at egress and leave identical-looking staging/local data alone
    (`docs/agents/pii-provenance.md`).
 7. **The tunnel closes itself.** Lazy: no tunnel exists until the first call for a target. A
    watchdog kills any tunnel idle for 120s; `disconnect` closes on demand; atexit/SIGTERM close
-   on exit; a `SessionEnd` hook (`.claude/hooks/redis-triage-tunnel-reap.sh`) reaps an orphan left
-   by a hard-killed session. "Must disconnect when done" is mechanical, not remembered.
+   on exit; a `SessionEnd` hook (`.claude/hooks/triage-tunnel-reap.sh`, shared with pg-triage)
+   reaps an MCP orphan left by a hard-killed session — a forward signed
+   `-E …/triage-tunnel-<pid>-…` whose owner pid is dead. It reads no `.env` and never touches an
+   unsigned forward (a person's own) or one whose MCP is still running. "Must disconnect when
+   done" is mechanical, not remembered.
 
 The agent is never granted `gcloud`. That is on purpose: `gcloud compute ssh <vm> -- <command>`
 is a shell on the production VM, so the tunnel lives inside this server, where the argv is built
@@ -141,9 +160,9 @@ from the parsed target spec and no tool argument can reach the command line.
 
 ## The production gate
 
-A target declared `prod=true` is refused — before a tunnel is spawned — unless this machine opts in
+A `REDISPROD_` target is refused — before a tunnel is spawned — unless this machine opts in
 with `triage.prod: true` in the git-ignored `workspace.config.local.yaml`. Being able to reach the
-box (cloud IAM, a VPN, your own forward) is not permission. A `prod=false` target (staging/test) is
+box (cloud IAM, a VPN, your own forward) is not permission. A `REDISSTG_` target (staging/test) is
 ungated, and registration is on by default (`triage.enabled`) — though you register the server
 yourself with `scripts/triage-mcp.sh sync`, not via `aiworks sync` (`docs/adr/0009`). The flag
 is read live by the server, so flipping it needs no re-register and no session restart. See
@@ -162,9 +181,28 @@ REDIS_TRIAGE_FORCE_MASK=1 uv run scripts/redis/redis_triage_mcp.py --verify <sta
 `tunnel.sh` is the human's view of the tunnels — deliberately **not** granted to agents:
 
 ```bash
-scripts/redis/tunnel.sh status          # what is open, or "nothing open"
-scripts/redis/tunnel.sh kill [<target>…]
+scripts/redis/tunnel.sh status          # what is open, each listener labelled by owner
+scripts/redis/tunnel.sh kill [<target>…]  # clears MCP-owned / MCP orphan; a manual forward is kept
 ```
+
+### Port-in-use behaviour
+
+The tunnel layer is `scripts/lib/gcloud_tunnel.py`, shared with pg-triage (ADR 0017, ssh-forward
+adoption addendum). Every forward the MCP spawns is signed by its own argv —
+`-E …/triage-tunnel-<mcp-pid>-<label>-….log` — and that signature is what every party reads:
+
+- A `local` port already listening is **adopted** when the process table proves it is an ssh
+  forward that is yours (unsigned) or another live MCP session's (signed, owner alive). Adopted
+  means used for connecting only: the MCP never stops it, `tunnel_status` reports
+  `owner: adopted` with the real pid and a `teardown` sentence, and `disconnect` lists it under
+  `adopted_left_running`.
+- A signed forward whose owner pid is **dead** is an orphan: refused, naming
+  `scripts/redis/tunnel.sh status|kill`. Ending the session also clears it — the
+  `.claude/hooks/triage-tunnel-reap.sh` SessionEnd hook kills exactly such orphans (by process
+  group, so the gcloud wrapper dies too) and nothing else.
+- Anything that is not an ssh forward is refused, naming the failed condition.
+
+`tunnel.sh status` labels each listener `MCP-owned | MCP orphan | manual | detached manual`.
 
 ## Local repro — `replay_shape.py`
 
