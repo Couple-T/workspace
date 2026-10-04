@@ -1,0 +1,31 @@
+{
+  "folders": [
+    {
+      "name": "🗂 workspace (meta)",
+      "path": "."
+    },
+    {
+      "name": "feeedme-app",
+      "path": "feeedme-app"
+    },
+    {
+      "name": "feeedme-appium",
+      "path": "feeedme-appium"
+    },
+    {
+      "name": "feeed-cs",
+      "path": "feeed-cs"
+    }
+  ],
+  "settings": {
+    "git.autoRepositoryDetection": true,
+    "git.repositoryScanMaxDepth": 1,
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/.git": true,
+      "**/.codegraph": true,
+      "**/.aiworks": true,
+      "**/agent_logs": true
+    }
+  }
+}

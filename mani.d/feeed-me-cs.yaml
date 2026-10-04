@@ -1,0 +1,7 @@
+# feeed-me-cs — mani projects. path is relative to THIS file dir (mani.d/), so ../feeed-cs resolves under the workspace root.
+projects:
+  feeed-cs:
+    desc: "The customer support AI agentic, to reply social media inbox from the customers, in variants platforms like Facebook, Instagram, etc."
+    url: git@github.com:Couple-T/feeed-cs.git
+    path: ../feeed-cs
+    tags: [feeed-me-cs, n8n, terraform]
