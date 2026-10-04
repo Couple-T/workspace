@@ -19,30 +19,36 @@
 #    settings). Neither is tracked, so a fresh worktree carries neither. SUPERSET_LOCAL
 #    (default symlink) → =skip to manage them yourself. Best-effort — a missing source is
 #    simply skipped.
-# 2. Ensures the host CLI tooling is present — installs (if missing) jq, used by aiworks
+# 2. Provisions the adapter credentials (scripts/tracker, scripts/notify, scripts/vcs — each
+#    reads a git-ignored .env) from the root workspace NEXT, before host tooling / sync, so
+#    every later step and any adapter call during sync runs on real credentials. Honors
+#    SUPERSET_ENV like step 5 (default symlink; =copy; =skip).
+# 3. Ensures the host CLI tooling is present — installs (if missing) jq, used by aiworks
 #    itself (.code-workspace generation, VS Code settings merge) and the tracker/notify
 #    adapters (Homebrew / apt, else the official static binary); ngrok, used by the run
 #    phase's optional third-party hook (run.sh Phase 4 can tunnel a port through it; macOS: Homebrew, Linux:
 #    the official apt repo, else a static binary); glab, the GitLab CLI the VCS adapter
 #    (scripts/vcs/) drives (Homebrew, else the official release tarball); and pnpm, the package
-#    manager the pnpm-based repos need for the step-5 dependency install (corepack, else
+#    manager the pnpm-based repos need for the step-6 dependency install (corepack, else
 #    Homebrew / npm -g / the official standalone installer); and dap, the Debug Adapter Protocol
 #    client the debugging-code skill drives (Homebrew tap AlmogBaku/tap/dap, else the official
 #    install script). Best-effort.
-# 3. `aiworks sync -y` clones + FULLY onboards every product repo declared under
+# 4. `aiworks sync -y` clones + FULLY onboards every product repo declared under
 #    products[] in workspace.config.yaml (via the generated mani.d/<product>.yaml)
 #    — repos are gitignored and don't travel with a new git worktree. Full onboard
 #    toolchain (codegraph index, skill packs, adapter symlinks, selected Harness projections,
 #    Cursor/VS Code
 #    search re-inclusion, scripts/dev.sh, lifecycle hooks); -y skips its prompt.
-# 4. Copies the REAL local state from the root workspace into this worktree — a fresh
+# 5. Copies the REAL local state from the root workspace into this worktree — a fresh
 #    worktree carries none of its own: every .env / .env.* (every repo + adapter +
 #    .superset/.env) recursively, every repo's seeded db-data Postgres cluster, AND any
 #    Android release-signing secrets (key.properties + the keystore). Runs before the
 #    MCP services so they come up on real config + a seeded DB.
-# 5. Installs Node dependencies in every repo that has a package.json
-#    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this).
-# 6. Starts the shared MCP service containers, then reports which repos still
+# 6. Installs Node dependencies in every repo that has a package.json
+#    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this), checks each
+#    repo's .env, then runs each product's optional `setup_product` hook
+#    (.superset/products/<product>.sh) — the home for org-specific setup.
+# 7. Starts the shared MCP service containers, then reports which repos still
 #    need their .env reviewed.
 #
 # Idempotent — safe to re-run.
@@ -74,12 +80,16 @@ if ! command -v mani >/dev/null 2>&1; then
   exit 1
 fi
 
+# ── Setup progress lock — read by the SessionStart readiness check to tell "running" from
+# "crashed" from "never ran" (see setup_lock_acquire in lib.sh). Top level, not a subshell.
+setup_lock_acquire .superset/run/setup.lock
+
 # ── Resolve the root workspace — the source of the git-ignored local state a fresh worktree
 # carries NONE of. Superset sets SUPERSET_ROOT_PATH; for a MANUAL `git worktree` (no Superset)
 # it's unset, so fall back to git's MAIN worktree — the root checkout holding the real
 # git-ignored state (always the first entry of `git worktree list`). When this IS the main
 # worktree it equals $PWD, so has_root stays 0 and the provisioning steps below correctly no-op.
-# Resolved up here (not inside step 4) because step 1 below needs it before anything else runs.
+# Resolved up here (not inside step 5) because step 1 below needs it before anything else runs.
 root_ws="${SUPERSET_ROOT_PATH:-}"
 if [[ -z "$root_ws" ]]; then
   root_ws="$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{sub(/^worktree /,""); print; exit}')"
@@ -133,10 +143,44 @@ if [[ "$has_root" == 1 ]]; then
   fi
 fi
 
-# ── 2. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
+# ── 2. Adapter credentials NEXT — the tracker / notify / VCS adapters (scripts/tracker,
+# scripts/notify, scripts/vcs) each read a git-ignored .env holding real creds. A fresh worktree
+# carries none, so the adapters would run against a stub .env. Provision each from the root
+# workspace up front — BEFORE host tooling / aiworks sync — so every step after (and any adapter
+# call during sync) has real credentials. Honors SUPERSET_ENV like the general .env sweep in
+# step 5 (default symlink; =copy snapshots per-worktree; =skip leaves them); step 5 prunes the
+# top-level scripts/ so each adapter .env is provisioned here in exactly one place.
+if [[ "$has_root" == 1 ]]; then
+  adapter_env_mode="${SUPERSET_ENV:-symlink}"
+  if [[ "$adapter_env_mode" == skip ]]; then
+    log "adapter .env: SUPERSET_ENV=skip — leaving scripts/*/.env as-is."
+  else
+    if [[ "$adapter_env_mode" == symlink ]]; then log "Symlinking adapter .env (scripts/*/.env) from the root workspace ($root_ws)…"
+    else                                          log "Copying adapter .env (scripts/*/.env) from the root workspace ($root_ws)…"; fi
+    adapter_env_count=0
+    while IFS= read -r -d '' rel; do
+      rel="${rel#./}"
+      mkdir -p "$(dirname "$rel")"
+      if [[ "$adapter_env_mode" == symlink ]]; then
+        if [[ -L "$rel" && "$(readlink "$rel")" == "$root_ws/$rel" ]]; then adapter_env_count=$((adapter_env_count + 1)); continue; fi
+        rm -f "$rel" 2>/dev/null   # replace any stale link / copied file with the link
+        if ln -s "$root_ws/$rel" "$rel" 2>/dev/null; then echo "    linked $rel"; adapter_env_count=$((adapter_env_count + 1))
+        else warn "could not symlink $rel"; fi
+      else
+        [[ -L "$rel" ]] && rm -f "$rel"   # was a symlink → drop it before copying the file in
+        if cp "$root_ws/$rel" "$rel" 2>/dev/null; then echo "    copied $rel"; adapter_env_count=$((adapter_env_count + 1))
+        else warn "could not copy $rel"; fi
+      fi
+    done < <(cd "$root_ws" && find scripts -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -print0)
+    adapter_env_verb="linked"; [[ "$adapter_env_mode" == copy ]] && adapter_env_verb="copied"
+    log "$adapter_env_verb $adapter_env_count adapter .env file(s) from the root workspace."
+  fi
+fi
+
+# ── 3. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
 # VS Code settings merge) + the tracker/notify adapters — so it comes first; ngrok so the run
 # phase's optional third-party hook can tunnel a local port; glab (GitLab CLI) for the VCS adapter;
-# pnpm so step 5 can install deps for the pnpm-based repos (else node_install skips them); uv for
+# pnpm so step 6 can install deps for the pnpm-based repos (else node_install skips them); uv for
 # Python-backed workspace tools and triage MCPs; dap (Debug Adapter Protocol client) for the
 # debugging-code skill. Best-effort — guarded so a failure never aborts setup.
 log "Ensuring host tooling (jq, ngrok, glab, pnpm, uv, dap, headroom)…"
@@ -163,7 +207,7 @@ ensure_headroom || true
 ensure_harness_plugins || true
 ensure_harness_statuslines || true
 
-# ── 3. Clone + FULLY onboard every repo declared in workspace.config.yaml products[]. Runs the
+# ── 4. Clone + FULLY onboard every repo declared in workspace.config.yaml products[]. Runs the
 # full `aiworks add` toolchain per repo (codegraph index, skill packs, adapter symlinks into
 # each repo + .git/info/exclude, Cursor .cursorindexingignore / VS Code search re-inclusion,
 # scripts/dev.sh, the .superset lifecycle hooks). Idempotent — already-onboarded repos SKIP.
@@ -172,11 +216,12 @@ log "aiworks sync -y (clone + fully onboard every product repo)…"
 sync_args=(-y); [[ "$VERBOSE" == 1 ]] && sync_args+=(--verbose)
 scripts/aiworks sync "${sync_args[@]}"
 
-# ── 4. Bring the REAL local state (git-ignored, so a fresh worktree carries NONE of it) into
+# ── 5. Bring the REAL local state (git-ignored, so a fresh worktree carries NONE of it) into
 # this worktree from the root workspace — by DEFAULT as symlinks (one source of truth; cheap):
 #   • every .env / .env.* file (except .env.example, which is committed upstream and already
 #     travels with the clone), recursively, preserving each file's relative path — every
-#     repo's + adapter's env AND .superset/.env (read by the MCP service containers in step 6).
+#     repo's env AND .superset/.env (read by the MCP service containers in step 7); the
+#     adapters' own scripts/*/.env were already provisioned in step 2 and are pruned here.
 #     SUPERSET_ENV (default symlink) → symlink each at the root's (edit once, every worktree
 #     sees it), =copy for an independent per-worktree snapshot, or =skip to manage them yourself.
 #   • <repo>/db-data — a seeded local Postgres cluster a DB repo's containers bind-mount;
@@ -225,7 +270,7 @@ if [[ "$has_root" == 1 ]]; then
         else warn "could not copy $rel"; fi
       fi
     done < <(cd "$root_ws" && find . \
-        \( -name node_modules -o -name .git -o -name .next -o -name dist -o -name build -o -name target -o -name .venv -o -name db-data \) -prune \
+        \( -path ./scripts -o -name node_modules -o -name .git -o -name .next -o -name dist -o -name build -o -name target -o -name .venv -o -name db-data \) -prune \
         -o -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -print0)
     env_verb="linked"; [[ "$env_mode" == copy ]] && env_verb="copied"
     log "$env_verb $env_count env file(s) from the root workspace."
@@ -233,7 +278,7 @@ if [[ "$has_root" == 1 ]]; then
 
   # .superset/products/*.sh — the real product definition(s) (git-ignored; only example.sh
   # ships with a clone). Provisioning mode → SUPERSET_PRODUCTS (default: symlink). See the
-  # step-4 header above for why a fresh worktree needs this at all.
+  # step-5 header above for why a fresh worktree needs this at all.
   products_mode="${SUPERSET_PRODUCTS:-symlink}"
   if [[ "$products_mode" == skip ]]; then
     log "product files: SUPERSET_PRODUCTS=skip — leaving .superset/products/ as-is."
@@ -267,7 +312,7 @@ if [[ "$has_root" == 1 ]]; then
   # <repo>/db-data — seeded local Postgres clusters (git-ignored). A DB repo's containers
   # bind-mount its db-data subdirs, so without it the local DB comes up empty. Every
   # <repo>/db-data dir found in the root workspace is provisioned here. Provisioning mode →
-  # SUPERSET_DB_DATA (default: symlink). See the step-2 header above for the trade-offs.
+  # SUPERSET_DB_DATA (default: symlink). See the step-5 header above for the trade-offs.
   db_mode="${SUPERSET_DB_DATA:-symlink}"
   if [[ "$db_mode" == skip ]]; then
     log "db-data: SUPERSET_DB_DATA=skip — leaving seeded DB clusters as-is."
@@ -380,11 +425,11 @@ if [[ "$has_root" == 1 ]]; then
 else
   # No separate root to copy from: this IS the root/main worktree (so the git-ignored state is
   # already here), or it's a standalone checkout (not a linked worktree). Either way there's
-  # nothing to copy — the .env check in step 4 still seeds any missing .env from .env.example.
+  # nothing to copy — the .env check in step 6 still seeds any missing .env from .env.example.
   log "No separate root workspace — skipping the root state copy (this is the root/main worktree, or a standalone checkout). Set SUPERSET_ROOT_PATH=<path> to copy from a specific checkout."
 fi
 
-# ── 5. Install Node dependencies in every repo that has a package.json (aiworks does not).
+# ── 6. Install Node dependencies in every repo that has a package.json (aiworks does not).
 log "Installing Node dependencies…"
 for repo in */; do
   repo="${repo%/}"
@@ -411,13 +456,18 @@ for repo in */; do
   fi
 done
 
+# ── 6b. Product setup hooks — each .superset/products/<product>.sh may define an optional
+# `setup_product` (local host aliases, …): org-specific setup lives THERE, never in this file.
+# Runs after the .env check so every repo's .env exists on disk for the product's own logic.
+run_product_setup_hooks
+
 # NOTE: Cursor (.cursorindexingignore) and VS Code (.vscode/settings.json) search
 # re-inclusion, plus the per-repo adapter symlinks, are handled by `aiworks sync` above
 # (the `aiworks add` toolchain, per repo) — no longer duplicated here.
 
-# ── 6. Start the shared, long-lived MCP service containers (one container shared by every
+# ── 7. Start the shared, long-lived MCP service containers (one container shared by every
 # client/agent over SSE — replaces the old per-client `docker run` servers that orphaned
-# on crash). Reads .superset/.env (copied from the root in step 4) for DATABASE_URI etc.
+# on crash). Reads .superset/.env (copied from the root in step 5) for DATABASE_URI etc.
 # Idempotent and self-skipping if docker is unavailable. See .superset/mcp-compose.yml.
 log "Starting shared MCP services…"
 if [[ "$VERBOSE" == 1 ]]; then ./.superset/mcp-services.sh up || true

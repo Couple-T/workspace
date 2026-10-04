@@ -835,6 +835,109 @@ install_dap_script() {
   return 0
 }
 
+# Setup progress lock (per-worktree; git-ignored under .superset/run/). Written the moment real
+# work begins and removed on exit via trap. A fresh Superset worktree starts an agent session
+# BEFORE the long clone+onboard finishes, so the SessionStart readiness check
+# (.claude/hooks/repo-health-check.sh) reads this lock to steer the agent to WAIT rather than
+# treat an un-cloned repo as missing — and, crucially, to tell "setup is still running" apart
+# from "setup never ran / crashed": a graceful failure trips the EXIT trap and removes the lock
+# (the user already saw the error), while a hard kill (kill -9 / crash / power loss) skips the
+# trap and leaves a STALE lock the readiness check detects by testing the recorded pid's
+# liveness. Best-effort: a failed write never breaks setup. Call it at TOP LEVEL of the setup
+# shell (never inside a subshell) so `$$` is the pid the readiness check probes, and AFTER the
+# --help / prerequisite exits so neither leaves a lock behind.
+#
+#   setup_lock_acquire <path>
+setup_lock_acquire() {
+  local lock="$1"
+  mkdir -p "$(dirname "$lock")" 2>/dev/null || true
+  printf 'pid=%s\nstarted_epoch=%s\nstarted=%s\n' "$$" "$(date +%s)" "$(date +%Y-%m-%dT%H:%M:%S)" > "$lock" 2>/dev/null || true
+  # shellcheck disable=SC2064  # expand $lock now: the trap must name this path, not a later value
+  trap "rm -f '$lock' 2>/dev/null || true" EXIT INT TERM
+  return 0
+}
+
+# Ensure /etc/hosts maps each given hostname to a loopback IP, for LOCAL multi-tenant dev.
+# A multi-tenant app that resolves the tenant from the request Host header is reached locally
+# by a dedicated hostname pointing at the loopback, letting the Host header carry the tenant
+# identity (e.g. app.<domain> / admin.<domain> → 127.0.0.1).
+# IDEMPOTENT (adds ONLY the hostnames not already mapped, so re-runs are no-ops) and BEST-EFFORT
+# (editing /etc/hosts needs root; if that's unavailable we print the lines to add by hand and
+# carry on — NEVER aborts setup, which runs under `set -e`). bash 3.2 safe.
+# HOSTS_FILE overrides the target file (tests point it at a temp file; no sudo then).
+#
+#   ensure_hosts_entries <ip> <host> [<host>…]
+ensure_hosts_entries() {
+  local ip="$1"; shift
+  local hosts_file="${HOSTS_FILE:-/etc/hosts}"
+  local h h_re missing=()
+
+  # Which requested hostnames are NOT yet mapped to a loopback line? Match a `127.0.0.1|::1`
+  # line carrying the host as a whole space-delimited token, so a shared line such as
+  # `127.0.0.1 localhost app.example.test` (or a trailing `# comment`) still counts as
+  # present. Escape regex metachars in the host (FQDNs carry '.') so the match is literal.
+  for h in "$@"; do
+    h_re="$(printf '%s' "$h" | sed 's/[.[\*^$]/\\&/g')"
+    if grep -qiE "^[[:space:]]*(127\.0\.0\.1|::1)[[:space:]]+([^#]*[[:space:]])?${h_re}([[:space:]]|\$)" "$hosts_file" 2>/dev/null; then
+      log "$hosts_file already maps '$h' to localhost."
+    else
+      missing+=("$h")
+    fi
+  done
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    log "$hosts_file: requested host aliases already present — nothing to add."
+    return 0
+  fi
+
+  # Writing /etc/hosts needs root. Use sudo when we're neither root nor able to write the file
+  # directly; if neither path is open, tell the human the exact lines and move on.
+  local SUDO=""
+  if [[ ! -w "$hosts_file" && "$(id -u)" -ne 0 ]]; then
+    if command -v sudo >/dev/null 2>&1; then
+      SUDO="sudo"
+    else
+      warn "$hosts_file needs root to edit and 'sudo' is unavailable. Add these lines by hand:"
+      for h in "${missing[@]}"; do printf '        %s\t%s\n' "$ip" "$h"; done
+      return 0
+    fi
+  fi
+  # Prime sudo OUTSIDE the append below so its password prompt isn't tangled in the pipe — and,
+  # since setup is quiet by default, warn() first (always shown) so the prompt has context.
+  if [[ -n "$SUDO" ]]; then
+    warn "$hosts_file: adding local host aliases (${missing[*]}) needs root — sudo may prompt for your password…"
+    $SUDO -v || { warn "$hosts_file: sudo authentication failed — add ${missing[*]} → $ip by hand."; return 0; }
+  fi
+
+  # Append the missing entries under a managed marker. The marker is written only when it is
+  # not already present, so a later run that adds a further host does not duplicate the header.
+  local marker="# aiworks — local host aliases (loopback, for host-based site resolution)"
+  {
+    grep -qF "$marker" "$hosts_file" 2>/dev/null || printf '\n%s\n' "$marker"
+    for h in "${missing[@]}"; do printf '%s\t%s\n' "$ip" "$h"; done
+  } | $SUDO tee -a "$hosts_file" >/dev/null \
+    && log "$hosts_file: mapped ${missing[*]} → $ip." \
+    || warn "$hosts_file: could not append the host aliases (${missing[*]}) — add them by hand: $ip <host>."
+  return 0
+}
+
+# Run each product's optional `setup_product` hook (.superset/products/<product>.sh, except the
+# example.sh template) — the home for org-specific setup (local host aliases, …) so a downstream
+# repo never edits setup.sh. Each product runs in a SUBSHELL so two product files cannot clobber
+# each other's arrays/functions, and a failing hook warns and continues: setup runs under
+# `set -e` and must never abort here. Local stack only — never provision deployed-environment
+# access from a hook (docs/adr/0009). Hooks must be idempotent (setup re-runs).
+run_product_setup_hooks() {
+  local f name
+  for f in .superset/products/*.sh; do
+    [[ -f "$f" ]] || continue
+    name="$(basename "$f" .sh)"
+    [[ "$name" == example ]] && continue
+    ( load_product "$name"; if declare -F setup_product >/dev/null; then setup_product; fi ) \
+      || warn "$name: setup_product failed — continuing."
+  done
+  return 0
+}
+
 # Runtime state for background (non-docker) apps, per product.
 # Set by run.sh/teardown.sh before sourcing a product file.
 runtime_dirs() {  # <product>
