@@ -108,6 +108,7 @@ workspace.config.local.yaml
 # <<< aiworks sync: obsidian
 
 
+
 # >>> aiworks cursor: plugin-skill links (generated — do not edit by hand)
 # Symlinks into ~/.claude/plugins — absolute, per-machine paths, so committing one
 # gives every teammate a dangling skill dir. Cursor still READS an ignored skill
@@ -115,6 +116,8 @@ workspace.config.local.yaml
 /.claude/skills/cavecrew
 /.claude/skills/caveman-compress
 /.claude/skills/caveman-stats
+/.claude/skills/megacave
+/.claude/skills/ultracave
 /.claude/skills/caveman-commit
 /.claude/skills/caveman-discover
 /.claude/skills/caveman-evidence-review
