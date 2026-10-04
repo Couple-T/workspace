@@ -1,17 +1,17 @@
-# Graph Report - workspace  (2026-09-27)
+# Graph Report - workspace  (2026-10-04)
 
 ## Corpus Check
-- 252 files · ~290,958 words
+- 256 files · ~297,121 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 62 file(s) not represented in the graph (top: .csv 52, (none) 7, .jq 2)
+- Unclassified: 63 file(s) not represented in the graph (top: .csv 52, (none) 7, .awk 2)
 
 ## Summary
-- 2616 nodes · 2486 edges · 233 communities (214 shown, 19 thin omitted)
+- 2626 nodes · 2496 edges · 233 communities (214 shown, 19 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `220d3f4b`
+- Built from commit: `94194c36`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -200,7 +200,7 @@
 - cto.md
 - documentor.md
 - ux-ui-designer.md
-- .claude/skills/caveman/SKILL.md
+- Rules
 - Clarifying a ticket
 - Advanced Debugging Techniques
 - Karpathy Guidelines
@@ -243,12 +243,12 @@
 2. `UI Styling Skill` - 17 edges
 3. `Component library` - 16 edges
 4. `Design` - 15 edges
-5. `Tailwind CSS Customization` - 14 edges
-6. `Tailwind CSS Utility Reference` - 14 edges
-7. `Business Requirements Document: App Launcher Logo` - 14 edges
+5. `Tailwind CSS Utility Reference` - 14 edges
+6. `Business Requirements Document: App Launcher Logo` - 14 edges
+7. `Tailwind CSS Customization` - 14 edges
 8. `Interactive Debugger` - 13 edges
-9. `Tailwind CSS Responsive Design` - 13 edges
-10. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
+9. `aiworks-dispatch — Slack `@bot` → Superset on-demand Claude` - 13 edges
+10. `Tailwind CSS Responsive Design` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
 - None detected - all connections are within the same source files.
@@ -994,9 +994,9 @@ Nodes (5): Bar, Inputs, Output language — resolve BEFORE writing (do this FIRS
 Cohesion: 0.33
 Nodes (5): Bar, Inputs, Output language — resolve BEFORE writing (do this FIRST, before your role), Team & collaboration, What you do
 
-### Community 330 - ".claude/skills/caveman/SKILL.md"
-Cohesion: 0.33
-Nodes (5): Auto-Clarity, Boundaries, Intensity, Persistence, Rules
+### Community 330 - "Rules"
+Cohesion: 0.12
+Nodes (15): 1. Answer first, 2. Kill ceremony, 3. Short word, 4. Articles optional, meaning never, 5. One idea per sentence, 6. Payload verbatim, 7. Tool runs: bounded status, 8. User's language (+7 more)
 
 ### Community 331 - "Clarifying a ticket"
 Cohesion: 0.33
@@ -1115,19 +1115,19 @@ Cohesion: 0.50
 Nodes (3): Adding a self-hosted provider later, Backend: mermaid.ink / mermaid.live, Diagram adapter
 
 ## Knowledge Gaps
-- **1909 isolated node(s):** `Persistence`, `Rules`, `Intensity`, `Auto-Clarity`, `Boundaries` (+1904 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2054 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **1917 isolated node(s):** `Persistence`, `Why`, `1. Answer first`, `2. Kill ceremony`, `3. Short word` (+1912 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2063 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **19 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `How a dev-cycle run ends` connect `How a dev-cycle run ends` to `Resuming a workflow after the config changed`?**
+- **Why does `Retro — a four-repo ticket that took seven `dev-cycle` invocations` connect `2. Root causes, and which are fixed` to `CONTEXT.md`?**
   _High betweenness centrality (0.002) - this node is a cross-community bridge._
-- **Why does `A submodule pin needs a pushed commit, not a merge` connect `A submodule pin needs a pushed commit, not a merge` to `CONTEXT.md`?**
+- **Why does `scripts/db — deployed Postgres (staging + production), read-only` connect `scripts/db — deployed Postgres (staging + production), read-only` to `Tunnel sidecars (optional — for managed Postgres behind a VPC)`?**
   _High betweenness centrality (0.002) - this node is a cross-community bridge._
-- **What connects `Persistence`, `Rules`, `Intensity` to the rest of the system?**
-  _1909 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `Persistence`, `Why`, `1. Answer first` to the rest of the system?**
+  _1917 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `During the session` be split into smaller, more focused modules?**
   _Cohesion score 0.09090909090909091 - nodes in this community are weakly interconnected._
 - **Should `Business Requirements Document: App Launcher Logo` be split into smaller, more focused modules?**

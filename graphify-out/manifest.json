@@ -18,8 +18,8 @@
     "semantic_hash": ""
   },
   ".claude/agents/cpo.md": {
-    "mtime": 1790476342.899445,
-    "seen": 1790476345.53235,
+    "mtime": 1790496068.9863672,
+    "seen": 1791087393.360731,
     "ast_hash": "1fbe8bd98a9bed4dda4b32a76ccd8bea",
     "semantic_hash": ""
   },
@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   ".claude/agents/developer.md": {
-    "mtime": 1790410743.026503,
-    "seen": 1790476345.532351,
-    "ast_hash": "7313bb7853c4cdfd4ade67295ad5e590",
+    "mtime": 1791028275.2521014,
+    "seen": 1791087393.360731,
+    "ast_hash": "af95f9663f04817cbccd97a9ca14abbc",
     "semantic_hash": ""
   },
   ".claude/agents/development-planner.md": {
@@ -48,8 +48,8 @@
     "semantic_hash": ""
   },
   ".claude/agents/graphic-designer.md": {
-    "mtime": 1790476342.8997986,
-    "seen": 1790476345.532352,
+    "mtime": 1790496068.986541,
+    "seen": 1791087393.360733,
     "ast_hash": "ab7df2dd6512d1adb18ca16400664553",
     "semantic_hash": ""
   },
@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   ".claude/agents/oncall.md": {
-    "mtime": 1790410743.027457,
-    "seen": 1790476345.532353,
-    "ast_hash": "f09d8e0fc1082d2f360fc72b965b2754",
+    "mtime": 1791028275.2527914,
+    "seen": 1791087393.360734,
+    "ast_hash": "99c87f5bdf88842dc41fdd12bcaa8c40",
     "semantic_hash": ""
   },
   ".claude/agents/performance-engineer.md": {
@@ -72,8 +72,8 @@
     "semantic_hash": ""
   },
   ".claude/agents/product-owner.md": {
-    "mtime": 1790476342.9000788,
-    "seen": 1790476345.532354,
+    "mtime": 1790496068.9866912,
+    "seen": 1791087393.360735,
     "ast_hash": "ea091bfab3b375f410feba6c1c49a468",
     "semantic_hash": ""
   },
@@ -90,14 +90,14 @@
     "semantic_hash": ""
   },
   ".claude/agents/ux-ui-designer.md": {
-    "mtime": 1790476342.9005015,
-    "seen": 1790476345.532355,
+    "mtime": 1790496068.9869032,
+    "seen": 1791087393.360736,
     "ast_hash": "951528f51ef552c6055c9c2e1014048a",
     "semantic_hash": ""
   },
   ".claude/agents/ux-ui-planner.md": {
-    "mtime": 1790476342.9008353,
-    "seen": 1790476345.532355,
+    "mtime": 1790496068.98707,
+    "seen": 1791087393.360736,
     "ast_hash": "3cc68833757c0a08e3049453df387621",
     "semantic_hash": ""
   },
@@ -228,9 +228,9 @@
     "semantic_hash": ""
   },
   ".claude/skills/caveman/SKILL.md": {
-    "mtime": 1790476343.1351283,
-    "seen": 1790476345.532366,
-    "ast_hash": "7a9b02d55ee6e2ebfcf424715f358669",
+    "mtime": 1791087011.62495,
+    "seen": 1791087393.360744,
+    "ast_hash": "dca586d9dd9210c16a070c5c471d0367",
     "semantic_hash": ""
   },
   ".claude/skills/clarifying-ticket/SKILL.md": {
@@ -582,9 +582,9 @@
     "semantic_hash": ""
   },
   ".claude/skills/redis-triage/SKILL.md": {
-    "mtime": 1790410743.0361304,
-    "seen": 1790476345.532396,
-    "ast_hash": "1aac0c29ce57514bb57dd414eb5193a3",
+    "mtime": 1791028275.253921,
+    "seen": 1791087393.360769,
+    "ast_hash": "a9f5f410ebb3b0d92ec4c3d8c004b6c4",
     "semantic_hash": ""
   },
   ".claude/skills/report-test-results/SKILL.md": {
@@ -714,9 +714,9 @@
     "semantic_hash": ""
   },
   ".claude/skills/telemetry-triage/SKILL.md": {
-    "mtime": 1790410743.0375712,
-    "seen": 1790476345.532406,
-    "ast_hash": "eb0ddb2bf7b4aeaecc30cc1a1db5e94d",
+    "mtime": 1791028275.2551227,
+    "seen": 1791087393.360777,
+    "ast_hash": "a81dbd2dbab0d06617f9baceb40b9dd4",
     "semantic_hash": ""
   },
   ".claude/skills/ticket-kickoff/SKILL.md": {
@@ -840,27 +840,27 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1790471915.4862401,
-    "seen": 1790476345.532415,
-    "ast_hash": "a08b57f6c0d109739444af5b57653e48",
+    "mtime": 1791086993.6070578,
+    "seen": 1791087393.360785,
+    "ast_hash": "9578266ab310d35677faa08426dc816e",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1790471915.4862401,
-    "seen": 1790476345.532415,
-    "ast_hash": "a08b57f6c0d109739444af5b57653e48",
+    "mtime": 1791086993.6070578,
+    "seen": 1791087393.360785,
+    "ast_hash": "9578266ab310d35677faa08426dc816e",
     "semantic_hash": ""
   },
   "CONTEXT.md": {
-    "mtime": 1790410743.0450907,
-    "seen": 1790476345.532416,
-    "ast_hash": "03ef2f1b8be293affce5c4d02e531d13",
+    "mtime": 1791086993.60757,
+    "seen": 1791087393.360786,
+    "ast_hash": "2f22c038f83bfe4f89db899d59ec2dc6",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1790471915.4865286,
-    "seen": 1790476345.532416,
-    "ast_hash": "d11ee608464e42dde4a1c3e5bc7472ab",
+    "mtime": 1791086993.6078613,
+    "seen": 1791087393.360786,
+    "ast_hash": "419061bef005c561342beda1f68db2e0",
     "semantic_hash": ""
   },
   "docs/adr/0001-headless-workflow-config-mirror.md": {
@@ -882,9 +882,9 @@
     "semantic_hash": ""
   },
   "docs/adr/0004-cursor-as-a-generated-mirror.md": {
-    "mtime": 1790471915.4869213,
-    "seen": 1790476345.532418,
-    "ast_hash": "a26c8c4383484bdad852d69cc47b3d5b",
+    "mtime": 1791086993.6081495,
+    "seen": 1791087393.3607879,
+    "ast_hash": "361db2cd14ff2ac3153c8eb493e173b8",
     "semantic_hash": ""
   },
   "docs/adr/0005-deployed-env-triage-and-the-prod-gate.md": {
@@ -900,9 +900,9 @@
     "semantic_hash": ""
   },
   "docs/adr/0007-kubernetes-triage-uses-a-separate-read-only-identity.md": {
-    "mtime": 1786249350.6208763,
-    "seen": 1786927495.686083,
-    "ast_hash": "bb09004c03ba3ef27444d9fbf57c15b7",
+    "mtime": 1791021745.2636604,
+    "seen": 1791087393.360789,
+    "ast_hash": "b8a8169f89ebc0d2597f81a0d3cc2619",
     "semantic_hash": ""
   },
   "docs/adr/0008-organization-knowledge-lives-in-the-script-repo.md": {
@@ -918,9 +918,9 @@
     "semantic_hash": ""
   },
   "docs/adr/0010-cloud-monitoring-triage-shares-the-read-only-identity.md": {
-    "mtime": 1786453251.8786564,
-    "seen": 1786927495.686084,
-    "ast_hash": "5025ac66144a9a2984db39231588a113",
+    "mtime": 1790496093.1008484,
+    "seen": 1791087393.36079,
+    "ast_hash": "053e0157c2a2c822e61c33ce2d068464",
     "semantic_hash": ""
   },
   "docs/adr/0011-deferred-scope-does-not-stop-a-run.md": {
@@ -960,9 +960,9 @@
     "semantic_hash": ""
   },
   "docs/agents/cursor.md": {
-    "mtime": 1790471915.4886093,
-    "seen": 1790476345.5324328,
-    "ast_hash": "612bd54c12873db08c06188532aad5e0",
+    "mtime": 1791086993.6092858,
+    "seen": 1791087393.360805,
+    "ast_hash": "07ae4e94cb13d4a53633b08df0e041dc",
     "semantic_hash": ""
   },
   "docs/agents/diagram-generation.md": {
@@ -978,8 +978,8 @@
     "semantic_hash": ""
   },
   "docs/agents/figma.md": {
-    "mtime": 1790476342.903562,
-    "seen": 1790476345.532435,
+    "mtime": 1790496068.9915476,
+    "seen": 1791087393.360806,
     "ast_hash": "960d17e13153306370e7b0c1fe5788cc",
     "semantic_hash": ""
   },
@@ -1008,8 +1008,8 @@
     "semantic_hash": ""
   },
   "docs/agents/issue-tracker.md": {
-    "mtime": 1790476342.9037826,
-    "seen": 1790476345.532438,
+    "mtime": 1790496068.9917405,
+    "seen": 1791087393.3608088,
     "ast_hash": "5bba86a4f2fa05a83f548dcacc5f2a51",
     "semantic_hash": ""
   },
@@ -1026,9 +1026,9 @@
     "semantic_hash": ""
   },
   "docs/agents/pii-provenance.md": {
-    "mtime": 1786233820.448505,
-    "seen": 1786927495.6860921,
-    "ast_hash": "1b2e97756e535f39d8e89aea9a142c9e",
+    "mtime": 1791028275.2584777,
+    "seen": 1791087393.36081,
+    "ast_hash": "cdb733fc96b57271f56f8fc41ce678e2",
     "semantic_hash": ""
   },
   "docs/agents/plan-artifacts.md": {
@@ -1074,9 +1074,9 @@
     "semantic_hash": ""
   },
   "scripts/db/README.md": {
-    "mtime": 1790471915.492325,
-    "seen": 1790476345.532446,
-    "ast_hash": "e453940893fbde0b09e52c990f8e6488",
+    "mtime": 1791028275.259081,
+    "seen": 1791087393.360817,
+    "ast_hash": "48d6dd74c9a8a43ab2c0ae607861b960",
     "semantic_hash": ""
   },
   "scripts/diagram/README.md": {
@@ -1086,9 +1086,9 @@
     "semantic_hash": ""
   },
   "scripts/k8s/README.md": {
-    "mtime": 1786249426.232942,
-    "seen": 1786927495.686097,
-    "ast_hash": "a3e7a1a8d4754456f47f5b648724e5a2",
+    "mtime": 1790496093.1013145,
+    "seen": 1791087393.360817,
+    "ast_hash": "ed0e7adcc6a9c5f406cc4b529951a95e",
     "semantic_hash": ""
   },
   "scripts/monitoring/README.md": {
@@ -1104,9 +1104,9 @@
     "semantic_hash": ""
   },
   "scripts/observability/README.md": {
-    "mtime": 1786453251.8810375,
-    "seen": 1786927495.686099,
-    "ast_hash": "b2a84c5610ba22924d4abaabbc6f821a",
+    "mtime": 1791028275.2616448,
+    "seen": 1791087393.360818,
+    "ast_hash": "13f229c0d713d5d15e23bc8042c8b171",
     "semantic_hash": ""
   },
   "scripts/pdf/README.md": {
@@ -1122,9 +1122,9 @@
     "semantic_hash": ""
   },
   "scripts/redis/README.md": {
-    "mtime": 1786249418.319897,
-    "seen": 1786927495.6861,
-    "ast_hash": "f832edf0f04851bd0aec018aa84abb90",
+    "mtime": 1791028275.2648551,
+    "seen": 1791087393.36082,
+    "ast_hash": "d04c9ffcd73d05ed7c93f4e5d0693ee5",
     "semantic_hash": ""
   },
   "scripts/slack-dispatch/README.md": {
@@ -1176,9 +1176,9 @@
     "semantic_hash": ""
   },
   "scripts/vcs/README.md": {
-    "mtime": 1790410743.0591865,
-    "seen": 1790476345.5324538,
-    "ast_hash": "a11e95f214d37e47e8897df091aaa381",
+    "mtime": 1791028275.2668388,
+    "seen": 1791087393.3608232,
+    "ast_hash": "1e9ef61a21be2f40cdcc964a9d0a5b7d",
     "semantic_hash": ""
   },
   "scripts/voice/README.md": {
@@ -1188,8 +1188,8 @@
     "semantic_hash": ""
   },
   "docs/agents/design-system.md": {
-    "mtime": 1790476342.9034176,
-    "seen": 1790476345.532434,
+    "mtime": 1790496068.9914117,
+    "seen": 1791087393.360805,
     "ast_hash": "3c6dc3d119889a03ce2b6df41272ab8c",
     "semantic_hash": ""
   },
@@ -1212,68 +1212,68 @@
     "semantic_hash": ""
   },
   "docs/brd/app-launcher-logo.md": {
-    "mtime": 1790476342.9040325,
-    "seen": 1790476345.532444,
+    "mtime": 1790496068.991907,
+    "seen": 1791087393.360815,
     "ast_hash": "fcebc81ed9815e38a0b2cc2d2b7c7f16",
     "semantic_hash": ""
   },
   "docs/brd/splash-screen.md": {
-    "mtime": 1790476342.9041433,
-    "seen": 1790476345.532445,
+    "mtime": 1790496068.9920042,
+    "seen": 1791087393.360815,
     "ast_hash": "01625404885a56b59bf042d224a39f5a",
     "semantic_hash": ""
   },
   "docs/brd/the-dashboard-page-please-think-about-th.md": {
-    "mtime": 1790476342.9042337,
-    "seen": 1790476345.532445,
+    "mtime": 1790496068.9920855,
+    "seen": 1791087393.3608162,
     "ast_hash": "153959a0204a1f375a01a71c70a508f8",
     "semantic_hash": ""
   },
   ".claude/.skills-upstream/caveman/SKILL.md": {
-    "mtime": 1790476343.19112,
-    "seen": 1790476345.532344,
+    "mtime": 1790496068.9845924,
+    "seen": 1791087393.360726,
     "ast_hash": "7a9b02d55ee6e2ebfcf424715f358669",
     "semantic_hash": ""
   },
   ".claude/.skills-upstream/diagnosing-bugs/SKILL.md": {
-    "mtime": 1790476343.1918018,
-    "seen": 1790476345.532345,
+    "mtime": 1790496068.9848135,
+    "seen": 1791087393.360727,
     "ast_hash": "d5b1387a7074ca9740ad2c5ff91ad1bc",
     "semantic_hash": ""
   },
   ".claude/.skills-upstream/domain-modeling/ADR-FORMAT.md": {
-    "mtime": 1790476343.1932757,
-    "seen": 1790476345.532346,
+    "mtime": 1790496068.9851768,
+    "seen": 1791087393.360727,
     "ast_hash": "7bcce3d6e7066aca42baf11cc609d382",
     "semantic_hash": ""
   },
   ".claude/.skills-upstream/domain-modeling/CONTEXT-FORMAT.md": {
-    "mtime": 1790476343.193586,
-    "seen": 1790476345.532346,
+    "mtime": 1790496068.985255,
+    "seen": 1791087393.360728,
     "ast_hash": "710770e708d7e2004b71ef306a365e19",
     "semantic_hash": ""
   },
   ".claude/.skills-upstream/domain-modeling/SKILL.md": {
-    "mtime": 1790476343.1937525,
-    "seen": 1790476345.532347,
+    "mtime": 1790496068.9853299,
+    "seen": 1791087393.360728,
     "ast_hash": "49d8e04f96d25fa065ce75c2701e9fac",
     "semantic_hash": ""
   },
   ".claude/.skills-upstream/grill-me/SKILL.md": {
-    "mtime": 1790476343.1941,
-    "seen": 1790476345.532347,
+    "mtime": 1790496068.9855244,
+    "seen": 1791087393.360729,
     "ast_hash": "51ba9306293963bb76680d5e41525aea",
     "semantic_hash": ""
   },
   ".claude/.skills-upstream/grill-with-docs/SKILL.md": {
-    "mtime": 1790476343.1950219,
-    "seen": 1790476345.532347,
+    "mtime": 1790496068.9857395,
+    "seen": 1791087393.360729,
     "ast_hash": "2e333f0b42a23dbb1ae531e62c555c66",
     "semantic_hash": ""
   },
   ".claude/.skills-upstream/grilling/SKILL.md": {
-    "mtime": 1790476343.195828,
-    "seen": 1790476345.532348,
+    "mtime": 1790496068.9859433,
+    "seen": 1791087393.360729,
     "ast_hash": "284efe9cf334900d08230e572fc6db90",
     "semantic_hash": ""
   },
@@ -1350,9 +1350,9 @@
     "semantic_hash": ""
   },
   "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md": {
-    "mtime": 1790410743.0460787,
-    "seen": 1790476345.532424,
-    "ast_hash": "a98140fd20cf02591c7a30bf6388a0dc",
+    "mtime": 1791028275.2578323,
+    "seen": 1791087393.360793,
+    "ast_hash": "17780104f39c3aea841380f07fdb30a4",
     "semantic_hash": ""
   },
   "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md": {
@@ -1386,9 +1386,9 @@
     "semantic_hash": ""
   },
   "docs/adr/0023-agent-harnesses-project-from-claude-canonical-source.md": {
-    "mtime": 1790410743.0466166,
-    "seen": 1790476345.532427,
-    "ast_hash": "62e295c8e634afac23caaec9112b5b44",
+    "mtime": 1791086993.6084793,
+    "seen": 1791087393.360796,
+    "ast_hash": "b9af05b060b616daf5ad8d0634509527",
     "semantic_hash": ""
   },
   "docs/adr/0024-a-qa-attributed-fix-is-quality-checked-not-re-reviewed.md": {
@@ -1488,9 +1488,9 @@
     "semantic_hash": ""
   },
   "docs/agents/harnesses.md": {
-    "mtime": 1790471915.489122,
-    "seen": 1790476345.532436,
-    "ast_hash": "e70ae4395e72c2c1b1436c8749a4a335",
+    "mtime": 1791086993.609668,
+    "seen": 1791087393.360807,
+    "ast_hash": "39cfda820ed53768abfdbb18d5d275a6",
     "semantic_hash": ""
   },
   "docs/agents/review-ledger.md": {
@@ -1509,6 +1509,30 @@
     "mtime": 1790410743.050294,
     "seen": 1790476345.532446,
     "ast_hash": "570ead4f5e545dd06c602fb1fdc75206",
+    "semantic_hash": ""
+  },
+  "docs/adr/0039-kubernetes-triage-targets-are-scoped-to-the-workspace-projects.md": {
+    "mtime": 1790496093.1010802,
+    "seen": 1791087393.360802,
+    "ast_hash": "be11bcc007ec1d7234899fbe6f4ba274",
+    "semantic_hash": ""
+  },
+  "docs/adr/0040-cursor-agents-run-on-auto-and-fall-back-on-a-usage-limit.md": {
+    "mtime": 1791086993.608627,
+    "seen": 1791087393.3608031,
+    "ast_hash": "710b5e9d39bf161508486cc2e4f7c641",
+    "semantic_hash": ""
+  },
+  "docs/adr/0041-a-fresh-worktree-knows-its-repos-before-sync.md": {
+    "mtime": 1791086993.608814,
+    "seen": 1791087393.3608031,
+    "ast_hash": "2cf02ac1e4092222eb2b969054d1a8df",
+    "semantic_hash": ""
+  },
+  "docs/agents/superset.md": {
+    "mtime": 1791086993.6099591,
+    "seen": 1791087393.3608131,
+    "ast_hash": "e9c6092cde01f85c4916a8043a56158a",
     "semantic_hash": ""
   }
 }
