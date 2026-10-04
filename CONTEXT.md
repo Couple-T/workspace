@@ -325,11 +325,20 @@ The cross-repo CLI (`sync` · `list projects` · `exec` · `run`) driven by the 
 
 **Superset**:
 The parallel run harness (`.superset/`) that gives each ticket its own git **worktree** so
-several `dev-cycle` runs proceed at once.
+several `dev-cycle` runs proceed at once. Its setup writes a lock the readiness check reads.
 
 **Worktree**:
 An isolated git checkout Superset provisions per ticket; git-ignored root state (`.env*`, the
 personal local config) is symlinked into it.
+
+**Readiness check**:
+The `SessionStart`/`UserPromptSubmit` hook (`.claude/hooks/repo-health-check.sh`) that compares
+the declared repos (`mani.d/` ∪ `workspace.config.yaml`) with the clones present and tells the
+agent to wait while setup is `running`, or what to run when it is `crashed` or `idle`.
+
+**Product setup hook**:
+The optional `setup_product` function in `.superset/products/<product-id>.sh`, run by setup
+step 6b — the git-ignored home for organisation-specific, idempotent, local-only setup.
 
 **`Human:` review**:
 The convention where a human reviewer's PR/MR comments prefixed `Human:` are blocking,
@@ -350,6 +359,12 @@ _Avoid_: provider selection
 The non-empty, git-ignored subset of the supported Harness set used for one machine's Harness CLI,
 plugin, status-line, and local MCP lifecycle.
 _Avoid_: shared projection selection
+
+**Usage-limit fallback**:
+The one model a Cursor workflow call retries on, once, after `auto` is blocked by the account's
+usage limit — chosen by the role's tier (`grok-4.7-high`; `composer-2.5` for `haiku`). Not a retry
+for any other failure. → `docs/adr/0040`
+_Avoid_: model fallback, quota retry
 
 **Harness projection**:
 A derived, harness-specific face of the canonical agent configuration. It uses symlinks where the
