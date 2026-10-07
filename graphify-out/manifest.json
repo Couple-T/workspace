@@ -840,15 +840,15 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1791086993.6070578,
-    "seen": 1791087393.360785,
-    "ast_hash": "9578266ab310d35677faa08426dc816e",
+    "mtime": 1791340564.937861,
+    "seen": 1791340828.0569432,
+    "ast_hash": "a25f9da83c7d3c1da8726700d36d0c0b",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1791086993.6070578,
-    "seen": 1791087393.360785,
-    "ast_hash": "9578266ab310d35677faa08426dc816e",
+    "mtime": 1791340564.937861,
+    "seen": 1791340828.0569441,
+    "ast_hash": "a25f9da83c7d3c1da8726700d36d0c0b",
     "semantic_hash": ""
   },
   "CONTEXT.md": {
@@ -858,9 +858,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1791086993.6078613,
-    "seen": 1791087393.360786,
-    "ast_hash": "419061bef005c561342beda1f68db2e0",
+    "mtime": 1791340466.2707324,
+    "seen": 1791340828.0569448,
+    "ast_hash": "a74304b1f7f1116bf0cc4dc2fa85c4e2",
     "semantic_hash": ""
   },
   "docs/adr/0001-headless-workflow-config-mirror.md": {
@@ -900,8 +900,8 @@
     "semantic_hash": ""
   },
   "docs/adr/0007-kubernetes-triage-uses-a-separate-read-only-identity.md": {
-    "mtime": 1791021745.2636604,
-    "seen": 1791087393.360789,
+    "mtime": 1791340564.9363875,
+    "seen": 1791340828.056948,
     "ast_hash": "b8a8169f89ebc0d2597f81a0d3cc2619",
     "semantic_hash": ""
   },
@@ -1002,9 +1002,9 @@
     "semantic_hash": ""
   },
   "docs/agents/image-generation.md": {
-    "mtime": 1786865967.05889,
-    "seen": 1786927495.686091,
-    "ast_hash": "9a672d2d892bdcbac71ce83c2dfc8bc3",
+    "mtime": 1791340466.2714782,
+    "seen": 1791340828.056968,
+    "ast_hash": "5ec100f7d7eef4f8c77c0719e21dff00",
     "semantic_hash": ""
   },
   "docs/agents/issue-tracker.md": {
@@ -1458,9 +1458,9 @@
     "semantic_hash": ""
   },
   "docs/adr/0035-declared-plugins-install-at-project-scope.md": {
-    "mtime": 1790410743.0476937,
-    "seen": 1790476345.5324311,
-    "ast_hash": "26c3c0cf9c17dfeb64ed1f110ece2ffb",
+    "mtime": 1791090953.1790686,
+    "seen": 1791340828.05696,
+    "ast_hash": "d2c0e42eb422efa9b5bfd1711e8e562b",
     "semantic_hash": ""
   },
   "docs/adr/0036-one-workflow-one-slash-entry.md": {
@@ -1530,9 +1530,27 @@
     "semantic_hash": ""
   },
   "docs/agents/superset.md": {
-    "mtime": 1791086993.6099591,
-    "seen": 1791087393.3608131,
-    "ast_hash": "e9c6092cde01f85c4916a8043a56158a",
+    "mtime": 1791340466.2720003,
+    "seen": 1791340828.056973,
+    "ast_hash": "d20adeccf768e4020189f94588c1cd48",
+    "semantic_hash": ""
+  },
+  "docs/adr/0042-a-linked-worktree-inherits-the-main-checkouts-plugins.md": {
+    "mtime": 1791090953.1792922,
+    "seen": 1791340828.056963,
+    "ast_hash": "d7c427692f66cb6426ac08bc27c93df0",
+    "semantic_hash": ""
+  },
+  "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md": {
+    "mtime": 1791340466.2709591,
+    "seen": 1791340828.056963,
+    "ast_hash": "e922364249c20d9a547cd3a4222d8467",
+    "semantic_hash": ""
+  },
+  "scripts/n8n/README.md": {
+    "mtime": 1791340466.2791977,
+    "seen": 1791340828.056978,
+    "ast_hash": "96f313095173ac7759e69a57e519c491",
     "semantic_hash": ""
   }
 }

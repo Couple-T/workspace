@@ -1704,102 +1704,6 @@
       "source_location": "L534"
     },
     {
-      "id": "docs_adr_0001_headless_workflow_config_mirror",
-      "label": "0001-headless-workflow-config-mirror.md",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "Resuming a workflow after the config changed",
-      "file_type": "document",
-      "node_kind": "page",
-      "norm_label": "0001-headless-workflow-config-mirror.md",
-      "source_file": "docs/adr/0001-headless-workflow-config-mirror.md",
-      "source_location": "L1"
-    },
-    {
-      "id": "docs_adr_0001_headless_workflow_config_mirror_consequences",
-      "label": "Consequences",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "Resuming a workflow after the config changed",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "consequences",
-      "source_file": "docs/adr/0001-headless-workflow-config-mirror.md",
-      "source_location": "L18"
-    },
-    {
-      "id": "docs_adr_0001_headless_workflow_config_mirror_headless_workflows_read_config_from_a_generated_mirror_not_the_file",
-      "label": "Headless workflows read config from a generated mirror, not the file",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "Resuming a workflow after the config changed",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "headless workflows read config from a generated mirror, not the file",
-      "source_file": "docs/adr/0001-headless-workflow-config-mirror.md",
-      "source_location": "L1"
-    },
-    {
-      "id": "docs_adr_0001_headless_workflow_config_mirror_rejected_alternatives",
-      "label": "Rejected alternatives",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "Resuming a workflow after the config changed",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "rejected alternatives",
-      "source_file": "docs/adr/0001-headless-workflow-config-mirror.md",
-      "source_location": "L28"
-    },
-    {
-      "id": "docs_adr_0003_personal_runtime_config_overrides",
-      "label": "0003-personal-runtime-config-overrides.md",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "Resuming a workflow after the config changed",
-      "file_type": "document",
-      "node_kind": "page",
-      "norm_label": "0003-personal-runtime-config-overrides.md",
-      "source_file": "docs/adr/0003-personal-runtime-config-overrides.md",
-      "source_location": "L1"
-    },
-    {
-      "id": "docs_adr_0003_personal_runtime_config_overrides_consequences",
-      "label": "Consequences",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "Resuming a workflow after the config changed",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "consequences",
-      "source_file": "docs/adr/0003-personal-runtime-config-overrides.md",
-      "source_location": "L46"
-    },
-    {
-      "id": "docs_adr_0003_personal_runtime_config_overrides_personal_config_overrides_apply_at_runtime_only_never_in_the_committed_mirror",
-      "label": "Personal config overrides apply at runtime only, never in the committed mirror",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "Resuming a workflow after the config changed",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "personal config overrides apply at runtime only, never in the committed mirror",
-      "source_file": "docs/adr/0003-personal-runtime-config-overrides.md",
-      "source_location": "L1"
-    },
-    {
-      "id": "docs_adr_0003_personal_runtime_config_overrides_rejected_alternatives",
-      "label": "Rejected alternatives",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "Resuming a workflow after the config changed",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "rejected alternatives",
-      "source_file": "docs/adr/0003-personal-runtime-config-overrides.md",
-      "source_location": "L68"
-    },
-    {
       "id": "docs_agents_run_endings",
       "label": "run-endings.md",
       "_origin": "ast",
@@ -1810,6 +1714,90 @@
       "norm_label": "run-endings.md",
       "source_file": "docs/agents/run-endings.md",
       "source_location": "L1"
+    },
+    {
+      "id": "docs_agents_run_endings_a_person_has_to_decide_not_a_failure_and_no_bound_would_help",
+      "label": "A person has to decide (not a failure, and no bound would help)",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "Resuming a workflow after the config changed",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "a person has to decide (not a failure, and no bound would help)",
+      "source_file": "docs/agents/run-endings.md",
+      "source_location": "L21"
+    },
+    {
+      "id": "docs_agents_run_endings_how_a_dev_cycle_run_ends",
+      "label": "How a dev-cycle run ends",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "Resuming a workflow after the config changed",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "how a dev-cycle run ends",
+      "source_file": "docs/agents/run-endings.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "docs_agents_run_endings_it_finished",
+      "label": "It finished",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "Resuming a workflow after the config changed",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "it finished",
+      "source_file": "docs/agents/run-endings.md",
+      "source_location": "L12"
+    },
+    {
+      "id": "docs_agents_run_endings_it_ran_out_of_budget",
+      "label": "It ran out of budget",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "Resuming a workflow after the config changed",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "it ran out of budget",
+      "source_file": "docs/agents/run-endings.md",
+      "source_location": "L30"
+    },
+    {
+      "id": "docs_agents_run_endings_it_worked_to_a_bound_and_recorded_what_it_could_not_close",
+      "label": "It worked to a bound and recorded what it could not close",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "Resuming a workflow after the config changed",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "it worked to a bound and recorded what it could not close",
+      "source_file": "docs/agents/run-endings.md",
+      "source_location": "L38"
+    },
+    {
+      "id": "docs_agents_run_endings_the_shape_to_keep",
+      "label": "The shape to keep",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "Resuming a workflow after the config changed",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "the shape to keep",
+      "source_file": "docs/agents/run-endings.md",
+      "source_location": "L67"
+    },
+    {
+      "id": "docs_agents_run_endings_the_stops_that_remain_and_why_each_is_genuinely_terminal",
+      "label": "The stops that remain, and why each is genuinely terminal",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "Resuming a workflow after the config changed",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "the stops that remain, and why each is genuinely terminal",
+      "source_file": "docs/agents/run-endings.md",
+      "source_location": "L50"
     },
     {
       "id": "docs_agents_workflow_resume",
@@ -3306,6 +3294,18 @@
       "node_kind": "page",
       "norm_label": "human-review.md",
       "source_file": "docs/agents/human-review.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "docs_agents_plan_artifacts",
+      "label": "plan-artifacts.md",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "CONTEXT.md",
+      "file_type": "document",
+      "node_kind": "page",
+      "norm_label": "plan-artifacts.md",
+      "source_file": "docs/agents/plan-artifacts.md",
       "source_location": "L1"
     },
     {
@@ -4944,7 +4944,7 @@
       "node_kind": "heading",
       "norm_label": "do not",
       "source_file": "CLAUDE.md",
-      "source_location": "L128"
+      "source_location": "L129"
     },
     {
       "id": "claude_language_compression_and_code",
@@ -4956,7 +4956,7 @@
       "node_kind": "heading",
       "norm_label": "language, compression and code",
       "source_file": "CLAUDE.md",
-      "source_location": "L83"
+      "source_location": "L84"
     },
     {
       "id": "claude_named_agent_requests",
@@ -4968,7 +4968,7 @@
       "node_kind": "heading",
       "norm_label": "named-agent requests",
       "source_file": "CLAUDE.md",
-      "source_location": "L94"
+      "source_location": "L95"
     },
     {
       "id": "claude_notifications",
@@ -4980,7 +4980,7 @@
       "node_kind": "heading",
       "norm_label": "notifications",
       "source_file": "CLAUDE.md",
-      "source_location": "L117"
+      "source_location": "L118"
     },
     {
       "id": "claude_product",
@@ -4992,7 +4992,7 @@
       "node_kind": "heading",
       "norm_label": "product",
       "source_file": "CLAUDE.md",
-      "source_location": "L135"
+      "source_location": "L136"
     },
     {
       "id": "claude_provider_adapters",
@@ -5004,7 +5004,7 @@
       "node_kind": "heading",
       "norm_label": "provider adapters",
       "source_file": "CLAUDE.md",
-      "source_location": "L76"
+      "source_location": "L77"
     },
     {
       "id": "claude_speaking_and_showing",
@@ -5016,7 +5016,7 @@
       "node_kind": "heading",
       "norm_label": "speaking and showing",
       "source_file": "CLAUDE.md",
-      "source_location": "L105"
+      "source_location": "L106"
     },
     {
       "id": "claude_skills_banner_design_skill",
@@ -6269,64 +6269,88 @@
       "source_location": "L30"
     },
     {
-      "id": "docs_adr_0023_agent_harnesses_project_from_claude_canonical_source",
-      "label": "0023-agent-harnesses-project-from-claude-canonical-source.md",
+      "id": "docs_agents_issue_tracker",
+      "label": "issue-tracker.md",
       "_origin": "ast",
       "community": 166,
       "community_name": "README.md",
       "file_type": "document",
       "node_kind": "page",
-      "norm_label": "0023-agent-harnesses-project-from-claude-canonical-source.md",
-      "source_file": "docs/adr/0023-agent-harnesses-project-from-claude-canonical-source.md",
+      "norm_label": "issue-tracker.md",
+      "source_file": "docs/agents/issue-tracker.md",
       "source_location": "L1"
     },
     {
-      "id": "docs_adr_0023_agent_harnesses_project_from_claude_canonical_source_agent_harnesses_project_from_the_claude_canonical_source",
-      "label": "Agent harnesses project from the Claude canonical source",
+      "id": "docs_agents_issue_tracker_a_ticket_is_a_record_not_a_transcript",
+      "label": "A ticket is a record, not a transcript",
       "_origin": "ast",
       "community": 166,
       "community_name": "README.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "agent harnesses project from the claude canonical source",
-      "source_file": "docs/adr/0023-agent-harnesses-project-from-claude-canonical-source.md",
-      "source_location": "L1"
+      "norm_label": "a ticket is a record, not a transcript",
+      "source_file": "docs/agents/issue-tracker.md",
+      "source_location": "L28"
     },
     {
-      "id": "docs_adr_0023_agent_harnesses_project_from_claude_canonical_source_consequences",
-      "label": "Consequences",
+      "id": "docs_agents_issue_tracker_issue_tracker_conventions",
+      "label": "Issue tracker conventions",
       "_origin": "ast",
       "community": 166,
       "community_name": "README.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "consequences",
-      "source_file": "docs/adr/0023-agent-harnesses-project-from-claude-canonical-source.md",
-      "source_location": "L35"
+      "norm_label": "issue tracker conventions",
+      "source_file": "docs/agents/issue-tracker.md",
+      "source_location": "L1"
     },
     {
-      "id": "docs_adr_0023_agent_harnesses_project_from_claude_canonical_source_considered_options",
-      "label": "Considered options",
+      "id": "docs_agents_issue_tracker_notes",
+      "label": "Notes",
       "_origin": "ast",
       "community": 166,
       "community_name": "README.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "considered options",
-      "source_file": "docs/adr/0023-agent-harnesses-project-from-claude-canonical-source.md",
-      "source_location": "L26"
+      "norm_label": "notes",
+      "source_file": "docs/agents/issue-tracker.md",
+      "source_location": "L158"
     },
     {
-      "id": "docs_agents_harnesses",
-      "label": "harnesses.md",
+      "id": "docs_agents_issue_tracker_status_lifecycle",
+      "label": "Status lifecycle",
       "_origin": "ast",
       "community": 166,
       "community_name": "README.md",
       "file_type": "document",
-      "node_kind": "page",
-      "norm_label": "harnesses.md",
-      "source_file": "docs/agents/harnesses.md",
-      "source_location": "L1"
+      "node_kind": "heading",
+      "norm_label": "status lifecycle",
+      "source_file": "docs/agents/issue-tracker.md",
+      "source_location": "L132"
+    },
+    {
+      "id": "docs_agents_issue_tracker_the_adapter_is_the_only_entry_point",
+      "label": "The adapter is the only entry point",
+      "_origin": "ast",
+      "community": 166,
+      "community_name": "README.md",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "the adapter is the only entry point",
+      "source_file": "docs/agents/issue-tracker.md",
+      "source_location": "L9"
+    },
+    {
+      "id": "docs_agents_issue_tracker_this_workspace_s_settings",
+      "label": "This workspace's settings",
+      "_origin": "ast",
+      "community": 166,
+      "community_name": "README.md",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "this workspace's settings",
+      "source_file": "docs/agents/issue-tracker.md",
+      "source_location": "L107"
     },
     {
       "id": "readme",
@@ -6362,7 +6386,7 @@
       "node_kind": "heading",
       "norm_label": "\ud83d\udd04 keeping the tooling current",
       "source_file": "README.md",
-      "source_location": "L241"
+      "source_location": "L251"
     },
     {
       "id": "readme_learn_more",
@@ -6374,7 +6398,7 @@
       "node_kind": "heading",
       "norm_label": "\ud83d\udcda learn more",
       "source_file": "README.md",
-      "source_location": "L260"
+      "source_location": "L270"
     },
     {
       "id": "readme_managing_repos",
@@ -6386,7 +6410,7 @@
       "node_kind": "heading",
       "norm_label": "\ud83d\uddc2\ufe0f managing repos",
       "source_file": "README.md",
-      "source_location": "L218"
+      "source_location": "L228"
     },
     {
       "id": "readme_prerequisites",
@@ -6410,7 +6434,7 @@
       "node_kind": "heading",
       "norm_label": "\ud83d\udd0d production triage (optional)",
       "source_file": "README.md",
-      "source_location": "L149"
+      "source_location": "L159"
     },
     {
       "id": "readme_run_a_ticket",
@@ -6422,7 +6446,7 @@
       "node_kind": "heading",
       "norm_label": "\ud83c\udfab run a ticket",
       "source_file": "README.md",
-      "source_location": "L124"
+      "source_location": "L134"
     },
     {
       "id": "readme_what_s_inside",
@@ -6435,6 +6459,66 @@
       "norm_label": "\ud83d\udce6 what's inside",
       "source_file": "README.md",
       "source_location": "L34"
+    },
+    {
+      "id": "scripts_vcs_readme",
+      "label": "vcs/README.md",
+      "_origin": "ast",
+      "community": 166,
+      "community_name": "README.md",
+      "file_type": "document",
+      "node_kind": "page",
+      "norm_label": "vcs/readme.md",
+      "source_file": "scripts/vcs/README.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "scripts_vcs_readme_auth",
+      "label": "Auth",
+      "_origin": "ast",
+      "community": 166,
+      "community_name": "README.md",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "auth",
+      "source_file": "scripts/vcs/README.md",
+      "source_location": "L61"
+    },
+    {
+      "id": "scripts_vcs_readme_layout",
+      "label": "Layout",
+      "_origin": "ast",
+      "community": 166,
+      "community_name": "README.md",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "layout",
+      "source_file": "scripts/vcs/README.md",
+      "source_location": "L36"
+    },
+    {
+      "id": "scripts_vcs_readme_notes",
+      "label": "Notes",
+      "_origin": "ast",
+      "community": 166,
+      "community_name": "README.md",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "notes",
+      "source_file": "scripts/vcs/README.md",
+      "source_location": "L67"
+    },
+    {
+      "id": "scripts_vcs_readme_vcs_adapter",
+      "label": "VCS adapter",
+      "_origin": "ast",
+      "community": 166,
+      "community_name": "README.md",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "vcs adapter",
+      "source_file": "scripts/vcs/README.md",
+      "source_location": "L1"
     },
     {
       "id": "claude_skills_brand_references_update",
@@ -14285,6 +14369,18 @@
       "source_location": "L1"
     },
     {
+      "id": "scripts_db_readme_declaring_a_tunnel",
+      "label": "Declaring a tunnel",
+      "_origin": "ast",
+      "community": 27,
+      "community_name": "scripts/db \u2014 deployed Postgres (staging + production), read-only",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "declaring a tunnel",
+      "source_file": "scripts/db/README.md",
+      "source_location": "L136"
+    },
+    {
       "id": "scripts_db_readme_environments_and_targets",
       "label": "Environments and targets",
       "_origin": "ast",
@@ -14295,6 +14391,54 @@
       "norm_label": "environments and targets",
       "source_file": "scripts/db/README.md",
       "source_location": "L18"
+    },
+    {
+      "id": "scripts_db_readme_gost_shared_socks_proxy",
+      "label": "gost (shared SOCKS proxy)",
+      "_origin": "ast",
+      "community": 27,
+      "community_name": "scripts/db \u2014 deployed Postgres (staging + production), read-only",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "gost (shared socks proxy)",
+      "source_file": "scripts/db/README.md",
+      "source_location": "L189"
+    },
+    {
+      "id": "scripts_db_readme_how_it_works",
+      "label": "How it works",
+      "_origin": "ast",
+      "community": 27,
+      "community_name": "scripts/db \u2014 deployed Postgres (staging + production), read-only",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "how it works",
+      "source_file": "scripts/db/README.md",
+      "source_location": "L168"
+    },
+    {
+      "id": "scripts_db_readme_port_in_use_behaviour",
+      "label": "Port-in-use behaviour",
+      "_origin": "ast",
+      "community": 27,
+      "community_name": "scripts/db \u2014 deployed Postgres (staging + production), read-only",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "port-in-use behaviour",
+      "source_file": "scripts/db/README.md",
+      "source_location": "L211"
+    },
+    {
+      "id": "scripts_db_readme_prerequisites",
+      "label": "Prerequisites",
+      "_origin": "ast",
+      "community": 27,
+      "community_name": "scripts/db \u2014 deployed Postgres (staging + production), read-only",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "prerequisites",
+      "source_file": "scripts/db/README.md",
+      "source_location": "L202"
     },
     {
       "id": "scripts_db_readme_repro_seeding_prod_repro_seed_py",
@@ -14367,6 +14511,18 @@
       "norm_label": "tools",
       "source_file": "scripts/db/README.md",
       "source_location": "L111"
+    },
+    {
+      "id": "scripts_db_readme_tunnel_sidecars_optional_for_managed_postgres_behind_a_vpc",
+      "label": "Tunnel sidecars (optional \u2014 for managed Postgres behind a VPC)",
+      "_origin": "ast",
+      "community": 27,
+      "community_name": "scripts/db \u2014 deployed Postgres (staging + production), read-only",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "tunnel sidecars (optional \u2014 for managed postgres behind a vpc)",
+      "source_file": "scripts/db/README.md",
+      "source_location": "L129"
     },
     {
       "id": "scripts_db_readme_verifying_it",
@@ -15786,6 +15942,138 @@
       "source_location": "L94"
     },
     {
+      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope",
+      "label": "0038-triage-mcp-registration-is-project-scope.md",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "page",
+      "norm_label": "0038-triage-mcp-registration-is-project-scope.md",
+      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope_alternatives_rejected",
+      "label": "Alternatives rejected",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "alternatives rejected",
+      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
+      "source_location": "L79"
+    },
+    {
+      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope_consequences",
+      "label": "Consequences",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "consequences",
+      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
+      "source_location": "L60"
+    },
+    {
+      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope_context",
+      "label": "Context",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "context",
+      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
+      "source_location": "L3"
+    },
+    {
+      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope_decision",
+      "label": "Decision",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "decision",
+      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
+      "source_location": "L20"
+    },
+    {
+      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope_triage_mcp_registration_is_project_scope_for_cursor_and_codex",
+      "label": "Triage MCP registration is project scope for Cursor and Codex",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "triage mcp registration is project scope for cursor and codex",
+      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand",
+      "label": "0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "page",
+      "norm_label": "0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_configured_mcp_servers_connect_on_session_start_n8n_is_on_demand",
+      "label": "Configured MCP servers connect on session start; n8n is on demand",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "configured mcp servers connect on session start; n8n is on demand",
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_consequences",
+      "label": "Consequences",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "consequences",
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L30"
+    },
+    {
+      "id": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_context",
+      "label": "Context",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "context",
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L5"
+    },
+    {
+      "id": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_decision",
+      "label": "Decision",
+      "_origin": "ast",
+      "community": 284,
+      "community_name": "Image generation (graphic-designer asset pipeline)",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "decision",
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L18"
+    },
+    {
       "id": "docs_agents_image_generation",
       "label": "image-generation.md",
       "_origin": "ast",
@@ -15819,7 +16107,7 @@
       "node_kind": "heading",
       "norm_label": "cost",
       "source_file": "docs/agents/image-generation.md",
-      "source_location": "L87"
+      "source_location": "L89"
     },
     {
       "id": "docs_agents_image_generation_how_the_pipeline_fails_loud_no_silent_placeholders",
@@ -15831,7 +16119,7 @@
       "node_kind": "heading",
       "norm_label": "how the pipeline fails loud (no silent placeholders)",
       "source_file": "docs/agents/image-generation.md",
-      "source_location": "L78"
+      "source_location": "L80"
     },
     {
       "id": "docs_agents_image_generation_image_generation_graphic_designer_asset_pipeline",
@@ -15879,7 +16167,7 @@
       "node_kind": "heading",
       "norm_label": "verify",
       "source_file": "docs/agents/image-generation.md",
-      "source_location": "L70"
+      "source_location": "L72"
     },
     {
       "id": "docs_agents_pii_provenance",
@@ -15976,18 +16264,6 @@
       "norm_label": "what happens on a hit",
       "source_file": "docs/agents/pii-provenance.md",
       "source_location": "L28"
-    },
-    {
-      "id": "docs_agents_plan_artifacts",
-      "label": "plan-artifacts.md",
-      "_origin": "ast",
-      "community": 286,
-      "community_name": "Plan artifacts \u2014 where a plan lives, and why it is never committed",
-      "file_type": "document",
-      "node_kind": "page",
-      "norm_label": "plan-artifacts.md",
-      "source_file": "docs/agents/plan-artifacts.md",
-      "source_location": "L1"
     },
     {
       "id": "docs_agents_plan_artifacts_enforcement",
@@ -20431,6 +20707,18 @@
       "source_location": "L66"
     },
     {
+      "id": "docs_agents_harnesses_harness_registry_contract",
+      "label": "Harness registry contract",
+      "_origin": "ast",
+      "community": 34,
+      "community_name": "Agent harnesses",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "harness registry contract",
+      "source_file": "docs/agents/harnesses.md",
+      "source_location": "L97"
+    },
+    {
       "id": "docs_agents_harnesses_interactive_child_agent_visibility",
       "label": "Interactive child-agent visibility",
       "_origin": "ast",
@@ -20455,6 +20743,18 @@
       "source_location": "L43"
     },
     {
+      "id": "docs_agents_harnesses_projector_interface",
+      "label": "Projector interface",
+      "_origin": "ast",
+      "community": 34,
+      "community_name": "Agent harnesses",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "projector interface",
+      "source_file": "docs/agents/harnesses.md",
+      "source_location": "L114"
+    },
+    {
       "id": "docs_agents_harnesses_setup_update_and_doctor",
       "label": "Setup, update, and doctor",
       "_origin": "ast",
@@ -20467,6 +20767,30 @@
       "source_location": "L267"
     },
     {
+      "id": "docs_agents_harnesses_the_byte_budget",
+      "label": "The byte budget",
+      "_origin": "ast",
+      "community": 34,
+      "community_name": "Agent harnesses",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "the byte budget",
+      "source_file": "docs/agents/harnesses.md",
+      "source_location": "L165"
+    },
+    {
+      "id": "docs_agents_harnesses_the_determinism_rule",
+      "label": "The determinism rule",
+      "_origin": "ast",
+      "community": 34,
+      "community_name": "Agent harnesses",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "the determinism rule",
+      "source_file": "docs/agents/harnesses.md",
+      "source_location": "L207"
+    },
+    {
       "id": "docs_agents_harnesses_verification_gate",
       "label": "Verification gate",
       "_origin": "ast",
@@ -20477,6 +20801,18 @@
       "norm_label": "verification gate",
       "source_file": "docs/agents/harnesses.md",
       "source_location": "L281"
+    },
+    {
+      "id": "docs_agents_harnesses_workflow_adapter_interface",
+      "label": "Workflow adapter interface",
+      "_origin": "ast",
+      "community": 34,
+      "community_name": "Agent harnesses",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "workflow adapter interface",
+      "source_file": "docs/agents/harnesses.md",
+      "source_location": "L143"
     },
     {
       "id": "docs_agents_loadtest_gate_metrics",
@@ -24797,88 +25133,100 @@
       "source_location": "L17"
     },
     {
-      "id": "docs_agents_issue_tracker",
-      "label": "issue-tracker.md",
+      "id": "docs_adr_0001_headless_workflow_config_mirror",
+      "label": "0001-headless-workflow-config-mirror.md",
       "_origin": "ast",
       "community": 47,
-      "community_name": "Issue tracker conventions",
+      "community_name": "0003-personal-runtime-config-overrides.md",
       "file_type": "document",
       "node_kind": "page",
-      "norm_label": "issue-tracker.md",
-      "source_file": "docs/agents/issue-tracker.md",
+      "norm_label": "0001-headless-workflow-config-mirror.md",
+      "source_file": "docs/adr/0001-headless-workflow-config-mirror.md",
       "source_location": "L1"
     },
     {
-      "id": "docs_agents_issue_tracker_a_ticket_is_a_record_not_a_transcript",
-      "label": "A ticket is a record, not a transcript",
+      "id": "docs_adr_0001_headless_workflow_config_mirror_consequences",
+      "label": "Consequences",
       "_origin": "ast",
       "community": 47,
-      "community_name": "Issue tracker conventions",
+      "community_name": "0003-personal-runtime-config-overrides.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "a ticket is a record, not a transcript",
-      "source_file": "docs/agents/issue-tracker.md",
+      "norm_label": "consequences",
+      "source_file": "docs/adr/0001-headless-workflow-config-mirror.md",
+      "source_location": "L18"
+    },
+    {
+      "id": "docs_adr_0001_headless_workflow_config_mirror_headless_workflows_read_config_from_a_generated_mirror_not_the_file",
+      "label": "Headless workflows read config from a generated mirror, not the file",
+      "_origin": "ast",
+      "community": 47,
+      "community_name": "0003-personal-runtime-config-overrides.md",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "headless workflows read config from a generated mirror, not the file",
+      "source_file": "docs/adr/0001-headless-workflow-config-mirror.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "docs_adr_0001_headless_workflow_config_mirror_rejected_alternatives",
+      "label": "Rejected alternatives",
+      "_origin": "ast",
+      "community": 47,
+      "community_name": "0003-personal-runtime-config-overrides.md",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "rejected alternatives",
+      "source_file": "docs/adr/0001-headless-workflow-config-mirror.md",
       "source_location": "L28"
     },
     {
-      "id": "docs_agents_issue_tracker_issue_tracker_conventions",
-      "label": "Issue tracker conventions",
+      "id": "docs_adr_0003_personal_runtime_config_overrides",
+      "label": "0003-personal-runtime-config-overrides.md",
       "_origin": "ast",
       "community": 47,
-      "community_name": "Issue tracker conventions",
+      "community_name": "0003-personal-runtime-config-overrides.md",
       "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "issue tracker conventions",
-      "source_file": "docs/agents/issue-tracker.md",
+      "node_kind": "page",
+      "norm_label": "0003-personal-runtime-config-overrides.md",
+      "source_file": "docs/adr/0003-personal-runtime-config-overrides.md",
       "source_location": "L1"
     },
     {
-      "id": "docs_agents_issue_tracker_notes",
-      "label": "Notes",
+      "id": "docs_adr_0003_personal_runtime_config_overrides_consequences",
+      "label": "Consequences",
       "_origin": "ast",
       "community": 47,
-      "community_name": "Issue tracker conventions",
+      "community_name": "0003-personal-runtime-config-overrides.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "notes",
-      "source_file": "docs/agents/issue-tracker.md",
-      "source_location": "L158"
+      "norm_label": "consequences",
+      "source_file": "docs/adr/0003-personal-runtime-config-overrides.md",
+      "source_location": "L46"
     },
     {
-      "id": "docs_agents_issue_tracker_status_lifecycle",
-      "label": "Status lifecycle",
+      "id": "docs_adr_0003_personal_runtime_config_overrides_personal_config_overrides_apply_at_runtime_only_never_in_the_committed_mirror",
+      "label": "Personal config overrides apply at runtime only, never in the committed mirror",
       "_origin": "ast",
       "community": 47,
-      "community_name": "Issue tracker conventions",
+      "community_name": "0003-personal-runtime-config-overrides.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "status lifecycle",
-      "source_file": "docs/agents/issue-tracker.md",
-      "source_location": "L132"
+      "norm_label": "personal config overrides apply at runtime only, never in the committed mirror",
+      "source_file": "docs/adr/0003-personal-runtime-config-overrides.md",
+      "source_location": "L1"
     },
     {
-      "id": "docs_agents_issue_tracker_the_adapter_is_the_only_entry_point",
-      "label": "The adapter is the only entry point",
+      "id": "docs_adr_0003_personal_runtime_config_overrides_rejected_alternatives",
+      "label": "Rejected alternatives",
       "_origin": "ast",
       "community": 47,
-      "community_name": "Issue tracker conventions",
+      "community_name": "0003-personal-runtime-config-overrides.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "the adapter is the only entry point",
-      "source_file": "docs/agents/issue-tracker.md",
-      "source_location": "L9"
-    },
-    {
-      "id": "docs_agents_issue_tracker_this_workspace_s_settings",
-      "label": "This workspace's settings",
-      "_origin": "ast",
-      "community": 47,
-      "community_name": "Issue tracker conventions",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "this workspace's settings",
-      "source_file": "docs/agents/issue-tracker.md",
-      "source_location": "L107"
+      "norm_label": "rejected alternatives",
+      "source_file": "docs/adr/0003-personal-runtime-config-overrides.md",
+      "source_location": "L68"
     },
     {
       "id": "docs_agents_ponytail_code_minimalism_ponytail",
@@ -24965,88 +25313,100 @@
       "source_location": "L51"
     },
     {
-      "id": "docs_agents_run_endings_a_person_has_to_decide_not_a_failure_and_no_bound_would_help",
-      "label": "A person has to decide (not a failure, and no bound would help)",
+      "id": "docs_agents_superset",
+      "label": "superset.md",
       "_origin": "ast",
       "community": 49,
-      "community_name": "How a dev-cycle run ends",
+      "community_name": "Superset worktrees \u2014 setup, the setup lock, and the readiness check",
       "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "a person has to decide (not a failure, and no bound would help)",
-      "source_file": "docs/agents/run-endings.md",
-      "source_location": "L21"
-    },
-    {
-      "id": "docs_agents_run_endings_how_a_dev_cycle_run_ends",
-      "label": "How a dev-cycle run ends",
-      "_origin": "ast",
-      "community": 49,
-      "community_name": "How a dev-cycle run ends",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "how a dev-cycle run ends",
-      "source_file": "docs/agents/run-endings.md",
+      "node_kind": "page",
+      "norm_label": "superset.md",
+      "source_file": "docs/agents/superset.md",
       "source_location": "L1"
     },
     {
-      "id": "docs_agents_run_endings_it_finished",
-      "label": "It finished",
+      "id": "docs_agents_superset_plugins_in_a_worktree",
+      "label": "Plugins in a worktree",
       "_origin": "ast",
       "community": 49,
-      "community_name": "How a dev-cycle run ends",
+      "community_name": "Superset worktrees \u2014 setup, the setup lock, and the readiness check",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "it finished",
-      "source_file": "docs/agents/run-endings.md",
-      "source_location": "L12"
+      "norm_label": "plugins in a worktree",
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L26"
     },
     {
-      "id": "docs_agents_run_endings_it_ran_out_of_budget",
-      "label": "It ran out of budget",
+      "id": "docs_agents_superset_selftest",
+      "label": "Selftest",
       "_origin": "ast",
       "community": 49,
-      "community_name": "How a dev-cycle run ends",
+      "community_name": "Superset worktrees \u2014 setup, the setup lock, and the readiness check",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "it ran out of budget",
-      "source_file": "docs/agents/run-endings.md",
-      "source_location": "L30"
+      "norm_label": "selftest",
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L75"
     },
     {
-      "id": "docs_agents_run_endings_it_worked_to_a_bound_and_recorded_what_it_could_not_close",
-      "label": "It worked to a bound and recorded what it could not close",
+      "id": "docs_agents_superset_setup_product_the_organisation_specific_extension_point",
+      "label": "`setup_product` \u2014 the organisation-specific extension point",
       "_origin": "ast",
       "community": 49,
-      "community_name": "How a dev-cycle run ends",
+      "community_name": "Superset worktrees \u2014 setup, the setup lock, and the readiness check",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "it worked to a bound and recorded what it could not close",
-      "source_file": "docs/agents/run-endings.md",
-      "source_location": "L38"
+      "norm_label": "`setup_product` \u2014 the organisation-specific extension point",
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L64"
     },
     {
-      "id": "docs_agents_run_endings_the_shape_to_keep",
-      "label": "The shape to keep",
+      "id": "docs_agents_superset_setup_steps",
+      "label": "Setup steps",
       "_origin": "ast",
       "community": 49,
-      "community_name": "How a dev-cycle run ends",
+      "community_name": "Superset worktrees \u2014 setup, the setup lock, and the readiness check",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "the shape to keep",
-      "source_file": "docs/agents/run-endings.md",
-      "source_location": "L67"
+      "norm_label": "setup steps",
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L8"
     },
     {
-      "id": "docs_agents_run_endings_the_stops_that_remain_and_why_each_is_genuinely_terminal",
-      "label": "The stops that remain, and why each is genuinely terminal",
+      "id": "docs_agents_superset_superset_worktrees_setup_the_setup_lock_and_the_readiness_check",
+      "label": "Superset worktrees \u2014 setup, the setup lock, and the readiness check",
       "_origin": "ast",
       "community": 49,
-      "community_name": "How a dev-cycle run ends",
+      "community_name": "Superset worktrees \u2014 setup, the setup lock, and the readiness check",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "the stops that remain, and why each is genuinely terminal",
-      "source_file": "docs/agents/run-endings.md",
-      "source_location": "L50"
+      "norm_label": "superset worktrees \u2014 setup, the setup lock, and the readiness check",
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "docs_agents_superset_the_readiness_check",
+      "label": "The readiness check",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "Superset worktrees \u2014 setup, the setup lock, and the readiness check",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "the readiness check",
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L43"
+    },
+    {
+      "id": "docs_agents_superset_the_setup_lock",
+      "label": "The setup lock",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "Superset worktrees \u2014 setup, the setup lock, and the readiness check",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "the setup lock",
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L35"
     },
     {
       "id": "agents",
@@ -26157,148 +26517,88 @@
       "source_location": "L1"
     },
     {
-      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope",
-      "label": "0038-triage-mcp-registration-is-project-scope.md",
+      "id": "docs_adr_0023_agent_harnesses_project_from_claude_canonical_source",
+      "label": "0023-agent-harnesses-project-from-claude-canonical-source.md",
       "_origin": "ast",
       "community": 57,
-      "community_name": "Triage MCP registration is project scope for Cursor and Codex",
+      "community_name": "0023-agent-harnesses-project-from-claude-canonical-source.md",
       "file_type": "document",
       "node_kind": "page",
-      "norm_label": "0038-triage-mcp-registration-is-project-scope.md",
-      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
+      "norm_label": "0023-agent-harnesses-project-from-claude-canonical-source.md",
+      "source_file": "docs/adr/0023-agent-harnesses-project-from-claude-canonical-source.md",
       "source_location": "L1"
     },
     {
-      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope_alternatives_rejected",
-      "label": "Alternatives rejected",
+      "id": "docs_adr_0023_agent_harnesses_project_from_claude_canonical_source_agent_harnesses_project_from_the_claude_canonical_source",
+      "label": "Agent harnesses project from the Claude canonical source",
       "_origin": "ast",
       "community": 57,
-      "community_name": "Triage MCP registration is project scope for Cursor and Codex",
+      "community_name": "0023-agent-harnesses-project-from-claude-canonical-source.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "alternatives rejected",
-      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
-      "source_location": "L79"
+      "norm_label": "agent harnesses project from the claude canonical source",
+      "source_file": "docs/adr/0023-agent-harnesses-project-from-claude-canonical-source.md",
+      "source_location": "L1"
     },
     {
-      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope_consequences",
+      "id": "docs_adr_0023_agent_harnesses_project_from_claude_canonical_source_consequences",
       "label": "Consequences",
       "_origin": "ast",
       "community": 57,
-      "community_name": "Triage MCP registration is project scope for Cursor and Codex",
+      "community_name": "0023-agent-harnesses-project-from-claude-canonical-source.md",
       "file_type": "document",
       "node_kind": "heading",
       "norm_label": "consequences",
-      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
-      "source_location": "L60"
+      "source_file": "docs/adr/0023-agent-harnesses-project-from-claude-canonical-source.md",
+      "source_location": "L35"
     },
     {
-      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope_context",
-      "label": "Context",
+      "id": "docs_adr_0023_agent_harnesses_project_from_claude_canonical_source_considered_options",
+      "label": "Considered options",
       "_origin": "ast",
       "community": 57,
-      "community_name": "Triage MCP registration is project scope for Cursor and Codex",
+      "community_name": "0023-agent-harnesses-project-from-claude-canonical-source.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "context",
-      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
-      "source_location": "L3"
+      "norm_label": "considered options",
+      "source_file": "docs/adr/0023-agent-harnesses-project-from-claude-canonical-source.md",
+      "source_location": "L26"
     },
     {
-      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope_decision",
-      "label": "Decision",
+      "id": "docs_agents_harnesses",
+      "label": "harnesses.md",
       "_origin": "ast",
       "community": 57,
-      "community_name": "Triage MCP registration is project scope for Cursor and Codex",
+      "community_name": "0023-agent-harnesses-project-from-claude-canonical-source.md",
       "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "decision",
-      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
-      "source_location": "L20"
-    },
-    {
-      "id": "docs_adr_0038_triage_mcp_registration_is_project_scope_triage_mcp_registration_is_project_scope_for_cursor_and_codex",
-      "label": "Triage MCP registration is project scope for Cursor and Codex",
-      "_origin": "ast",
-      "community": 57,
-      "community_name": "Triage MCP registration is project scope for Cursor and Codex",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "triage mcp registration is project scope for cursor and codex",
-      "source_file": "docs/adr/0038-triage-mcp-registration-is-project-scope.md",
+      "node_kind": "page",
+      "norm_label": "harnesses.md",
+      "source_file": "docs/agents/harnesses.md",
       "source_location": "L1"
     },
     {
-      "id": "scripts_db_readme_declaring_a_tunnel",
-      "label": "Declaring a tunnel",
+      "id": "scripts_n8n_readme",
+      "label": "n8n/README.md",
       "_origin": "ast",
       "community": 58,
-      "community_name": "Tunnel sidecars (optional \u2014 for managed Postgres behind a VPC)",
+      "community_name": "n8n/README.md",
       "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "declaring a tunnel",
-      "source_file": "scripts/db/README.md",
-      "source_location": "L136"
+      "node_kind": "page",
+      "norm_label": "n8n/readme.md",
+      "source_file": "scripts/n8n/README.md",
+      "source_location": "L1"
     },
     {
-      "id": "scripts_db_readme_gost_shared_socks_proxy",
-      "label": "gost (shared SOCKS proxy)",
+      "id": "scripts_n8n_readme_n8n_mcp_on_demand",
+      "label": "n8n MCP (on demand)",
       "_origin": "ast",
       "community": 58,
-      "community_name": "Tunnel sidecars (optional \u2014 for managed Postgres behind a VPC)",
+      "community_name": "n8n/README.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "gost (shared socks proxy)",
-      "source_file": "scripts/db/README.md",
-      "source_location": "L189"
-    },
-    {
-      "id": "scripts_db_readme_how_it_works",
-      "label": "How it works",
-      "_origin": "ast",
-      "community": 58,
-      "community_name": "Tunnel sidecars (optional \u2014 for managed Postgres behind a VPC)",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "how it works",
-      "source_file": "scripts/db/README.md",
-      "source_location": "L168"
-    },
-    {
-      "id": "scripts_db_readme_port_in_use_behaviour",
-      "label": "Port-in-use behaviour",
-      "_origin": "ast",
-      "community": 58,
-      "community_name": "Tunnel sidecars (optional \u2014 for managed Postgres behind a VPC)",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "port-in-use behaviour",
-      "source_file": "scripts/db/README.md",
-      "source_location": "L211"
-    },
-    {
-      "id": "scripts_db_readme_prerequisites",
-      "label": "Prerequisites",
-      "_origin": "ast",
-      "community": 58,
-      "community_name": "Tunnel sidecars (optional \u2014 for managed Postgres behind a VPC)",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "prerequisites",
-      "source_file": "scripts/db/README.md",
-      "source_location": "L202"
-    },
-    {
-      "id": "scripts_db_readme_tunnel_sidecars_optional_for_managed_postgres_behind_a_vpc",
-      "label": "Tunnel sidecars (optional \u2014 for managed Postgres behind a VPC)",
-      "_origin": "ast",
-      "community": 58,
-      "community_name": "Tunnel sidecars (optional \u2014 for managed Postgres behind a VPC)",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "tunnel sidecars (optional \u2014 for managed postgres behind a vpc)",
-      "source_file": "scripts/db/README.md",
-      "source_location": "L129"
+      "norm_label": "n8n mcp (on demand)",
+      "source_file": "scripts/n8n/README.md",
+      "source_location": "L1"
     },
     {
       "id": "claude_skills_brand_references_color_palette_management",
@@ -28721,126 +29021,6 @@
       "norm_label": "what `aiworks sync` does",
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L7"
-    },
-    {
-      "id": "docs_agents_harnesses_harness_registry_contract",
-      "label": "Harness registry contract",
-      "_origin": "ast",
-      "community": 70,
-      "community_name": "Harness registry contract",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "harness registry contract",
-      "source_file": "docs/agents/harnesses.md",
-      "source_location": "L97"
-    },
-    {
-      "id": "docs_agents_harnesses_projector_interface",
-      "label": "Projector interface",
-      "_origin": "ast",
-      "community": 70,
-      "community_name": "Harness registry contract",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "projector interface",
-      "source_file": "docs/agents/harnesses.md",
-      "source_location": "L114"
-    },
-    {
-      "id": "docs_agents_harnesses_the_byte_budget",
-      "label": "The byte budget",
-      "_origin": "ast",
-      "community": 70,
-      "community_name": "Harness registry contract",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "the byte budget",
-      "source_file": "docs/agents/harnesses.md",
-      "source_location": "L165"
-    },
-    {
-      "id": "docs_agents_harnesses_the_determinism_rule",
-      "label": "The determinism rule",
-      "_origin": "ast",
-      "community": 70,
-      "community_name": "Harness registry contract",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "the determinism rule",
-      "source_file": "docs/agents/harnesses.md",
-      "source_location": "L207"
-    },
-    {
-      "id": "docs_agents_harnesses_workflow_adapter_interface",
-      "label": "Workflow adapter interface",
-      "_origin": "ast",
-      "community": 70,
-      "community_name": "Harness registry contract",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "workflow adapter interface",
-      "source_file": "docs/agents/harnesses.md",
-      "source_location": "L143"
-    },
-    {
-      "id": "scripts_vcs_readme",
-      "label": "vcs/README.md",
-      "_origin": "ast",
-      "community": 71,
-      "community_name": "VCS adapter",
-      "file_type": "document",
-      "node_kind": "page",
-      "norm_label": "vcs/readme.md",
-      "source_file": "scripts/vcs/README.md",
-      "source_location": "L1"
-    },
-    {
-      "id": "scripts_vcs_readme_auth",
-      "label": "Auth",
-      "_origin": "ast",
-      "community": 71,
-      "community_name": "VCS adapter",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "auth",
-      "source_file": "scripts/vcs/README.md",
-      "source_location": "L61"
-    },
-    {
-      "id": "scripts_vcs_readme_layout",
-      "label": "Layout",
-      "_origin": "ast",
-      "community": 71,
-      "community_name": "VCS adapter",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "layout",
-      "source_file": "scripts/vcs/README.md",
-      "source_location": "L36"
-    },
-    {
-      "id": "scripts_vcs_readme_notes",
-      "label": "Notes",
-      "_origin": "ast",
-      "community": 71,
-      "community_name": "VCS adapter",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "notes",
-      "source_file": "scripts/vcs/README.md",
-      "source_location": "L67"
-    },
-    {
-      "id": "scripts_vcs_readme_vcs_adapter",
-      "label": "VCS adapter",
-      "_origin": "ast",
-      "community": 71,
-      "community_name": "VCS adapter",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "vcs adapter",
-      "source_file": "scripts/vcs/README.md",
-      "source_location": "L1"
     },
     {
       "id": "claude_skills_design_system_skill",
@@ -33262,7 +33442,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "L105",
+      "source_location": "L106",
       "weight": 1.0
     },
     {
@@ -33273,7 +33453,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "L117",
+      "source_location": "L118",
       "weight": 1.0
     },
     {
@@ -33284,7 +33464,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "L128",
+      "source_location": "L129",
       "weight": 1.0
     },
     {
@@ -33295,7 +33475,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "L135",
+      "source_location": "L136",
       "weight": 1.0
     },
     {
@@ -33317,7 +33497,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "L76",
+      "source_location": "L77",
       "weight": 1.0
     },
     {
@@ -33328,7 +33508,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "L83",
+      "source_location": "L84",
       "weight": 1.0
     },
     {
@@ -33339,7 +33519,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "L94",
+      "source_location": "L95",
       "weight": 1.0
     },
     {
@@ -52615,6 +52795,50 @@
       "weight": 1.0
     },
     {
+      "source": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand",
+      "target": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_configured_mcp_servers_connect_on_session_start_n8n_is_on_demand",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_configured_mcp_servers_connect_on_session_start_n8n_is_on_demand",
+      "target": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_decision",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_configured_mcp_servers_connect_on_session_start_n8n_is_on_demand",
+      "target": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_consequences",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L30",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_configured_mcp_servers_connect_on_session_start_n8n_is_on_demand",
+      "target": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand_context",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
       "source": "docs_agents_caveman",
       "target": "docs_agents_caveman_output_compression_caveman",
       "relation": "contains",
@@ -53700,7 +53924,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/agents/image-generation.md",
-      "source_location": "L78",
+      "source_location": "L80",
       "weight": 1.0
     },
     {
@@ -53711,7 +53935,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/agents/image-generation.md",
-      "source_location": "L87",
+      "source_location": "L89",
       "weight": 1.0
     },
     {
@@ -53733,7 +53957,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/agents/image-generation.md",
-      "source_location": "L70",
+      "source_location": "L72",
       "weight": 1.0
     },
     {
@@ -54768,6 +54992,83 @@
       "confidence_score": 1.0,
       "source_file": "docs/agents/submodules.md",
       "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_agents_superset",
+      "target": "docs_agents_superset_superset_worktrees_setup_the_setup_lock_and_the_readiness_check",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_agents_superset_superset_worktrees_setup_the_setup_lock_and_the_readiness_check",
+      "target": "docs_agents_superset_plugins_in_a_worktree",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_agents_superset_superset_worktrees_setup_the_setup_lock_and_the_readiness_check",
+      "target": "docs_agents_superset_the_setup_lock",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_agents_superset_superset_worktrees_setup_the_setup_lock_and_the_readiness_check",
+      "target": "docs_agents_superset_the_readiness_check",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_agents_superset_superset_worktrees_setup_the_setup_lock_and_the_readiness_check",
+      "target": "docs_agents_superset_setup_product_the_organisation_specific_extension_point",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L64",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_agents_superset_superset_worktrees_setup_the_setup_lock_and_the_readiness_check",
+      "target": "docs_agents_superset_selftest",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L75",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_agents_superset_superset_worktrees_setup_the_setup_lock_and_the_readiness_check",
+      "target": "docs_agents_superset_setup_steps",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/superset.md",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -56120,7 +56421,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L124",
+      "source_location": "L134",
       "weight": 1.0
     },
     {
@@ -56131,7 +56432,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L149",
+      "source_location": "L159",
       "weight": 1.0
     },
     {
@@ -56142,7 +56443,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L218",
+      "source_location": "L228",
       "weight": 1.0
     },
     {
@@ -56153,7 +56454,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L241",
+      "source_location": "L251",
       "weight": 1.0
     },
     {
@@ -56164,7 +56465,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L260",
+      "source_location": "L270",
       "weight": 1.0
     },
     {
@@ -56583,6 +56884,17 @@
       "confidence_score": 1.0,
       "source_file": "scripts/monitoring/README.md",
       "source_location": "L98",
+      "weight": 1.0
+    },
+    {
+      "source": "scripts_n8n_readme",
+      "target": "scripts_n8n_readme_n8n_mcp_on_demand",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "scripts/n8n/README.md",
+      "source_location": "L1",
       "weight": 1.0
     },
     {
@@ -58929,6 +59241,28 @@
       "weight": 1.0
     },
     {
+      "source": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand",
+      "target": "docs_adr_0005_deployed_env_triage_and_the_prod_gate",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand",
+      "target": "docs_adr_0038_triage_mcp_registration_is_project_scope",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
       "source": "docs_agents_caveman",
       "target": "docs_agents_cursor",
       "relation": "references",
@@ -58992,6 +59326,17 @@
       "confidence_score": 1.0,
       "source_file": "docs/agents/human-review.md",
       "source_location": "L105",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_agents_image_generation",
+      "target": "docs_adr_0043_configured_mcps_connect_and_n8n_is_on_demand",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/image-generation.md",
+      "source_location": "L64",
       "weight": 1.0
     },
     {
@@ -59277,7 +59622,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L141",
+      "source_location": "L151",
       "weight": 1.0
     },
     {
@@ -59288,7 +59633,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L152",
+      "source_location": "L162",
       "weight": 1.0
     },
     {
@@ -59299,7 +59644,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L153",
+      "source_location": "L163",
       "weight": 1.0
     },
     {
@@ -59310,7 +59655,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L263",
+      "source_location": "L273",
       "weight": 1.0
     },
     {
@@ -59321,7 +59666,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L265",
+      "source_location": "L275",
       "weight": 1.0
     },
     {
@@ -59332,7 +59677,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L266",
+      "source_location": "L276",
       "weight": 1.0
     },
     {
@@ -59343,7 +59688,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L267",
+      "source_location": "L277",
       "weight": 1.0
     },
     {
@@ -59354,7 +59699,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L267",
+      "source_location": "L277",
       "weight": 1.0
     },
     {
@@ -59392,5 +59737,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "94194c366730548dcfc5220347362ff0f2d4607d"
+  "built_at_commit": "5ffa1808b556deff27aa98fd3d08f4d0aa1ba521"
 }

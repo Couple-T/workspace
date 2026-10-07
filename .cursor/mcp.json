@@ -36,13 +36,13 @@
       ],
       "command": "uv"
     },
-    "n8n-mcp": {
+    "n8n": {
       "args": [
-        "-c",
-        "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); exec bash \"$ROOT/scripts/mcp/n8n-mcp.sh\""
+        "run",
+        "--quiet",
+        "/Users/employee/projects/personal/couple-t/workspace/scripts/n8n/n8n_mcp.py"
       ],
-      "command": "bash",
-      "type": "stdio"
+      "command": "uv"
     },
     "pg_triage": {
       "args": [
@@ -77,13 +77,6 @@
         "/Users/employee/projects/personal/couple-t/workspace/scripts/redis/redis_triage_mcp.py"
       ],
       "command": "uv"
-    },
-    "sonarqube": {
-      "headers": {
-        "Authorization": "Bearer ${SONARQUBE_TOKEN}"
-      },
-      "type": "http",
-      "url": "http://localhost:25434/mcp"
     }
   }
 }

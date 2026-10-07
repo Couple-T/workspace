@@ -1,17 +1,17 @@
-# Graph Report - workspace  (2026-10-04)
+# Graph Report - workspace  (2026-10-07)
 
 ## Corpus Check
-- 256 files · ~297,121 words
+- 259 files · ~298,417 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 63 file(s) not represented in the graph (top: .csv 52, (none) 7, .awk 2)
+- Unclassified: 64 file(s) not represented in the graph (top: .csv 52, (none) 7, .awk 2)
 
 ## Summary
-- 2626 nodes · 2496 edges · 233 communities (214 shown, 19 thin omitted)
+- 2641 nodes · 2511 edges · 231 communities (211 shown, 20 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `94194c36`
+- Built from commit: `5ffa1808`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -62,17 +62,17 @@
 - Plan automation
 - Process
 - The build does not stop at the first partial
-- Issue tracker conventions
+- 0003-personal-runtime-config-overrides.md
 - Code minimalism (ponytail)
-- How a dev-cycle run ends
+- Superset worktrees — setup, the setup lock, and the readiness check
 - .skills-upstream/caveman/SKILL.md
 - A reviewed-but-unresolved repo still gets the gate
 - Asset Approval Checklist
 - Logo AI Prompt Engineering
 - A submodule pin needs a pushed commit, not a merge
 - The local Harness set drives sync, and sync never removes a projection
-- Triage MCP registration is project scope for Cursor and Codex
-- Tunnel sidecars (optional — for managed Postgres behind a VPC)
+- 0023-agent-harnesses-project-from-claude-canonical-source.md
+- n8n/README.md
 - Color Palette Management
 - CIP Deliverable Guide
 - States and Variants
@@ -84,8 +84,6 @@
 - One workflow, one slash entry — authored scripts live under `.claude/workflows/src/`
 - tdd/SKILL.md
 - Tailwind CSS Customization
-- Harness registry contract
-- VCS adapter
 - Design System
 - Image Generation Prompt Best Practices
 - A cross-repo finding escalates instead of looping
@@ -256,7 +254,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (233 total, 19 thin omitted)
+## Communities (231 total, 20 thin omitted)
 
 ### Community 0 - "FeeedMe visual system — mood: **cozy**"
 Cohesion: 0.33
@@ -303,8 +301,8 @@ Cohesion: 0.09
 Nodes (19): ADR Format, Numbering, Optional sections, Template, What qualifies, When to offer an ADR, CONTEXT.md Format, Rules (+11 more)
 
 ### Community 11 - "Resuming a workflow after the config changed"
-Cohesion: 0.11
-Nodes (14): Consequences, Headless workflows read config from a generated mirror, not the file, Rejected alternatives, Consequences, Personal config overrides apply at runtime only, never in the committed mirror, Rejected alternatives, A resumed run keeps the base it started with, A run keeps its config; it must never keep its world (+6 more)
+Cohesion: 0.12
+Nodes (15): A person has to decide (not a failure, and no bound would help), How a dev-cycle run ends, It finished, It ran out of budget, It worked to a bound and recorded what it could not close, The shape to keep, The stops that remain, and why each is genuinely terminal, A resumed run keeps the base it started with (+7 more)
 
 ### Community 12 - "Diagnosing Bugs"
 Cohesion: 0.12
@@ -363,8 +361,8 @@ Cohesion: 0.22
 Nodes (9): Across invocations, Configuration, Related, The cost, stated plainly, The distinction the old code did not make, The review loop does not halt on a finding, The sanctioned "cannot", What each former halt became (+1 more)
 
 ### Community 27 - "scripts/db — deployed Postgres (staging + production), read-only"
-Cohesion: 0.22
-Nodes (8): Environments and targets, Repro seeding — `prod_repro_seed.py`, Safety model (layered), scripts/db — deployed Postgres (staging + production), read-only, Setup (one-time, per machine), Shards (optional), Tools, Verifying it
+Cohesion: 0.13
+Nodes (14): Declaring a tunnel, Environments and targets, gost (shared SOCKS proxy), How it works, Port-in-use behaviour, Prerequisites, Repro seeding — `prod_repro_seed.py`, Safety model (layered) (+6 more)
 
 ### Community 28 - "scripts/redis — production Redis, read-only"
 Cohesion: 0.22
@@ -391,8 +389,8 @@ Cohesion: 0.25
 Nodes (7): Context handoff — a subagent hands off to itself, is sealed, and is replaced, Knobs, The loop, The relay — who spawns the replacement, What the model cannot do, and what stands in for it, Why, Workflows — where this actually pays
 
 ### Community 34 - "Agent harnesses"
-Cohesion: 0.25
-Nodes (8): Adding Hermes, Agent compatibility contract, Agent harnesses, Commands, Interactive child-agent visibility, One canonical source, Setup, update, and doctor, Verification gate
+Cohesion: 0.15
+Nodes (13): Adding Hermes, Agent compatibility contract, Agent harnesses, Commands, Harness registry contract, Interactive child-agent visibility, One canonical source, Projector interface (+5 more)
 
 ### Community 35 - "The load-test gate — equal-or-better, or it does not ship"
 Cohesion: 0.25
@@ -442,17 +440,17 @@ Nodes (27): 1. The requirements are the bar, 2. The coding standards are the bot
 Cohesion: 0.29
 Nodes (7): Configuration, Related, The build does not stop at the first partial, The cost, stated plainly, What the continuation is, and is not, What this does NOT make true, Why ADR 0027 missed it
 
-### Community 47 - "Issue tracker conventions"
-Cohesion: 0.29
-Nodes (6): A ticket is a record, not a transcript, Issue tracker conventions, Notes, Status lifecycle, The adapter is the only entry point, This workspace's settings
+### Community 47 - "0003-personal-runtime-config-overrides.md"
+Cohesion: 0.25
+Nodes (6): Consequences, Headless workflows read config from a generated mirror, not the file, Rejected alternatives, Consequences, Personal config overrides apply at runtime only, never in the committed mirror, Rejected alternatives
 
 ### Community 48 - "Code minimalism (ponytail)"
 Cohesion: 0.29
 Nodes (7): Code minimalism (ponytail), Commands, How it reaches each spawn path, Installing it, The ladder, Where it stops, Who gets it, and why not everyone
 
-### Community 49 - "How a dev-cycle run ends"
-Cohesion: 0.29
-Nodes (7): A person has to decide (not a failure, and no bound would help), How a dev-cycle run ends, It finished, It ran out of budget, It worked to a bound and recorded what it could not close, The shape to keep, The stops that remain, and why each is genuinely terminal
+### Community 49 - "Superset worktrees — setup, the setup lock, and the readiness check"
+Cohesion: 0.25
+Nodes (7): Plugins in a worktree, Selftest, `setup_product` — the organisation-specific extension point, Setup steps, Superset worktrees — setup, the setup lock, and the readiness check, The readiness check, The setup lock
 
 ### Community 50 - ".skills-upstream/caveman/SKILL.md"
 Cohesion: 0.33
@@ -478,13 +476,9 @@ Nodes (6): A submodule pin needs a pushed commit, not a merge, Related, Reorderi
 Cohesion: 0.33
 Nodes (5): Consequences, Context, Decision, Rejected, The local Harness set drives sync, and sync never removes a projection
 
-### Community 57 - "Triage MCP registration is project scope for Cursor and Codex"
-Cohesion: 0.33
-Nodes (5): Alternatives rejected, Consequences, Context, Decision, Triage MCP registration is project scope for Cursor and Codex
-
-### Community 58 - "Tunnel sidecars (optional — for managed Postgres behind a VPC)"
-Cohesion: 0.33
-Nodes (6): Declaring a tunnel, gost (shared SOCKS proxy), How it works, Port-in-use behaviour, Prerequisites, Tunnel sidecars (optional — for managed Postgres behind a VPC)
+### Community 57 - "0023-agent-harnesses-project-from-claude-canonical-source.md"
+Cohesion: 0.40
+Nodes (3): Agent harnesses project from the Claude canonical source, Consequences, Considered options
 
 ### Community 59 - "Color Palette Management"
 Cohesion: 0.08
@@ -529,14 +523,6 @@ Nodes (17): Deep Modules, Interface Design for Testability, Designing for Mockab
 ### Community 69 - "Tailwind CSS Customization"
 Cohesion: 0.09
 Nodes (22): @apply Directive, Best Practices, Color Customization, Complete Tailwind Config, Configuration Examples, Content Configuration, Custom Color Palette, Custom Font Sizes (+14 more)
-
-### Community 70 - "Harness registry contract"
-Cohesion: 0.40
-Nodes (5): Harness registry contract, Projector interface, The byte budget, The determinism rule, Workflow adapter interface
-
-### Community 71 - "VCS adapter"
-Cohesion: 0.40
-Nodes (4): Auth, Layout, Notes, VCS adapter
 
 ### Community 72 - "Design System"
 Cohesion: 0.09
@@ -683,8 +669,8 @@ Cohesion: 0.14
 Nodes (13): Card Styles, Component Variants, CSS Structures, Feature Grid (3 columns), Layout Decision Flow, Layout Patterns, Layout Selection by Use Case, Metric Styles (+5 more)
 
 ### Community 166 - "README.md"
-Cohesion: 0.14
-Nodes (11): Agent harnesses project from the Claude canonical source, Consequences, Considered options, 🚀 First run, 🔄 Keeping the tooling current, 📚 Learn more, 🗂️ Managing repos, ✅ Prerequisites (+3 more)
+Cohesion: 0.10
+Nodes (18): A ticket is a record, not a transcript, Issue tracker conventions, Notes, Status lifecycle, The adapter is the only entry point, This workspace's settings, 🚀 First run, 🔄 Keeping the tooling current (+10 more)
 
 ### Community 168 - "update.md"
 Cohesion: 0.15
@@ -891,15 +877,15 @@ Cohesion: 0.25
 Nodes (8): Authority — blocking, top-priority, Human-review comments — the `Human:` convention, Mechanics — fix, reply, resolve (the agent resolves), Routing — classify each directive by what it asks for, Two kinds of `Human:` comment — directive vs disposition, When a human resolves a thread and writes nothing, Where they live, Who picks a directive up — including on a PR/MR that is already approved
 
 ### Community 284 - "Image generation (graphic-designer asset pipeline)"
-Cohesion: 0.25
-Nodes (7): Config: the `image_generation:` block (default OFF), Cost, How the pipeline fails loud (no silent placeholders), Image generation (graphic-designer asset pipeline), Setup (one-time, per machine), The backend: `mcp-image`, Verify
+Cohesion: 0.11
+Nodes (16): Alternatives rejected, Consequences, Context, Decision, Triage MCP registration is project scope for Cursor and Codex, Configured MCP servers connect on session start; n8n is on demand, Consequences, Context (+8 more)
 
 ### Community 285 - "PII provenance — redact what PRODUCTION gave us, and only that"
 Cohesion: 0.25
 Nodes (7): Honest limits, Knobs, Pieces, PII provenance — redact what PRODUCTION gave us, and only that, The vault, What always survives, What happens on a hit
 
 ### Community 286 - "Plan artifacts — where a plan lives, and why it is never committed"
-Cohesion: 0.25
+Cohesion: 0.29
 Nodes (7): Enforcement, Gates, History, Never committed, Plan artifacts — where a plan lives, and why it is never committed, The paths, Why per repo, not one file
 
 ### Community 296 - "Test standards"
@@ -1115,19 +1101,19 @@ Cohesion: 0.50
 Nodes (3): Adding a self-hosted provider later, Backend: mermaid.ink / mermaid.live, Diagram adapter
 
 ## Knowledge Gaps
-- **1917 isolated node(s):** `Persistence`, `Why`, `1. Answer first`, `2. Kill ceremony`, `3. Short word` (+1912 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2063 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **19 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **1927 isolated node(s):** `Configuration (read these first)`, `Provider adapters`, `Language, compression and code`, `Named-agent requests`, `Speaking and showing` (+1922 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2073 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **20 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Retro — a four-repo ticket that took seven `dev-cycle` invocations` connect `2. Root causes, and which are fixed` to `CONTEXT.md`?**
   _High betweenness centrality (0.002) - this node is a cross-community bridge._
-- **Why does `scripts/db — deployed Postgres (staging + production), read-only` connect `scripts/db — deployed Postgres (staging + production), read-only` to `Tunnel sidecars (optional — for managed Postgres behind a VPC)`?**
+- **Why does `Working this workspace from Cursor` connect `Working this workspace from Cursor` to `ponytail.md`?**
   _High betweenness centrality (0.002) - this node is a cross-community bridge._
-- **What connects `Persistence`, `Why`, `1. Answer first` to the rest of the system?**
-  _1917 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `Configuration (read these first)`, `Provider adapters`, `Language, compression and code` to the rest of the system?**
+  _1927 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `During the session` be split into smaller, more focused modules?**
   _Cohesion score 0.09090909090909091 - nodes in this community are weakly interconnected._
 - **Should `Business Requirements Document: App Launcher Logo` be split into smaller, more focused modules?**

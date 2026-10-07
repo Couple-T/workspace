@@ -10,6 +10,7 @@
       "Mcp(codegraph:*)",
       "Mcp(graphify_docs:*)",
       "Mcp(n8n-mcp:*)",
+      "Mcp(n8n:*)",
       "Mcp(pg_triage:*)",
       "Mcp(postgres_main:*)",
       "Mcp(postgres_secondary:*)",
