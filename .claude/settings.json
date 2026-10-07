@@ -8,11 +8,8 @@
   "enabledMcpjsonServers": [
     "postgres_main",
     "postgres_secondary",
-    "sonarqube",
     "redis",
-    "graphify_docs",
-    "mcp-image",
-    "n8n-mcp"
+    "graphify_docs"
   ],
   "permissions": {
     "allow": [
@@ -64,6 +61,7 @@
       "mcp__redis",
       "mcp__n8n-mcp",
       "mcp__pg_triage",
+      "mcp__n8n",
       "mcp__redis_triage",
       "mcp__claude_ai_Figma__get_screenshot",
       "mcp__claude_ai_Figma__get_metadata",
