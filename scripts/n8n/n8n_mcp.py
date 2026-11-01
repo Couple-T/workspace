@@ -65,7 +65,10 @@ def scrub(text: str, token: str) -> str:
 
 async def _with_session(fn):
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    try:  # newer mcp SDKs renamed the client; keep the old name for older SDKs
+        from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
+    except ImportError:
+        from mcp.client.streamable_http import streamablehttp_client
 
     url, token = load(env_file())
     try:
