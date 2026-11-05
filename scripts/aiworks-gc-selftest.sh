@@ -89,6 +89,109 @@ check "busy orphan still on disk after --force" "$r" "present"
 [[ -d "$WT/live" ]] && r=present || r=gone
 check "live workspace never touched" "$r" "present"
 
+# ── --path: artifacts outside Superset, judged per project ──────────────────────
+echo "── --path sweeps non-worktree checkouts"
+
+P="$TMP/proj"
+mkdir -p "$P/idle/target" "$P/busy/target" "$P/notcargo/target" "$P/web/node_modules"
+touch "$P/idle/Cargo.toml" "$P/busy/Cargo.toml" "$P/idle/target/x" "$P/busy/target/x" "$P/notcargo/target/x" "$P/web/node_modules/x"
+# Back-date everything so only the cwd check can keep `busy`.
+find "$P" -exec touch -t 202001010000 {} +
+( cd "$P/busy" && sleep 60 ) &
+sleep 1
+out="$(PATH="$TMP/bin:$PATH" SUPERSET_HOME="$TMP/home/.superset" bash "$GC" --path "$P" 2>&1)"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'
+[[ -d "$P/idle/target" ]] && r=present || r=gone
+check "idle project's target/ is cleared" "$r" "gone"
+[[ -d "$P/web/node_modules" ]] && r=present || r=gone
+check "idle project's node_modules is cleared" "$r" "gone"
+[[ -d "$P/busy/target" ]] && r=present || r=gone
+check "target/ under a process cwd is KEPT" "$r" "present"
+[[ -d "$P/notcargo/target" ]] && r=present || r=gone
+check "a target/ with no Cargo.toml beside it is KEPT" "$r" "present"
+
+# ── --caches: host tool caches ───────────────────────────────────────────────────
+echo "── --caches"
+
+CALLS="$TMP/calls"; mkdir -p "$TMP/cache/uv" "$TMP/home/.cache/puppeteer"
+echo x > "$TMP/cache/uv/blob"; echo x > "$TMP/home/.cache/puppeteer/blob"
+for t in uv pnpm npm; do
+  cat > "$TMP/bin/$t" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "cache dir")        echo "$TMP/cache/uv"; exit 0 ;;
+  "store path")       echo "$TMP/cache/pnpm"; exit 0 ;;
+  "config get cache") echo "$TMP/cache/npm"; exit 0 ;;
+esac
+echo "$t \$* UV_LOCK_TIMEOUT=\${UV_LOCK_TIMEOUT:-}" >> "$CALLS"
+[[ "\${FAIL:-}" == "$t" ]] && exit 1
+exit 0
+EOF
+  chmod +x "$TMP/bin/$t"
+done
+run_caches() { PATH="$TMP/bin:$PATH" HOME="$TMP/home" SUPERSET_HOME="$TMP/home/.superset" bash "$GC" --caches "$@" 2>&1; }
+
+: > "$CALLS"
+run_caches -n >/dev/null
+[[ -s "$CALLS" ]] && r=ran || r=idle
+check "--caches -n runs no clearing command" "$r" "idle"
+[[ -d "$TMP/home/.cache/puppeteer" ]] && r=present || r=gone
+check "--caches -n leaves puppeteer alone" "$r" "present"
+
+out="$(FAIL=uv run_caches)"; rc=$?
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'
+check "a cache that is in use does not fail the run" "$rc" "0"
+grep -q 'skip  uv cache' <<<"$out" && r=skipped || r=cleared
+check "a failing uv is SKIPPED with a warning" "$r" "skipped"
+grep -q '^uv cache clean UV_LOCK_TIMEOUT=10$' "$CALLS" && r=yes || r=no
+check "uv runs with a bounded lock timeout" "$r" "yes"
+grep -q '^pnpm store prune' "$CALLS" && r=yes || r=no
+check "pnpm store is pruned" "$r" "yes"
+grep -q '^npm cache clean --force' "$CALLS" && r=yes || r=no
+check "npm cache is cleaned" "$r" "yes"
+[[ -d "$TMP/home/.cache/puppeteer" ]] && r=present || r=gone
+check "puppeteer browsers are removed" "$r" "gone"
+
+# ── --docker: the safe subset only ───────────────────────────────────────────────
+echo "── --docker"
+
+cat > "$TMP/bin/docker" <<EOF
+#!/usr/bin/env bash
+[[ "\$1" == info ]] && { [[ -n "\${DOCKER_DOWN:-}" ]] && exit 1; exit 0; }
+[[ "\$1 \$2" == "system df" ]] && { echo "TYPE TOTAL"; exit 0; }
+echo "docker \$*" >> "$CALLS"
+echo "Total:  0B"
+exit 0
+EOF
+chmod +x "$TMP/bin/docker"
+run_docker() { PATH="$TMP/bin:$PATH" HOME="$TMP/home" SUPERSET_HOME="$TMP/home/.superset" bash "$GC" --docker "$@" 2>&1; }
+
+: > "$CALLS"
+run_docker -n >/dev/null
+[[ -s "$CALLS" ]] && r=ran || r=idle
+check "--docker -n prunes nothing" "$r" "idle"
+
+: > "$CALLS"
+out="$(run_docker)"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'
+grep -q '^docker builder prune -f$' "$CALLS" && r=yes || r=no
+check "build cache is pruned" "$r" "yes"
+grep -q '^docker image prune -f$' "$CALLS" && r=yes || r=no
+check "dangling images are pruned" "$r" "yes"
+# Safe subset: no volume prune, no -a (that would take tagged images with it).
+grep -q -E 'volume|system prune| -a' "$CALLS" && r=reached || r=safe
+check "volumes and tagged images are never touched" "$r" "safe"
+grep -q 'docker volume prune' <<<"$out" && r=yes || r=no
+check "the further-cleaning hints are printed" "$r" "yes"
+
+: > "$CALLS"
+out="$(DOCKER_DOWN=1 run_docker)"; rc=$?
+check "a stopped daemon does not fail the run" "$rc" "0"
+grep -q 'daemon is not running' <<<"$out" && r=yes || r=no
+check "a stopped daemon is reported" "$r" "yes"
+[[ -s "$CALLS" ]] && r=ran || r=idle
+check "a stopped daemon runs no prune" "$r" "idle"
+
 # ── an empty live list must abort, not classify everything as garbage ────────────
 echo "── refuses to guess"
 cat > "$TMP/bin/superset" <<'EOF'
