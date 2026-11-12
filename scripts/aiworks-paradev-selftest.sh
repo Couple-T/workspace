@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Superset lifecycle selftest — the readiness hook, the setup lock, and the setup helpers.
+# Paradev lifecycle selftest — the readiness hook, the setup lock, and the setup helpers.
 #
-#   ./scripts/aiworks-superset-selftest.sh
+#   ./scripts/aiworks-paradev-selftest.sh
 #
-# WHY THIS SUITE EXISTS. A fresh Superset worktree starts its agent session BEFORE setup has
+# WHY THIS SUITE EXISTS. A fresh Paradev worktree starts its agent session BEFORE setup has
 # cloned the declared repos, and the readiness hook (.claude/hooks/repo-health-check.sh) is the
 # only thing standing between the agent and "that repo does not exist". It has to see the expected
 # repo set before `aiworks sync` generates mani.d/, tell a running setup from a crashed one from
@@ -20,9 +20,9 @@ set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 HOOK="$ROOT/.claude/hooks/repo-health-check.sh"
-LIB="$ROOT/.superset/lib.sh"
+LIB="$ROOT/.paradev/lib.sh"
 pass=0 fail=0
-T="$(mktemp -d "${TMPDIR:-/tmp}/aiworks-superset-selftest.XXXXXX")"
+T="$(mktemp -d "${TMPDIR:-/tmp}/aiworks-paradev-selftest.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
 
 ok()  { pass=$((pass+1)); printf '  ok   %s\n' "$1"; }
@@ -89,13 +89,13 @@ ck_exit "H4 no mani.d, config declares 2: exit 1" 1 "$rc"; ck "H4 counts from co
 mkfx h5 0; rm "$fx/workspace.config.yaml"; hook "$fx" --status
 ck_exit "H5 nothing declared: exit 0" 0 "$rc"; ck "H5 says so" "nothing to check" "$out"
 
-mkfx h6 1 app-a; mkdir -p "$fx/.superset/run"
-printf 'pid=%s\nstarted=now\n' "$$" > "$fx/.superset/run/setup.lock"; hook "$fx" --status
+mkfx h6 1 app-a; mkdir -p "$fx/.paradev/run"
+printf 'pid=%s\nstarted=now\n' "$$" > "$fx/.paradev/run/setup.lock"; hook "$fx" --status
 ck "H6 live lock pid: running" "setup is running" "$out"
 
-mkfx h7 1 app-a; mkdir -p "$fx/.superset/run"
+mkfx h7 1 app-a; mkdir -p "$fx/.paradev/run"
 sleep 0 & dead=$!; wait "$dead"
-printf 'pid=%s\nstarted=then\n' "$dead" > "$fx/.superset/run/setup.lock"; hook "$fx" --status
+printf 'pid=%s\nstarted=then\n' "$dead" > "$fx/.paradev/run/setup.lock"; hook "$fx" --status
 ck "H7 dead lock pid: interrupted" "setup looks interrupted" "$out"
 
 mkfx h8 1 app-a app-b; hook_event "$fx" SessionStart s1
@@ -119,8 +119,8 @@ ck_exit "H11 --wait clears when the clone lands" 0 "$rc"; ck "H11 OK line" "OK:"
 mkfx h12 1 app-a; hook "$fx" --wait 1
 ck_exit "H12 --wait times out" 1 "$rc"; ck "H12 says TIMEOUT" "TIMEOUT" "$out"
 
-# ── setup lock + helpers (.superset/lib.sh) ───────────────────────────────────────
-echo ".superset/lib.sh"
+# ── setup lock + helpers (.paradev/lib.sh) ───────────────────────────────────────
+echo ".paradev/lib.sh"
 
 hf="$T/hosts"; printf '127.0.0.1 localhost\n' > "$hf"
 hosts() { ( cd "$T" && HOSTS_FILE="$hf" bash -c 'source "$1"; shift; ensure_hosts_entries "$@"' _ "$LIB" "$@" ); }
@@ -146,28 +146,88 @@ sleep 0.5; kill -TERM "$lp" 2>/dev/null; wait "$lp" 2>/dev/null
 bash -c 'source "$1"; setup_lock_acquire "$2"; sleep 30 & wait' _ "$LIB" "$lock" & lp=$!
 sleep 0.5; kill -KILL "$lp" 2>/dev/null; wait "$lp" 2>/dev/null
 [[ -f "$lock" ]] && ok "S4 lock survives KILL" || bad "S4 lock survives KILL" "missing"
-mkfx s4 1 app-a; mkdir -p "$fx/.superset/run"; cp "$lock" "$fx/.superset/run/setup.lock"; hook "$fx" --status
+mkfx s4 1 app-a; mkdir -p "$fx/.paradev/run"; cp "$lock" "$fx/.paradev/run/setup.lock"; hook "$fx" --status
 ck "S4 hook classifies the KILL leftover as interrupted" "setup looks interrupted" "$out"
 
-fx="$T/s5"; mkdir -p "$fx/scripts"; cp -R "$ROOT/.superset" "$fx/.superset"; : > "$fx/mani.yaml"
-cp "$ROOT/scripts/aiworks-superset.sh" "$fx/scripts/"
-sum() { ( cd "$fx/.superset" && find . -type f -print0 | sort -z | xargs -0 cat | cksum ); }
-s_before="$(sum)"; ( cd "$fx" && bash scripts/aiworks-superset.sh -n -q >/dev/null 2>&1 ); rc=$?
-ck_exit "S5 superset.sh -n exits 0" 0 "$rc"
+fx="$T/s5"; mkdir -p "$fx/scripts"; cp -R "$ROOT/.paradev" "$fx/.paradev"; : > "$fx/mani.yaml"
+cp "$ROOT/scripts/aiworks-paradev.sh" "$fx/scripts/"
+sum() { ( cd "$fx/.paradev" && find . -type f -print0 | sort -z | xargs -0 cat | cksum ); }
+s_before="$(sum)"; ( cd "$fx" && bash scripts/aiworks-paradev.sh -n -q >/dev/null 2>&1 ); rc=$?
+ck_exit "S5 aiworks-paradev.sh -n exits 0" 0 "$rc"
 [[ "$(sum)" == "$s_before" ]] && ok "S5 -n writes nothing" || bad "S5 -n writes nothing" "checksum changed"
-( cd "$fx" && bash scripts/aiworks-superset.sh -q >/dev/null 2>&1 ); s_after="$(sum)"
-( cd "$fx" && bash scripts/aiworks-superset.sh -q >/dev/null 2>&1 )
+( cd "$fx" && bash scripts/aiworks-paradev.sh -q >/dev/null 2>&1 ); s_after="$(sum)"
+( cd "$fx" && bash scripts/aiworks-paradev.sh -q >/dev/null 2>&1 )
 [[ "$(sum)" == "$s_after" ]] && ok "S5 second real run is a no-op" || bad "S5 second real run is a no-op" "checksum changed"
 
-fx="$T/s6"; mkdir -p "$fx/.superset/products"
-printf 'setup_product() { touch "%s/ran"; }\n' "$fx" > "$fx/.superset/products/acme.sh"
-printf 'setup_product() { touch "%s/example-ran"; }\n' "$fx" > "$fx/.superset/products/example.sh"
-printf 'DB_REPOS=(x)\n' > "$fx/.superset/products/nohook.sh"
+# S8 — switch names: the platform's own SUPERSET_ENV=local|cloud must never act as our env-file
+# switch, and the pre-rename names keep working (a dropped SUPERSET_DB_DATA=copy would delete a DB copy).
+shim() {  # shim VAR=val… — prints the resolved modes after map_legacy_switches
+  ( cd "$T" && env -i PATH="$PATH" "$@" bash -c 'source "$1"; map_legacy_switches; echo "files=$(switch_mode PARADEV_ENV_FILES) db=$(switch_mode PARADEV_DB_DATA)"' _ "$LIB" 2>&1 )
+}
+out="$(shim SUPERSET_ENV=local)";  ck "S8 platform SUPERSET_ENV=local leaves files=symlink" "files=symlink" "$out"
+ck "S8 platform SUPERSET_ENV=local does not warn" "ABSENT:renamed" "$out"
+out="$(shim SUPERSET_ENV=cloud)";  ck "S8 platform SUPERSET_ENV=cloud leaves files=symlink" "files=symlink" "$out"
+out="$(shim SUPERSET_ENV=copy)";   ck "S8 legacy SUPERSET_ENV=copy maps to files=copy" "files=copy" "$out"
+out="$(shim SUPERSET_DB_DATA=copy)"; ck "S8 legacy SUPERSET_DB_DATA=copy maps to db=copy" "db=copy" "$out"
+ck "S8 legacy name warns" "SUPERSET_DB_DATA is renamed PARADEV_DB_DATA" "$out"
+out="$(shim SUPERSET_DB_DATA=copy PARADEV_DB_DATA=skip)"; ck "S8 the new name wins" "db=skip" "$out"
+out="$(shim PARADEV_ENV_FILES=bogus)"; ck "S8 a bogus mode is skipped, never defaulted" "files=skip" "$out"
+ck "S8 a bogus mode warns" "is not symlink|copy|skip" "$out"
+out="$(shim PARADEV_DB_DATA=Copy)"; ck "S8 mode case is ignored" "db=copy" "$out"
+# symlink mode deletes the per-worktree DB copy, so a typo must land on skip — old name or new.
+out="$(shim PARADEV_DB_DATA=cp)";  ck "S8 a typo in the DB switch is skipped" "db=skip" "$out"
+out="$(shim SUPERSET_DB_DATA=cp)"; ck "S8 a typo in the LEGACY DB switch is skipped too" "db=skip" "$out"
+map_ln="$(grep -n '^map_legacy_switches' "$ROOT/.paradev/setup.sh" | head -1 | cut -d: -f1)"
+sw_ln="$(grep -n 'switch_mode ' "$ROOT/.paradev/setup.sh" | head -1 | cut -d: -f1)"
+[[ -n "$map_ln" && -n "$sw_ln" && "$map_ln" -lt "$sw_ln" ]] \
+  && ok "S8 setup.sh maps legacy switches before the first mode read" \
+  || bad "S8 setup.sh maps legacy switches before the first mode read" "map=$map_ln first-read=$sw_ln"
+
+# S5a-d — the guard writes config.toml, never rewrites one, and migrates a pre-rename .superset/.
+guard_fx() {  # guard_fx <name> — a bare workspace with the three hooks and the guard script
+  fx="$T/$1"; mkdir -p "$fx/scripts" "$fx/.paradev"; : > "$fx/mani.yaml"
+  cp "$ROOT/scripts/aiworks-paradev.sh" "$fx/scripts/"
+  for h in setup run teardown; do : > "$fx/.paradev/$h.sh"; done
+}
+guard() { out="$(cd "$fx" && bash scripts/aiworks-paradev.sh 2>&1)"; rc=$?; }
+
+guard_fx g1; guard
+for p in setup run teardown; do ck "S5a config.toml references $p" "./.paradev/$p.sh" "$(cat "$fx/.paradev/config.toml")"; done
+ck "S5a config.toml has the archive table" "[archive]" "$(cat "$fx/.paradev/config.toml")"
+
+guard_fx g2; printf '[setup]\nrun = ["./.paradev/setup.sh"]\n' > "$fx/.paradev/config.toml"
+g2_before="$(cksum < "$fx/.paradev/config.toml")"; guard
+ck "S5b a toml lacking [archive] warns" "does not reference ./.paradev/teardown.sh" "$out"
+[[ "$(cksum < "$fx/.paradev/config.toml")" == "$g2_before" ]] && ok "S5b the present toml is byte-identical" || bad "S5b the present toml is byte-identical" "rewritten"
+
+guard_fx g3; mkdir -p "$fx/.superset/products" "$fx/.superset/run/p" "$fx/.paradev/products"
+printf 'old\n' > "$fx/.superset/products/acme.sh"; printf 'KEY=1\n' > "$fx/.superset/.env"; : > "$fx/.superset/run/p/x.pid"
+printf 'new\n' > "$fx/.paradev/products/acme.sh"; guard
+ck "S5c pre-existing .paradev file is not overwritten" "new" "$(cat "$fx/.paradev/products/acme.sh")"
+ck "S5c the conflict is warned about" "already exists" "$out"
+[[ -f "$fx/.paradev/.env" && -f "$fx/.paradev/run/p/x.pid" ]] && ok "S5c other files migrate" || bad "S5c other files migrate" "missing"
+[[ -f "$fx/.superset/products/acme.sh" ]] && ok "S5c the conflicting legacy copy stays" || bad "S5c the conflicting legacy copy stays" "gone"
+rm "$fx/.superset/products/acme.sh"; guard
+[[ ! -d "$fx/.superset" ]] && ok "S5c an emptied .superset/ is removed" || bad "S5c an emptied .superset/ is removed" "still there"
+
+guard_fx g4; printf '{}\n' > "$fx/.paradev/config.json"; guard
+ck "S5d config.json beside config.toml warns" "ignored by Paradev while config.toml exists" "$out"
+
+guard_fx g5; mkdir -p "$fx/.superset/my products"; : > "$fx/.superset/my products/a b.sh"
+out="$(cd "$fx" && bash scripts/aiworks-paradev.sh -n 2>&1)"
+[[ -f "$fx/.superset/my products/a b.sh" && ! -e "$fx/.paradev/my products" ]] && ok "S5e -n migrates nothing" || bad "S5e -n migrates nothing" "$out"
+guard
+[[ -f "$fx/.paradev/my products/a b.sh" && ! -d "$fx/.superset" ]] && ok "S5e a path with spaces migrates" || bad "S5e a path with spaces migrates" "$out"
+
+fx="$T/s6"; mkdir -p "$fx/.paradev/products"
+printf 'setup_product() { touch "%s/ran"; }\n' "$fx" > "$fx/.paradev/products/acme.sh"
+printf 'setup_product() { touch "%s/example-ran"; }\n' "$fx" > "$fx/.paradev/products/example.sh"
+printf 'DB_REPOS=(x)\n' > "$fx/.paradev/products/nohook.sh"
 ( cd "$fx" && bash -c 'source "$1"; run_product_setup_hooks' _ "$LIB" >/dev/null 2>&1 ); rc=$?
 ck_exit "S6 dispatch exits 0" 0 "$rc"
 [[ -f "$fx/ran" ]] && ok "S6 acme setup_product ran" || bad "S6 acme setup_product ran" "no marker"
 [[ ! -f "$fx/example-ran" ]] && ok "S6 example.sh skipped" || bad "S6 example.sh skipped" "example-ran exists"
-printf 'setup_product() { return 7; }\n' > "$fx/.superset/products/broken.sh"
+printf 'setup_product() { return 7; }\n' > "$fx/.paradev/products/broken.sh"
 out="$(cd "$fx" && bash -c 'set -e; source "$1"; run_product_setup_hooks; echo survived' _ "$LIB" 2>&1)"
 ck "S6 a failing hook never aborts setup" "survived" "$out"
 ck "S6 a failing hook warns" "broken: setup_product failed" "$out"
@@ -236,5 +296,5 @@ cp "$wtp/app-a/.gitignore" "$w2/app-a/.gitignore"
   && ok "TF copy is a real directory" || bad "TF copy is a real directory"
 
 echo
-echo "superset selftest: pass=$pass fail=$fail"
+echo "paradev selftest: pass=$pass fail=$fail"
 [[ "$fail" -eq 0 ]]
