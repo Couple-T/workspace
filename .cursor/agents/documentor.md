@@ -5,6 +5,7 @@ description: Senior Product Documentor (20 yrs). Captures the non-technical know
 model: inherit
 skills:
   - caveman:caveman
+  - release-note
 tools:
   - Read
   - Grep

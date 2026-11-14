@@ -9,6 +9,8 @@
       "Mcp(claude_ai_Figma:search_design_system)",
       "Mcp(codegraph:*)",
       "Mcp(graphify_docs:*)",
+      "Mcp(k8s_triage:*)",
+      "Mcp(monitoring_triage:*)",
       "Mcp(n8n-mcp:*)",
       "Mcp(n8n:*)",
       "Mcp(n8n:n8n_call)",

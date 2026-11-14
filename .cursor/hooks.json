@@ -193,7 +193,7 @@
     ],
     "sessionStart": [
       {
-        "command": "./.cursor/hooks/hook-shim.sh '.superset/mcp-services.sh up'"
+        "command": "./.cursor/hooks/hook-shim.sh '.paradev/mcp-services.sh up'"
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/resolve-language.sh'",
