@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# aiworks-gc.sh  (`aiworks gc`) — reclaim disk from Superset worktrees, WITHOUT ever making
+# aiworks-gc.sh  (`aiworks gc`) — reclaim disk from Paradev worktrees, WITHOUT ever making
 # two worktrees wait for each other.
 #
 # THE PROBLEM
-#   Superset's UI "Delete" removes the workspace row but leaves behind (measured, 2026-08-06):
+#   Paradev's UI "Delete" removes the workspace row but leaves behind (measured, 2026-08-06):
 #     * the worktree DIRECTORY tree, build artifacts and all,
 #     * the `git worktree` registration + .git/worktrees/<name> metadata in the parent repo,
 #     * the local branch.
@@ -33,20 +33,25 @@
 #   a locked directory, so a reaped worktree rebuilds from cache while others build in parallel.
 #
 # SOURCE OF TRUTH
-#   Which workspaces still exist is read from `superset ws list --json`, never from
-#   ~/.superset/*.sqlite. Reading the sqlite file directly under-reported live workspaces in
+#   Which workspaces still exist is read from `paradev ws list --local --json`, never from
+#   ~/.paradev/*.sqlite. Reading the sqlite file directly under-reported live workspaces in
 #   testing (it missed 2 of 6, including a 17 GiB one) — a GC that trusts it deletes live work.
 #
 # Usage: aiworks-gc.sh [selector…] [options]
 #
 #   Selectors — with NONE, every category is REPORTED and nothing is changed:
-#     --orphans        reap worktrees Superset no longer lists (the UI-Delete leftovers)
+#     --orphans        reap worktrees Paradev no longer lists (the UI-Delete leftovers)
 #     --artifacts      reap target/ + node_modules from IDLE worktrees, live ones included
 #     --dispatch       reap slack/req-* dispatch worktrees past their TTL
-#     --all            all three
+#     --caches         clear host tool caches: uv · pnpm store · npm · puppeteer (all regenerable)
+#     --docker         docker builder prune + dangling-image prune. Never volumes, never tagged images
+#     --all            all five
 #
 #   Options:
-#     --project NAME   only this Superset project (default: every project)
+#     --project NAME   only this Paradev project (default: every project)
+#     --path DIR       (repeatable) also sweep target/ + node_modules under DIR, for checkouts that
+#                      are not Paradev worktrees. Implies --artifacts. Same liveness checks, run per
+#                      project; target/ is only cleared beside a Cargo.toml.
 #     --idle-days N    (--artifacts) idle threshold, default 3 (7 for the scheduled job)
 #     --ttl-days N     (--dispatch)  age threshold, default 7
 #     -n, --dry-run    print what WOULD happen; change nothing
@@ -77,7 +82,8 @@ warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
 die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
 # ── args ──────────────────────────────────────────────────────────────────────────
-DO_ORPHANS=0 DO_ARTIFACTS=0 DO_DISPATCH=0 REPORT_ONLY=1
+DO_ORPHANS=0 DO_ARTIFACTS=0 DO_DISPATCH=0 DO_CACHES=0 DO_DOCKER=0 REPORT_ONLY=1
+EXTRA_PATHS=()
 DRY=0 FORCE=0 IDLE_DAYS=3 TTL_DAYS=7 PROJECT= SCCACHE=0 IDLE_SET=0 SCHEDULE=
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 while [[ $# -gt 0 ]]; do
@@ -85,7 +91,10 @@ while [[ $# -gt 0 ]]; do
     --orphans)   DO_ORPHANS=1;  REPORT_ONLY=0; shift ;;
     --artifacts) DO_ARTIFACTS=1; REPORT_ONLY=0; shift ;;
     --dispatch)  DO_DISPATCH=1; REPORT_ONLY=0; shift ;;
-    --all)       DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; REPORT_ONLY=0; shift ;;
+    --caches)    DO_CACHES=1;   REPORT_ONLY=0; shift ;;
+    --docker)    DO_DOCKER=1;   REPORT_ONLY=0; shift ;;
+    --all)       DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DO_CACHES=1; DO_DOCKER=1; REPORT_ONLY=0; shift ;;
+    --path)      EXTRA_PATHS+=("${2:?--path needs a directory}"); DO_ARTIFACTS=1; REPORT_ONLY=0; shift 2 ;;
     --project)   PROJECT="${2:?--project needs a name}"; shift 2 ;;
     --idle-days) IDLE_DAYS="${2:?--idle-days needs a number}"; IDLE_SET=1; shift 2 ;;
     --ttl-days)  TTL_DAYS="${2:?--ttl-days needs a number}"; shift 2 ;;
@@ -105,10 +114,10 @@ done
 # No selector: report every category, touch nothing. Reporting is always safe. A bare
 # --enable-sccache / --*-schedule is a host-setup action on its own, not a reason to sweep.
 if [[ "$REPORT_ONLY" -eq 1 && "$SCCACHE" -eq 0 && -z "$SCHEDULE" ]]; then
-  DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DRY=1
+  DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DO_CACHES=1; DO_DOCKER=1; DRY=1
 fi
 
-WT_ROOT="${SUPERSET_HOME:-$HOME/.superset}/worktrees"
+WT_ROOT="${SUPERSET_HOME_DIR:-$HOME/.paradev}/worktrees"
 FREED_KB=0
 
 # ── helpers ───────────────────────────────────────────────────────────────────────
@@ -123,19 +132,19 @@ human() {  # KiB -> human
 
 size_kb() { du -sk "$1" 2>/dev/null | awk '{print $1}'; }
 
-# The set of worktree paths Superset still knows about. Authoritative — see SOURCE OF TRUTH.
+# The set of worktree paths Paradev still knows about. Authoritative — see SOURCE OF TRUTH.
 # Emits one absolute path per line. Fails loud: an empty/failed listing must NOT be read as
 # "nothing is alive", which would make every worktree look like an orphan.
 live_paths() {
   local out
-  out="$(superset ws list --json 2>/dev/null)" || return 1
+  out="$(paradev ws list --local --json 2>/dev/null)" || return 1
   [[ -n "$out" ]] || return 1
   printf '%s' "$out" | jq -e -r '.[].worktreePath | select(. != null and . != "")' 2>/dev/null
 }
 
-# Superset's workspace id for a path (empty when it is not a live workspace).
+# Paradev's workspace id for a path (empty when it is not a live workspace).
 live_id_for() {
-  superset ws list --json 2>/dev/null \
+  paradev ws list --local --json 2>/dev/null \
     | jq -r --arg p "$1" '.[] | select(.worktreePath == $p) | .id' 2>/dev/null | head -1
 }
 
@@ -180,7 +189,7 @@ busy_reason() {  # echoes a reason and returns 0 when busy; returns 1 when idle
 }
 
 # ── git safety: the candidate itself AND every repo nested inside it ─────────────────
-# A Superset workspace of this workspace contains ~21 nested product clones, each with its
+# A Paradev workspace of this workspace contains ~21 nested product clones, each with its
 # own state. Checking only the top level would happily delete a colleague's afternoon.
 git_unsafe_reason() {
   local root="$1" gitpath repo dirty ahead
@@ -258,6 +267,77 @@ discover() {
   done
 }
 
+# ── host tool caches (--caches) ───────────────────────────────────────────────────
+# Host-wide and regenerable, nothing to do with worktrees, so the worktree liveness and git
+# checks do not apply — each tool's own lock is the guard. A cache in use (uv holds a lock
+# while any `uv run`/`uvx` lives, e.g. an MCP server) is skipped with a warning, never forced:
+# the next run gets it.
+clear_cache() {  # $1 label · $2 dir to size (may be empty) · $3.. the command that clears it
+  local label="$1" dir="$2" before=0 after=0; shift 2
+  [[ -n "$dir" && -d "$dir" ]] && before="$(size_kb "$dir")"; before="${before:-0}"
+  if [[ "$DRY" -eq 1 ]]; then
+    info "would clear  $label  (up to $(human "$before"))"; FREED_KB=$((FREED_KB + before)); return 0
+  fi
+  if "$@" >/dev/null 2>&1; then
+    [[ -n "$dir" && -d "$dir" ]] && after="$(size_kb "$dir")"; after="${after:-0}"
+    ok "cleared  $label  ($(human $((before - after))))"; FREED_KB=$((FREED_KB + before - after))
+  else
+    warn "skip  $label  — \`$*\` failed (in use? re-run when idle)"
+  fi
+}
+
+clear_host_caches() {
+  step "Host tool caches"
+  local n=0
+  if command -v uv >/dev/null 2>&1; then
+    n=1; clear_cache "uv cache" "$(uv cache dir 2>/dev/null)" env UV_LOCK_TIMEOUT=10 uv cache clean
+  fi
+  if command -v pnpm >/dev/null 2>&1; then
+    n=1; clear_cache "pnpm store (unreferenced packages)" "$(pnpm store path 2>/dev/null)" pnpm store prune
+  fi
+  if command -v npm >/dev/null 2>&1; then
+    n=1; clear_cache "npm cache" "$(npm config get cache 2>/dev/null)" npm cache clean --force
+  fi
+  if [[ -d "$HOME/.cache/puppeteer" ]]; then
+    n=1; clear_cache "puppeteer browsers" "$HOME/.cache/puppeteer" rm -rf "$HOME/.cache/puppeteer"
+  fi
+  [[ "$n" -eq 0 ]] && info "no known caches present"
+  return 0
+}
+
+# ── docker (--docker) ─────────────────────────────────────────────────────────────
+# The SAFE subset only: build cache and dangling (untagged) images, both rebuilt or re-pulled
+# on demand. Tagged images, containers and volumes are never touched — a volume is where a
+# local database lives. The aggressive forms are listed by further_hints, for a human to run.
+clear_docker() {
+  step "Docker — build cache + dangling images (never volumes, never tagged images)"
+  command -v docker >/dev/null 2>&1 || { info "docker not installed"; return 0; }
+  docker info >/dev/null 2>&1 || { warn "skip  docker — the daemon is not running (start Docker Desktop, re-run)"; return 0; }
+  if [[ "$DRY" -eq 1 ]]; then
+    docker system df 2>/dev/null | sed 's/^/    /'
+    info "would run: docker builder prune -f  ·  docker image prune -f"
+    return 0
+  fi
+  local out
+  if out="$(docker builder prune -f 2>&1)"; then ok "build cache: $(tail -1 <<<"$out")"
+  else warn "skip  docker builder prune — $(tail -1 <<<"$out")"; fi
+  if out="$(docker image prune -f 2>&1)"; then ok "dangling images: $(tail -1 <<<"$out")"
+  else warn "skip  docker image prune — $(tail -1 <<<"$out")"; fi
+}
+
+# Printed after the caches/docker sections: the cleanups that are NOT automatic because each
+# deletes something a person may want. Information only — this script never runs them.
+further_hints() {
+  step "Going further — manual, each deletes something you may want"
+  info "docker system prune -a        every image not used by a running container (re-pulled on next up)"
+  info "docker volume prune           unused volumes. Local databases live here: check \`docker volume ls\` first"
+  info "brew cleanup --prune=all -s   old Homebrew downloads and versions"
+  info "cargo sweep --time 30 -r DIR  Rust target/ dirs idle 30d (cargo install cargo-sweep); or --path DIR"
+  info "rm -rf ~/Library/Developer/Xcode/DerivedData     Xcode build products (macOS)"
+  info "ncdu -x ~                     find what is actually big (brew install ncdu)"
+  info "${c_dim}Docker Desktop on macOS keeps its VM disk at full size after a prune until Docker is restarted${c_off}"
+}
+
 # ── sccache (opt-in, one-time host setup) ─────────────────────────────────────────
 # The parallel-safe half of the disk story: a cache SERVER, not a locked shared directory,
 # so N worktrees can compile at once and still reuse each other's objects.
@@ -323,10 +403,10 @@ write_plist() {  # $1 = destination path, $2 = idle days
     <key>Hour</key><integer>3</integer>
     <key>Minute</key><integer>0</integer>
   </dict>
-  <!-- A launchd job inherits a minimal PATH; the GC needs git, jq and the superset CLI. -->
+  <!-- A launchd job inherits a minimal PATH; the GC needs git, jq and the paradev CLI. -->
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PATH</key><string>$HOME/.paradev/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>StandardOutPath</key><string>$SCHED_LOG</string>
   <key>StandardErrorPath</key><string>$SCHED_LOG</string>
@@ -401,6 +481,18 @@ schedule_status() {
   fi
 }
 
+summary() {
+  step "Summary"
+  if [[ "$DRY" -eq 1 ]]; then
+    info "reclaimable: $(human "$FREED_KB")"
+    [[ "$REPORT_ONLY" -eq 1 ]] && info "report only — pass --all (or a selector) to act, -n to preview a real run"
+  else
+    ok "reclaimed: $(human "$FREED_KB")"
+  fi
+  [[ "$DO_CACHES$DO_DOCKER" != "00" ]] && further_hints
+  return 0
+}
+
 # ── main ──────────────────────────────────────────────────────────────────────────
 case "$SCHEDULE" in
   install)   install_schedule; exit 0 ;;
@@ -412,13 +504,17 @@ command -v jq >/dev/null 2>&1 || die "jq is required (brew install jq)"
 
 if [[ "$SCCACHE" -eq 1 ]]; then
   enable_sccache
-  [[ "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH" == "000" ]] && exit 0
+  [[ "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH$DO_CACHES$DO_DOCKER" == "00000" ]] && exit 0
 fi
 
-command -v superset >/dev/null 2>&1 || die "the 'superset' CLI is not on PATH — this GC reads the live workspace list from it and refuses to guess"
+[[ "$DO_CACHES" -eq 1 ]] && clear_host_caches
+[[ "$DO_DOCKER" -eq 1 ]] && clear_docker
+if [[ "$DO_CACHES$DO_DOCKER" != "00" && "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH" == "000" ]]; then summary; exit 0; fi
+
+command -v paradev >/dev/null 2>&1 || die "the 'paradev' CLI is not on PATH — this GC reads the live workspace list from it and refuses to guess"
 [[ -d "$WT_ROOT" ]] || { ok "no $WT_ROOT — nothing to collect"; exit 0; }
 
-LIVE_LIST="$(live_paths)" || die "\`superset ws list --json\` returned nothing usable — refusing to run, since an empty live set would classify every worktree as an orphan"
+LIVE_LIST="$(live_paths)" || die "\`paradev ws list --local --json\` returned nothing usable — refusing to run, since an empty live set would classify every worktree as an orphan"
 
 for proj in "$WT_ROOT"/*; do
   [[ -d "$proj" ]] || continue
@@ -426,13 +522,13 @@ for proj in "$WT_ROOT"/*; do
   discover "$proj" 1
 done
 
-step "Superset worktrees under $WT_ROOT"
+step "Paradev worktrees under $WT_ROOT"
 info "live: ${#ALIVE[@]}   ·   orphaned: ${#ORPHANS[@]}   ·   idle threshold: ${IDLE_DAYS}d   ·   dispatch TTL: ${TTL_DAYS}d"
 [[ "$DRY" -eq 1 ]] && info "${c_dim}dry run — nothing will be changed${c_off}"
 
 # ── 1. orphans ────────────────────────────────────────────────────────────────────
 if [[ "$DO_ORPHANS" -eq 1 ]]; then
-  step "Orphans — worktrees Superset no longer lists"
+  step "Orphans — worktrees Paradev no longer lists"
   [[ "${#ORPHANS[@]}" -eq 0 ]] && info "none"
   for wt in "${ORPHANS[@]:-}"; do
     [[ -n "$wt" ]] || continue
@@ -467,6 +563,31 @@ if [[ "$DO_ARTIFACTS" -eq 1 ]]; then
     done < <(find "$wt" -maxdepth 3 \( -name target -o -name node_modules \) -type d -prune 2>/dev/null)
     [[ "$found" -eq 0 ]] && dim "none  $(basename "$wt")"
   done
+  # --path roots: checkouts outside Paradev. I2 is judged per PROJECT (the dir holding the
+  # artifact), so one live repo does not shield its idle neighbours and nothing under a running
+  # build is touched. target/ only counts beside a Cargo.toml — elsewhere it is just a name.
+  for root in "${EXTRA_PATHS[@]:-}"; do
+    [[ -n "$root" ]] || continue
+    [[ -d "$root" ]] || { warn "--path $root is not a directory"; continue; }
+    seen=0
+    while IFS= read -r art; do
+      [[ -n "$art" ]] || continue
+      seen=$((seen + 1))
+      proj="$(dirname "$art")"
+      [[ "$(basename "$art")" == target && ! -f "$proj/Cargo.toml" ]] && continue
+      if reason="$(busy_reason "$proj" "$IDLE_DAYS")"; then
+        busy=$((busy + 1)); info "keep  ${art#$root/}  — in use ($reason)"; continue
+      fi
+      acted=1; kb="$(size_kb "$art")"; kb="${kb:-0}"
+      if [[ "$DRY" -eq 1 ]]; then info "would clear  $art  ($(human "$kb"))"
+      else rm -rf "$art" && ok "cleared  $art  ($(human "$kb"))"; fi
+      FREED_KB=$((FREED_KB + kb))
+    # Depth 8, not the worktree's 3: a root such as ~/projects holds org/workspace/repo/target
+    # (4 deep), and a nested worktree under it goes deeper still. A depth that is too shallow
+    # finds nothing and looks like a clean machine — so say so when a root yields nothing.
+    done < <(find "$root" -maxdepth 8 \( -name target -o -name node_modules \) -type d -prune 2>/dev/null)
+    [[ "$seen" -eq 0 ]] && info "nothing to clear under $root  (searched 8 levels deep)"
+  done
   [[ "$acted" -eq 0 && "$busy" -eq 0 ]] && info "nothing to clear"
   [[ "$busy" -gt 0 ]] && info "${c_dim}$busy worktree(s) left alone so their builds keep running — raise --idle-days to be stricter${c_off}"
 fi
@@ -488,22 +609,15 @@ if [[ "$DO_DISPATCH" -eq 1 ]]; then
       if [[ "$FORCE" -eq 1 ]]; then warn "forcing removal despite: $reason"
       else warn "skip  $(basename "$wt")  — $reason  (--force to override)"; continue; fi
     fi
-    # Keep Superset's own list in sync when the worktree is still a live workspace.
+    # Keep Paradev's own list in sync when the worktree is still a live workspace.
     wsid="$(live_id_for "$wt")"
     if [[ -n "$wsid" ]]; then
-      if [[ "$DRY" -eq 1 ]]; then info "would also: superset ws delete $wsid"
-      else superset ws delete "$wsid" >/dev/null 2>&1 || warn "superset ws delete $wsid failed — removing the directory anyway"; fi
+      if [[ "$DRY" -eq 1 ]]; then info "would also: paradev ws archive --local $wsid"
+      else paradev ws archive --local "$wsid" >/dev/null 2>&1 || warn "paradev ws archive --local $wsid failed — removing the directory anyway"; fi
     fi
     remove_worktree "$wt"
   done
   [[ "$hits" -eq 0 ]] && info "none past TTL"
 fi
 
-# ── summary ───────────────────────────────────────────────────────────────────────
-step "Summary"
-if [[ "$DRY" -eq 1 ]]; then
-  info "reclaimable: $(human "$FREED_KB")"
-  [[ "$REPORT_ONLY" -eq 1 ]] && info "report only — pass --all (or a selector) to act, -n to preview a real run"
-else
-  ok "reclaimed: $(human "$FREED_KB")"
-fi
+summary

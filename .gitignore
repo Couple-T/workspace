@@ -22,17 +22,24 @@ socks.auth
 __pycache__/
 *.py[cod]
 
-# .superset runtime state (pidfiles + service logs from run.sh)
-.superset/run/
-.superset/logs/
+# .paradev runtime state (pidfiles + service logs from run.sh)
+.paradev/run/
+.paradev/logs/
 
 # Slack-dispatcher per-worktree runtime context (correlationId + reply target the
 # dispatched agent posts back with; written into each worktree, never committed).
 .aiworks/
 
-# the org's real product definitions — copy .superset/products/example.sh to <product-id>.sh
-.superset/products/*.sh
-!.superset/products/example.sh
+# the org's real product definitions — copy .paradev/products/example.sh to <product-id>.sh
+.paradev/products/*.sh
+!.paradev/products/example.sh
+
+# Pre-rename product files: a workspace synced before the Superset-to-Paradev rename keeps
+# them under .superset/ until `aiworks sync` migrates them; never commit them.
+/.superset/
+
+# Paradev personal override (not shared)
+.paradev/config.local.toml
 
 # The doc graph (graphify — docs/adr/0013) is DERIVED, per-workspace state, not source, so
 # none of it is committed here. Three reasons, and docs/agents/graphify.md has the detail:
@@ -75,6 +82,14 @@ workspace.config.local.yaml
 # silently lose every rule in it; excluding only the .mdc files leaves the directories
 # traversable and Cursor still reads them. Measured both ways.
 .cursor/rules/repos/**/*.mdc
+
+# This root's project-scope MCP registration — `.mcp.json`'s servers plus the triage
+# entries that `scripts/triage-mcp.sh sync` adds (docs/adr/0038). Written by `aiworks
+# cursor` and `aiworks codex`, never committed: every triage entry carries THIS
+# checkout's absolute path, and triage-mcp.sh refuses to write into a file that is
+# tracked or not ignored. Anchored: a repo clone's own .cursor/mcp.json is its own.
+/.cursor/mcp.json
+/.codex/config.toml
 
 # product repo clones (cloned by aiworks; not committed to the workspace meta-repo).
 # `aiworks add` appends one ANCHORED `/<repo-dir>/` line per onboarded repo below this

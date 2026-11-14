@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Shared helpers for the .superset lifecycle scripts (setup / run / teardown).
+# Shared helpers for the .paradev lifecycle scripts (setup / run / teardown).
 # Sourced, never executed. Works on macOS bash 3.2 (no associative arrays).
 #
 
@@ -13,6 +13,37 @@ log()      { [[ "$VERBOSE" == 1 ]] || return 0; printf '\033[1;36m==>\033[0m %s\
 warn()     { printf '\033[1;33m !!\033[0m %s\n' "$*"; }
 err()      { printf '\033[1;31m err\033[0m %s\n' "$*" >&2; }
 conclude() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
+
+# Pre-rename switch names still work (a silently ignored SUPERSET_DB_DATA=copy would turn into
+# symlink mode, which deletes the per-worktree DB copy). SUPERSET_ENV is the platform's own
+# local|cloud variable, so it maps only when it carries one of OUR values; every other old switch
+# maps whatever it holds, so a typo reaches switch_mode and is skipped rather than defaulted.
+map_legacy_switches() {
+  local pair old new v
+  for pair in SUPERSET_LOCAL:PARADEV_LOCAL SUPERSET_DB_DATA:PARADEV_DB_DATA \
+              SUPERSET_SIGNING:PARADEV_SIGNING SUPERSET_PRODUCTS:PARADEV_PRODUCTS \
+              SUPERSET_ENV:PARADEV_ENV_FILES; do
+    old="${pair%%:*}" new="${pair#*:}" v="${!old:-}"
+    [[ -n "$v" && -z "${!new:-}" ]] || continue
+    if [[ "$old" == SUPERSET_ENV ]]; then
+      case "$v" in symlink|copy|skip) ;; *) continue ;; esac
+    fi
+    printf -v "$new" '%s' "$v"; export "${new?}"
+    warn "$old is renamed $new — honouring $old=$v; rename it."
+  done
+}
+
+# switch_mode NAME — the symlink|copy|skip mode in $NAME (default symlink), case and surrounding
+# space ignored. Anything else is SKIPPED, loudly: symlink mode deletes a real per-worktree copy
+# (db-data), so a typo must never select it, and copy is what the platform's SUPERSET_ENV once
+# selected by accident. skip touches nothing.
+switch_mode() {
+  local v; v="$(printf '%s' "${!1:-symlink}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  case "$v" in
+    symlink|copy|skip) printf '%s' "$v" ;;
+    *) warn "$1=${!1} is not symlink|copy|skip — skipping this step" >&2; printf 'skip' ;;
+  esac
+}
 
 # How many trailing output lines the quiet-mode "glance" keeps on screen (override with
 # GLANCE_MAX=N). The debug/verbose mode ignores this and streams everything.
@@ -98,7 +129,7 @@ run_glance() {  # <title> <cmd> [args…]
 
 # ── host tooling prerequisites ─────────────────────────────────────────────────
 # Ensure the `ngrok` CLI is installed. A third-party phase (run.sh Phase 4,
-# a product hook — see .superset/products/example.sh) may tunnel a local port through
+# a product hook — see .paradev/products/example.sh) may tunnel a local port through
 # ngrok so an external callback reaches this machine. Best-effort + idempotent: present → no-op; otherwise
 # install per OS. NEVER fatal to setup — a missing ngrok only breaks that one optional
 # phase (which already warns and carries on). macOS bash 3.2 safe.
@@ -547,7 +578,7 @@ ensure_headroom() {
 }
 
 # ── active Agent Harness CLIs + authentication ───────────────────────────────
-# Called only by the MAIN workspace setup. Superset worktrees reuse machine-global binaries and
+# Called only by the MAIN workspace setup. Paradev worktrees reuse machine-global binaries and
 # login state and never open installers or browser auth flows.
 _selected_harnesses() {
   local root="${1:-$PWD}"
@@ -863,8 +894,8 @@ install_dap_script() {
   return 0
 }
 
-# Setup progress lock (per-worktree; git-ignored under .superset/run/). Written the moment real
-# work begins and removed on exit via trap. A fresh Superset worktree starts an agent session
+# Setup progress lock (per-worktree; git-ignored under .paradev/run/). Written the moment real
+# work begins and removed on exit via trap. A fresh Paradev worktree starts an agent session
 # BEFORE the long clone+onboard finishes, so the SessionStart readiness check
 # (.claude/hooks/repo-health-check.sh) reads this lock to steer the agent to WAIT rather than
 # treat an un-cloned repo as missing — and, crucially, to tell "setup is still running" apart
@@ -948,7 +979,7 @@ ensure_hosts_entries() {
   return 0
 }
 
-# Run each product's optional `setup_product` hook (.superset/products/<product>.sh, except the
+# Run each product's optional `setup_product` hook (.paradev/products/<product>.sh, except the
 # example.sh template) — the home for org-specific setup (local host aliases, …) so a downstream
 # repo never edits setup.sh. Each product runs in a SUBSHELL so two product files cannot clobber
 # each other's arrays/functions, and a failing hook warns and continues: setup runs under
@@ -956,7 +987,7 @@ ensure_hosts_entries() {
 # access from a hook (docs/adr/0009). Hooks must be idempotent (setup re-runs).
 run_product_setup_hooks() {
   local f name
-  for f in .superset/products/*.sh; do
+  for f in .paradev/products/*.sh; do
     [[ -f "$f" ]] || continue
     name="$(basename "$f" .sh)"
     [[ "$name" == example ]] && continue
@@ -969,8 +1000,8 @@ run_product_setup_hooks() {
 # Runtime state for background (non-docker) apps, per product.
 # Set by run.sh/teardown.sh before sourcing a product file.
 runtime_dirs() {  # <product>
-  RUN_DIR=".superset/run/$1"
-  LOG_DIR=".superset/logs/$1"
+  RUN_DIR=".paradev/run/$1"
+  LOG_DIR=".paradev/logs/$1"
   mkdir -p "$RUN_DIR" "$LOG_DIR"
 }
 
@@ -1025,7 +1056,7 @@ node_install() {  # <repo>
 }
 
 # Start a long-running package.json script in the background, with a pidfile
-# and a logfile under .superset/{run,logs}/<product>/.
+# and a logfile under .paradev/{run,logs}/<product>/.
 start_node_app() {  # <repo> <script> [port]
   local repo="$1" script="$2" port="${3:-}"
   local pidfile="$PWD/$RUN_DIR/$repo.pid" logfile="$PWD/$LOG_DIR/$repo.log" pm pid
@@ -1147,12 +1178,12 @@ run_migration() {  # <repo> <compose-file> <service>
   log "$repo: migrations from $file applied."
 }
 
-# Resolve the default product: exactly ONE real product file in .superset/products/
+# Resolve the default product: exactly ONE real product file in .paradev/products/
 # (example.sh is the shipped template, never a runnable default). Zero or several →
 # fail with guidance, so orchestrators never guess an org's stack.
 default_product() {
   local files=() f
-  for f in .superset/products/*.sh; do
+  for f in .paradev/products/*.sh; do
     [[ -e "$f" && "$(basename "$f")" != "example.sh" ]] && files+=("$f")
   done
   if [[ ${#files[@]} -eq 1 ]]; then
@@ -1160,7 +1191,7 @@ default_product() {
     return 0
   fi
   if [[ ${#files[@]} -eq 0 ]]; then
-    err "no product defined — copy .superset/products/example.sh to .superset/products/<product-id>.sh first."
+    err "no product defined — copy .paradev/products/example.sh to .paradev/products/<product-id>.sh first."
   else
     err "several products defined — name one:"
     for f in "${files[@]}"; do basename "$f" .sh | sed 's/^/  - /' >&2; done
@@ -1230,10 +1261,10 @@ provision_tf_local() {  # <root_ws> <symlink|copy>
 
 # Source the product definition file; lists available products on a miss.
 load_product() {  # <product>
-  local product="$1" file=".superset/products/$1.sh"
+  local product="$1" file=".paradev/products/$1.sh"
   if [[ ! -f "$file" ]]; then
     err "unknown product '$product'. Available products:"
-    ls .superset/products/ 2>/dev/null | sed -e 's/\.sh$//' -e 's/^/  - /' >&2
+    ls .paradev/products/ 2>/dev/null | sed -e 's/\.sh$//' -e 's/^/  - /' >&2
     exit 1
   fi
   # shellcheck source=/dev/null

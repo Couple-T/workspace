@@ -78,6 +78,7 @@ jira_api() {
     -H "Content-Type: application/json"
     -o "$tmp" -w '%{http_code}'
   )
+  [[ -n "${JIRA_API_HEADER:-}" ]] && args+=(-H "$JIRA_API_HEADER")
   [[ -n "$body" ]] && args+=(--data "$body")
   local attempt=0
   while :; do
@@ -830,6 +831,9 @@ tracker_find() {
   done_only="$(printf '%s' "$opts" | jq -r '.done // false')"
   estimated="$(printf '%s' "$opts" | jq -r '.estimated // false')"
   fix_version="$(printf '%s' "$opts" | jq -r '.fix_version // ""')"
+  # a release URL carries the version id after /versions/ — quoted whole it would be a NAME that
+  # matches nothing, and an empty release note built from zero tickets is the silent failure.
+  [[ "$fix_version" =~ /versions/([0-9]+) ]] && fix_version="${BASH_REMATCH[1]}"
   limit="$(printf '%s' "$opts" | jq -r '.limit // 50')"
   as_json="$(printf '%s' "$opts" | jq -r '.as_json // false')"
   types_json="$(printf '%s' "$opts" | jq -c '.types // []')"
@@ -942,4 +946,78 @@ tracker_delete_comment() {
   fi
   rm -f "$tmp"
   printf 'Deleted comment %s from %s\n' "$comment_id" "$key"
+}
+
+# ── releases (Jira versions) ───────────────────────────────────────────────────
+# jira_version_id REF — the numeric version id for REF: a release URL (…/versions/<id>/…),
+# a bare id, or a version NAME looked up inside JIRA_PROJECT_KEY. A name that matches zero
+# or several versions dies — a release note written onto the wrong version is worse than no
+# write.
+jira_version_id() {
+  local raw="$1" ids n
+  if [[ "$raw" =~ /versions/([0-9]+) ]]; then printf '%s' "${BASH_REMATCH[1]}"; return; fi
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then printf '%s' "$raw"; return; fi
+  [[ -n "$JIRA_PROJECT_KEY" ]] || die "version name '$raw' needs JIRA_PROJECT_KEY set to look it up"
+  ids="$(jira_api GET "/rest/api/3/project/$JIRA_PROJECT_KEY/versions" | jq -r --arg n "$raw" '.[] | select(.name == $n) | .id')"
+  n="$(printf '%s' "$ids" | grep -c . || true)"
+  [[ "$n" -eq 1 ]] || die "version '$raw' matched $n versions in project $JIRA_PROJECT_KEY (pass the release URL or numeric id)"
+  printf '%s' "$ids"
+}
+
+# jira_gql OPERATION QUERY VARIABLES_JSON — one call to the Atlassian GraphQL gateway, the
+# release page's own API: the page's rich-text section exists nowhere in REST (ECO-447). The
+# API token authenticates there exactly as for REST, so it rides jira_api; the version fields
+# are still "experimental" and need the opt-in header. A GraphQL error arrives under HTTP 200,
+# so it is checked here, not by the transport.
+jira_gql() {
+  local op="$1" query="$2" vars="$3" resp
+  resp="$(JIRA_API_HEADER='X-ExperimentalApi: JiraVersionResult, JiraVersionRichTextSection, JiraVersionSearch' \
+    jira_api POST /gateway/api/graphql "$(jq -c -n --arg o "$op" --arg q "$query" --argjson v "$vars" '{operationName:$o, query:$q, variables:$v}')")"
+  if [[ "$(printf '%s' "$resp" | jq '(.errors // []) | length')" != 0 ]]; then
+    { printf 'error: GraphQL %s failed:\n' "$op"; printf '%s' "$resp" | jq -r '.errors[].message'; } >&2; exit 1
+  fi
+  printf '%s' "$resp"
+}
+
+# jira_version_ari ID — the gateway's identifier for version ID. Its middle segment is the
+# site's activation id, which no REST call returns; every version of the site carries it, so
+# one is searched up and its trailing id swapped. The result is read back before use: a wrong
+# id dies here instead of writing a section onto a version that does not exist.
+jira_version_ari() {
+  local id="$1" cloud ari
+  cloud="$(jira_api GET /_edge/tenant_info | jq -r '.cloudId')"
+  ari="$(jira_gql VersionAri \
+    'query VersionAri($cloudId: ID!, $keys: [String!]) { jira { versionSearch(cloudId: $cloudId, first: 1, filter: {projectKeys: $keys}) { edges { node { id } } } } }' \
+    "$(jq -n --arg c "$cloud" --arg k "${JIRA_PROJECT_KEY:-}" '{cloudId:$c, keys:(if $k == "" then null else [$k] end)}')" \
+    | jq -r '.data.jira.versionSearch.edges[0].node.id // empty')"
+  [[ -n "$ari" ]] || die "no version found in ${JIRA_PROJECT_KEY:-the site} to derive the version ARI from"
+  ari="${ari%/*}/$id"
+  [[ "$(jira_gql VersionCheck 'query VersionCheck($id: ID!) { jira { version(id: $id) { ... on JiraVersion { versionId } } } }' \
+        "$(jq -n --arg i "$ari" '{id:$i}')" | jq -r '.data.jira.version.versionId // empty')" == "$id" ]] \
+    || die "version $id does not exist (or is not visible to $JIRA_EMAIL)"
+  printf '%s' "$ari"
+}
+
+# tracker_upsert_release REF DRY NOTE — write the note into the version's rich-text section
+# (the block at the top of its release page, titled "Release note") and clear the plain
+# description, where an earlier note may live: the releases list prints the description in a
+# column beside every version, which is no place for a note. The section renders ADF, so the
+# note's `•` lines become a real list with the how-to under each bullet (note_to_adf).
+tracker_upsert_release() {
+  local ref="$1" dry="$2" text="$3" id ari adf resp
+  id="$(jira_version_id "$ref")"
+  adf="$(printf '%s' "$text" | jq -c -L "$JIRA_IMPL_DIR" -Rs 'include "jira"; note_to_adf')"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — updateJiraVersionRichTextSectionContent on version %s\n%s\nDRY RUN — PUT /rest/api/3/version/%s {"description": ""}\n' "$id" "$adf" "$id"; return 0
+  fi
+  ari="$(jira_version_ari "$id")"
+  resp="$(jira_gql SetReleaseNote \
+    'mutation SetReleaseNote($id: ID!, $title: String, $content: JSON) { jira { updateJiraVersionRichTextSectionTitle(input: {id: $id, title: $title}) @optIn(to: "JiraUpdateVersionRichTextSectionTitle") { success errors { message } } updateJiraVersionRichTextSectionContent(input: {id: $id, content: $content}) @optIn(to: "JiraUpdateVersionRichTextSectionContent") { success errors { message } } } }' \
+    "$(jq -n --arg i "$ari" --argjson c "$adf" '{id:$i, title:"Release note", content:$c}')")"
+  if [[ "$(printf '%s' "$resp" | jq '[.data.jira[].success] | all')" != true ]]; then
+    { echo "error: Jira refused the release note:"; printf '%s' "$resp" | jq -r '.data.jira[].errors[]?.message'; } >&2; exit 1
+  fi
+  jira_api PUT "/rest/api/3/version/$id" '{"description": ""}' >/dev/null
+  printf 'Updated release %s (version %s, section "Release note")\n' "$ref" "$id"
+  printf '%s/projects/%s/versions/%s\n' "$JIRA_BASE_URL" "$JIRA_PROJECT_KEY" "$id"
 }

@@ -35,9 +35,9 @@
 #   scripts/triage-mcp.sh status       # report policy + what is registered
 #   scripts/triage-mcp.sh sync -n      # preview; change nothing
 #
-# RUN IT YOURSELF — `aiworks sync` does NOT (docs/adr/0009). Sync onboards repos; it does not
-# reach into a deployed environment on your behalf, so it only REPORTS an unregistered server in
-# its summary. `aiworks doctor` scores the same gap and `aiworks doctor --fix` runs this script.
+# `aiworks sync` runs this at the end of every run (docs/adr/0045), so a fresh clone needs no second
+# command; run it yourself after changing `triage.*` or to see why a registration was refused.
+# `aiworks doctor` scores the same gap and `aiworks doctor --fix` runs this script.
 # A machine that also wants production adds `triage.prod: true` — no re-registration needed.
 set -uo pipefail
 
@@ -194,7 +194,9 @@ if [[ "$ACTION" == "status" ]]; then
   for entry in "${SERVERS[@]}"; do
     name="${entry%%|*}"; rel="${entry#*|}"
     have="$(registered_args "$name")"
-    if [[ -z "$have" ]]; then dim "$name — not registered"
+    # An unwanted keyed server is OFF, not missing: doctor counts "not registered" as a failure.
+    if [[ -z "$have" && $name == n8n && $N8N_WANT -eq 0 ]]; then dim "$name — off (N8N_MCP_URL / N8N_MCP_ACCESS_TOKEN unset)"
+    elif [[ -z "$have" ]]; then dim "$name — not registered"
     elif [[ "$have" == "$(expected_args "$rel")" ]]; then ok "$name — registered (local scope)"
     elif owned_stale_args "$have" "$rel"; then
       warn "$name — registered under a STALE path; 'scripts/triage-mcp.sh sync' repoints it: $have"

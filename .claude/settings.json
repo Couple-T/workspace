@@ -64,6 +64,9 @@
       "mcp__n8n",
       "mcp__n8n__n8n_call",
       "mcp__redis_triage",
+      "mcp__k8s_triage",
+      "mcp__monitoring_triage",
+      "Agent(oncall)",
       "mcp__claude_ai_Figma__get_screenshot",
       "mcp__claude_ai_Figma__get_metadata",
       "mcp__claude_ai_Figma__get_design_context",
@@ -114,7 +117,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".superset/mcp-services.sh up"
+            "command": ".paradev/mcp-services.sh up"
           },
           {
             "type": "command",

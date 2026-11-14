@@ -332,12 +332,12 @@ path; the ladder shortens the implementation, never the requirement.
 The cross-repo CLI (`sync` · `list projects` · `exec` · `run`) driven by the generated
 `mani.d/<product>.yaml` files.
 
-**Superset**:
-The parallel run harness (`.superset/`) that gives each ticket its own git **worktree** so
+**Paradev** (formerly Superset; "Superset" is the synonym to avoid):
+The parallel run harness (`.paradev/`) that gives each ticket its own git **worktree** so
 several `dev-cycle` runs proceed at once. Its setup writes a lock the readiness check reads.
 
 **Worktree**:
-An isolated git checkout Superset provisions per ticket; git-ignored root state (`.env*`, the
+An isolated git checkout Paradev provisions per ticket; git-ignored root state (`.env*`, the
 personal local config) is symlinked into it.
 
 **Readiness check**:
@@ -346,7 +346,7 @@ the declared repos (`mani.d/` ∪ `workspace.config.yaml`) with the clones prese
 agent to wait while setup is `running`, or what to run when it is `crashed` or `idle`.
 
 **Product setup hook**:
-The optional `setup_product` function in `.superset/products/<product-id>.sh`, run by setup
+The optional `setup_product` function in `.paradev/products/<product-id>.sh`, run by setup
 step 6b — the git-ignored home for organisation-specific, idempotent, local-only setup.
 
 **`Human:` review**:
@@ -551,6 +551,28 @@ _Avoid_: working surface
 **Committed-beside-code**:
 A file committed into a repo (`docs/`, `README`, ADRs, PRD/BRD files committed into a product
 repo) — always **English**, even under `th`, since it lives beside the code.
+
+## Releases
+
+**Release**:
+A Jira version (`fixVersion`) and every ticket assigned to it, whatever its status. Named by the
+team (`v1.0.0`), reached by name, numeric ID or release URL.
+_Avoid_: sprint, milestone, deploy
+
+**Release Note**:
+The Thai, non-technical summary of one Release, written in the company voice (`ทางเรา`) for the
+product's users and stored as that Jira version's description — a record overwritten on every
+rerun, never appended. Always Thai, independent of the workspace `language:` switch.
+_Avoid_: changelog, release report
+
+**User-facing ticket**:
+A ticket in a Release that changes something a user sees or does; its Release Note entry carries a
+short how-to.
+_Avoid_: UI ticket, feature ticket
+
+**Technical ticket**:
+A ticket in a Release that changes nothing a user sees or does; its Release Note entry is one line.
+_Avoid_: backend ticket, infra ticket
 
 ## Config
 
